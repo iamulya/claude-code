@@ -22,7 +22,7 @@
 <tr>
 <td width="120" align="center">
 
-<img src=".'https://repoxray.devdisplay.org/logo.png" width="80" height="80" alt="RepoXray Logo"/>
+<img src="https://repoxray.devdisplay.org/logo.png" width="80" height="80" alt="RepoXray Logo"/>
 
 </td>
 <td>
