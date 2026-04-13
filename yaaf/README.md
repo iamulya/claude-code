@@ -1,40 +1,33 @@
 # YAAF — Yet Another Agentic Framework
 
-> A production-grade, multi-provider autonomous agent framework.
+> A production-grade, multi-provider autonomous agent framework for TypeScript.
 
-Multi-provider (Gemini + OpenAI), zero framework lock-in, composable subsystems — with a pluggable memory strategy system, a full context compaction pipeline, and built-in OpenTelemetry observability.
+Zero runtime dependencies. Multi-provider (Gemini, OpenAI, Groq, Ollama). Ship agents as CLIs, web APIs, edge functions, or chat bots — all from one codebase.
 
 ```bash
-# Works with Gemini, OpenAI, Groq, Ollama, or any OpenAI-compatible API
-GEMINI_API_KEY=... npx tsx examples/travel-agent/src/main.ts --demo
-OPENAI_API_KEY=sk-... npx tsx examples/travel-agent/src/main.ts --demo
+npm install yaaf
+yaaf init my-agent && cd my-agent && npm install
+yaaf dev
 ```
 
 ---
 
-## Table of Contents
+## Why YAAF?
 
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-  - [Agent](#agent)
-  - [Tools](#tools)
-  - [System Prompt Builder](#system-prompt-builder)
-  - [Permission Policy](#permission-policy)
-  - [Lifecycle Hooks](#lifecycle-hooks)
-  - [Sandbox](#sandbox)
-  - [Session Persistence](#session-persistence)
-  - [Secure Storage](#secure-storage)
-  - [Model Router](#model-router)
-  - [Team Memory](#team-memory)
-  - [Skills](#skills)
-  - [Plan Mode](#plan-mode)
-  - [Vigil (Autonomous Mode)](#vigil-autonomous-mode)
-  - [MCP Integration](#mcp-integration)
-- [In-Depth Docs](#in-depth-docs)
-- [Multi-Provider Support](#multi-provider-support)
-- [Examples](#examples)
-- [Project Structure](#project-structure)
-- [Design Principles](#design-principles)
+| Feature | YAAF | LangChain.js | Vercel AI SDK |
+|---------|------|-------------|---------------|
+| Runtime deps | **0** | 50+ | 15+ |
+| CLI scaffold | `yaaf init` | ❌ | ❌ |
+| Ship as CLI product | `createCLI()` | ❌ | ❌ |
+| Ship as HTTP API | `createServer()` | ❌ | ❌ |
+| Ship to edge | `createWorker()` | ❌ | ✅ |
+| Premium terminal UI | `createInkCLI()` | ❌ | ❌ |
+| Memory strategies | 7 built-in | 3 | ❌ |
+| Context compaction | 7 strategies | ❌ | ❌ |
+| Multi-agent swarms | Mailbox IPC | ❌ | ❌ |
+| Permission system | Glob patterns | ❌ | ❌ |
+| OpenTelemetry | Built-in | Plugin | ❌ |
+| Type safety | Full | Partial | Full |
 
 ---
 
@@ -43,588 +36,209 @@ OPENAI_API_KEY=sk-... npx tsx examples/travel-agent/src/main.ts --demo
 ```typescript
 import { Agent, buildTool } from 'yaaf';
 
-const greetTool = buildTool({
-  name: 'greet',
-  inputSchema: {
-    type: 'object',
-    properties: { name: { type: 'string' } },
-    required: ['name'],
-  },
-  maxResultChars: 200,
-  describe: ({ name }) => `Greet ${name}`,
-  async call({ name }) {
-    return { data: `Hello, ${name}! 👋` };
-  },
-  isReadOnly: () => true,
-});
-
-const agent = new Agent({
-  name: 'Greeter',
-  systemPrompt: 'You are a friendly greeter. Greet the user by name.',
-  tools: [greetTool],
-});
-
-const response = await agent.run('Say hello to Alice');
-console.log(response);
-```
-
-**Set one of these and you're ready:**
-
-```bash
-GEMINI_API_KEY=...         # Google Gemini (auto: gemini-2.0-flash)
-OPENAI_API_KEY=sk-...      # OpenAI (auto: gpt-4o-mini)
-OPENAI_API_KEY=gsk_...  \  # Groq
-OPENAI_BASE_URL=https://api.groq.com/openai/v1 \
-OPENAI_MODEL=llama-3.3-70b-versatile
-OPENAI_API_KEY=ollama   \  # Ollama (local)
-OPENAI_BASE_URL=http://localhost:11434/v1 \
-OPENAI_MODEL=llama3.1
-```
-
----
-
-## Core Concepts
-
-### Agent
-
-The primary API. Wraps the LLM ↔ tool loop with automatic provider selection and all optional subsystems.
-
-```typescript
-import { Agent } from 'yaaf';
-
-const agent = new Agent({
-  name: 'MyAgent',
-  systemPrompt: 'You are a helpful assistant.',
-  tools: [myTools],
-  provider: 'gemini',        // 'gemini' | 'openai' — or auto-detect from env
-  model: 'gemini-2.0-flash',
-  temperature: 0.3,
-  maxTokens: 4096,
-  maxIterations: 15,
-});
-
-// Async factory — resolves a SystemPromptBuilder before construction
-const agent2 = await Agent.create({
-  systemPromptProvider: myBuilder,
-  tools: [myTools],
-});
-
-// Events — fluent chaining
-agent
-  .on('tool:call',    ({ name, arguments: args }) => console.log('→', name, args))
-  .on('tool:result',  ({ name, durationMs })       => console.log('✓', name, durationMs + 'ms'))
-  .on('tool:blocked', ({ name, reason })           => console.warn('🚫', name, reason))
-  .on('llm:response', ({ content, toolCalls })     => { /* ... */ });
-
-const response = await agent.run('Do something');
-agent.reset(); // clear history
-```
-
-**AgentConfig options:**
-
-| Option | Type | Description |
-|---|---|---|
-| `systemPrompt` | `string` | Static system prompt string |
-| `systemPromptProvider` | `SystemPromptBuilder \| () => Promise<string>` | Async prompt (use `Agent.create()`) |
-| `tools` | `Tool[]` | Available tools |
-| `provider` | `'gemini' \| 'openai'` | Force provider (auto-detected if omitted) |
-| `model` | `string` | Model ID override |
-| `temperature` | `number` | Sampling temperature |
-| `maxTokens` | `number` | Max output tokens |
-| `maxIterations` | `number` | Max tool-call iterations per `run()` |
-| `permissions` | `PermissionPolicy` | Tool call gating |
-| `hooks` | `Hooks` | Lifecycle callbacks |
-| `sandbox` | `Sandbox` | Execution sandbox |
-| `session` | `Session` | Persistent conversation session |
-| `planMode` | `boolean \| PlanModeConfig` | Think-first execution |
-| `skills` | `Skill[]` | Markdown capability packs |
-| `memoryStrategy` | `MemoryStrategy` | Pluggable long-term memory |
-| `chatModel` | `ChatModel` | Bring-your-own model implementation |
-
----
-
-### Tools
-
-```typescript
-import { buildTool } from 'yaaf';
-
 const searchTool = buildTool({
-  name: 'search_web',
-  description: 'Search the web for information',
+  name: 'search',
+  description: 'Search the web',
   inputSchema: {
     type: 'object',
-    properties: {
-      query:      { type: 'string' },
-      maxResults: { type: 'number' },
-    },
+    properties: { query: { type: 'string' } },
     required: ['query'],
   },
-  maxResultChars: 10_000,
-  describe: ({ query }) => `Search: "${query}"`,
-
-  async call({ query, maxResults = 5 }, ctx) {
-    const results = await doWebSearch(query, maxResults);
-    return { data: results.join('\n') };
+  async call({ query }) {
+    return { data: await fetchResults(query) };
   },
-
-  isReadOnly:       () => true,   // default: false
-  isConcurrencySafe: () => true,  // default: false
-  isDestructive:    () => false,  // default: false
-});
-```
-
-`ctx` provides: `ctx.exec?.('cmd')`, `ctx.signal`, `ctx.agentName`.
-
----
-
-### System Prompt Builder
-
-Section-based, cache-aware prompt assembly.
-
-```typescript
-import { SystemPromptBuilder, defaultPromptBuilder } from 'yaaf';
-
-const builder = new SystemPromptBuilder()
-  .addStatic('identity', () => 'You are a DevOps assistant.', 0)
-  .addStatic('rules',    () => '## Rules\n- Never delete prod databases', 50)
-  .addWhen(
-    () => process.env.DEBUG === '1',
-    'debug-mode',
-    () => '## Debug Mode\nVerbose reasoning enabled.',
-  )
-  .addDynamic('memory',    () => memStore.buildPrompt(), 'memory updates per turn', 200)
-  .addDynamic('timestamp', () => `Time: ${new Date().toISOString()}`, 'time changes', 210);
-
-const prompt = await builder.build();
-```
-
-| Cache mode | When computed | Use case |
-|---|---|---|
-| `session` (default) | Once, cached until `reset()` | Identity, rules |
-| `turn` | Every `build()` call | Current time, live memory |
-| `never` | Every call | Truly volatile state |
-
----
-
-### Permission Policy
-
-```typescript
-import { PermissionPolicy, cliApproval } from 'yaaf';
-
-const permissions = new PermissionPolicy()
-  .allow('read_*')
-  .allow('search_*')
-  .requireApproval('write_*', 'File writes require confirmation')
-  .deny('delete_*', 'Deletion is disabled by policy')
-  .onRequest(cliApproval()); // interactive y/n at terminal
-
-const agent = new Agent({ permissions, tools: [...], systemPrompt: '...' });
-```
-
----
-
-### Lifecycle Hooks
-
-```typescript
-import type { Hooks } from 'yaaf';
-
-const hooks: Hooks = {
-  beforeLLM: async (ctx) => {
-    console.log(`Turn ${ctx.turnNumber}: ${ctx.messages.length} messages`);
-    return { action: 'continue' };
-  },
-  beforeToolCall: async (ctx) => {
-    if (ctx.toolName === 'exec' && ctx.arguments.cmd?.includes('rm -rf')) {
-      return { action: 'block', reason: 'rm -rf is not allowed' };
-    }
-    return { action: 'continue' };
-  },
-  afterToolCall: async (ctx, result, error) => {
-    metrics.record('tool_call', { tool: ctx.toolName, ok: !error });
-    return { action: 'continue' };
-  },
-};
-```
-
----
-
-### Sandbox
-
-```typescript
-import { Sandbox, projectSandbox, strictSandbox } from 'yaaf';
-
-const sandbox = new Sandbox({
-  timeoutMs:    15_000,
-  allowedPaths: [process.cwd(), '/tmp'],
-  blockedPaths: ['/etc', '/usr', process.env.HOME!],
-  blockNetwork: false,
 });
 
-// Convenience factories
-const project = projectSandbox(); // CWD + /tmp, 30s timeout
-const strict  = strictSandbox();  // CWD only, no network, 10s
-
-agent.on('tool:sandbox-violation', ({ toolName, violation }) =>
-  console.warn(`Sandbox violation: ${toolName} — ${violation}`));
-```
-
----
-
-### Session Persistence
-
-```typescript
-import { Agent, Session, listSessions, pruneOldSessions } from 'yaaf';
-
-const session = await Session.resumeOrCreate('my-bot', { dir: './.sessions' });
-
-const agent = new Agent({ session, systemPrompt: '...', tools: [...] });
-
-await session.append([
-  { role: 'user',      content: userMessage },
-  { role: 'assistant', content: response },
-]);
-
-await pruneOldSessions('./.sessions', { olderThanDays: 30 });
-```
-
----
-
-### Secure Storage
-
-AES-256-GCM encrypted key-value store. Zero plaintext on disk.
-
-```typescript
-import { SecureStorage } from 'yaaf';
-
-const store = new SecureStorage({
-  namespace:  'my-agent',
-  storageDir: './.secrets',
-  // YAAF_STORAGE_KEY=<64-char hex> for production
-  // password: 'my-passphrase'  for user-specific keys
+const agent = new Agent({
+  systemPrompt: 'You are a helpful research assistant.',
+  tools: [searchTool],
 });
 
-await store.set('openai_key', 'sk-...');
-const key = await store.get('openai_key');
+// Batch
+const response = await agent.run('What is quantum computing?');
+
+// Streaming
+for await (const event of agent.runStream('Explain relativity')) {
+  if (event.type === 'text_delta') process.stdout.write(event.content);
+}
 ```
+
+**Set one API key and go:**
 
 ```bash
-openssl rand -hex 32   # → set as YAAF_STORAGE_KEY
+export GOOGLE_API_KEY=...           # → auto-selects Gemini
+export OPENAI_API_KEY=sk-...        # → auto-selects GPT-4o
+export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
 ```
 
 ---
 
-### Model Router
+## Architecture
 
-Route cheap requests to a fast model and complex requests to a capable model.
-
-```typescript
-import { RouterChatModel, GeminiChatModel } from 'yaaf';
-
-const router = new RouterChatModel({
-  fast:    new GeminiChatModel({ model: 'gemini-2.0-flash' }),
-  capable: new GeminiChatModel({ model: 'gemini-2.0-pro-exp' }),
-  route: (ctx) => {
-    if (/architect|implement|design/i.test(ctx.messages.at(-1)?.content ?? ''))
-      return 'capable';
-    return 'fast';
-  },
-});
-
-const { fastPercent } = router.stats();
 ```
-
-Default heuristics: context > 14 msgs, tools > 6, message > 800 chars, or complexity keywords → capable.
-
----
-
-### Team Memory
-
-Multi-agent shared memory — private + team namespaces.
-
-```typescript
-import { TeamMemory } from 'yaaf';
-
-const memory = new TeamMemory({
-  sharedDir:  './.team-memory',
-  privateDir: './.agent-memory',
-  agentId:    'researcher-1',
-});
-
-await memory.save({ key: 'context', content: '# Project\n...', namespace: 'team' });
-const results = await memory.search('API design');
-const ctx     = memory.buildContext(results);
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Delivery Runtimes                            │
+│   createCLI()    createServer()    createWorker()    createInkCLI() │
+│   yaaf/cli-runtime   yaaf/server     yaaf/worker      yaaf/cli-ink │
+├─────────────────────────────────────────────────────────────────────┤
+│                      Stream Adapter                                 │
+│         adaptStream()  ←  RunnerStreamEvent → RuntimeStreamEvent    │
+├─────────────────────────────────────────────────────────────────────┤
+│                        Agent (high-level)                           │
+│   run() / runStream() / events / hooks / permissions / sandbox      │
+├────────────────────┬───────────────────────────────────┬────────────┤
+│   AgentRunner      │     Memory                        │  Context   │
+│   LLM ↔ Tool loop  │     MemoryStore + 7 strategies    │  Manager + │
+│   Streaming        │     TeamMemory (multi-agent)      │  7 compact │
+│   Retry + backoff  │     Relevance scoring             │  strategies│
+├────────────────────┼───────────────────────────────────┼────────────┤
+│   Tools            │     Models                       │  Plugins    │
+│   buildTool()      │     GeminiChatModel              │  MCP        │
+│   ToolLoopDetector │     OpenAIChatModel              │  Honcho     │
+│   Schema validation│     RouterChatModel              │  AgentFS    │
+│                    │     BYO ChatModel interface      │  Camoufox   │
+├────────────────────┴───────────────────────────────────┴────────────┤
+│  Skills · Permissions · Hooks · Sandbox · Session · SecureStorage   │
+│  SystemPromptBuilder · ContextEngine · Vigil · Heartbeat · Gateway  │
+├─────────────────────────────────────────────────────────────────────┤
+│                       OpenTelemetry                                 │
+│              Traces · Metrics · Logs · Cost tracking                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Skills
+## Documentation
 
-Markdown capability packs injected into the system prompt.
+The full documentation is split into focused chapters:
 
-```typescript
-import { loadSkills, defineSkill } from 'yaaf';
+### Getting Started
 
-const commitSkill = defineSkill({
-  name:     'commit',
-  content:  '# Git Commit Skill\nAlways use conventional commits format...',
-  triggers: ['commit', 'git'],
-});
+| Doc | Description |
+|-----|-------------|
+| [Getting Started](docs/getting-started.md) | Installation, first agent, CLI commands, project structure |
+| [Agent](docs/agent.md) | `Agent` class API, config, events, streaming, factory methods |
+| [Tools](docs/tools.md) | `buildTool()`, schemas, permissions, context, validation |
 
-const agent = new Agent({
-  skills: [commitSkill, ...await loadSkills('./skills')],
-  systemPrompt: '...',
-  tools: [...],
-});
-```
+### Core Systems
 
----
+| Doc | Description |
+|-----|-------------|
+| [Memory Strategies](docs/memory.md) | 7 built-in memory strategies, extraction + retrieval |
+| [Context Compaction](docs/compaction.md) | 7 compaction strategies, production pipelines |
+| [Permissions & Hooks](docs/permissions.md) | `PermissionPolicy`, `Hooks`, `cliApproval()` |
+| [System Prompts](docs/prompts.md) | `SystemPromptBuilder`, `ContextEngine`, `Soul` |
 
-### Plan Mode
+### Delivery & Deployment
 
-Two-phase: generate a numbered plan → approve → execute.
+| Doc | Description |
+|-----|-------------|
+| [CLI Runtime](docs/cli-runtime.md) | `createCLI()`, `createInkCLI()`, slash commands, streaming |
+| [Server Runtime](docs/server-runtime.md) | `createServer()`, REST API, SSE streaming, rate limiting |
+| [Worker Runtime](docs/worker-runtime.md) | `createWorker()`, Cloudflare Workers, Vercel Edge, Deno |
+| [Gateway & Channels](docs/gateway.md) | Multi-channel transport, Telegram, Slack, Discord |
 
-```typescript
-const agent = new Agent({
-  planMode: {
-    onPlan: async (plan) => {
-      console.log('Plan:\n', plan);
-      const answer = await askUser('Approve? [y/N]');
-      return answer.toLowerCase() === 'y';
-    },
-  },
-  systemPrompt: '...',
-  tools: [...],
-});
-```
+### Advanced
 
----
-
-### Vigil (Autonomous Mode)
-
-Tick-driven proactive agent. Runs continuously without user input.
-
-```typescript
-import { vigil } from 'yaaf';
-
-const agent = vigil({
-  name: 'SystemMonitor',
-  systemPrompt: 'Monitor system health every tick. Alert on anomalies.',
-  tools: [checkSystemTool, sendAlertTool],
-  tickIntervalMs: 60_000,
-  schedule: [
-    { name: 'daily-digest', cron: '0 9 * * *', prompt: 'Create a daily health digest' },
-  ],
-  vigilDir: './.vigil',
-});
-
-await agent.start();
-setTimeout(() => agent.stop(), 60 * 60 * 1000);
-```
+| Doc | Description |
+|-----|-------------|
+| [Multi-Agent](docs/multi-agent.md) | Orchestrator, Mailbox IPC, AgentRouter, delegates |
+| [Observability](docs/telemetry.md) | OpenTelemetry spans, metrics, logs, cost tracking |
+| [Plugins](docs/plugins.md) | Plugin architecture, MCP, Honcho, AgentFS, Camoufox |
+| [Security](docs/security.md) | Sandbox, SecureStorage, session persistence, approvals |
 
 ---
 
-### MCP Integration
+## Subpackage Map
+
+YAAF uses opt-in subpackages to keep the core zero-dep:
 
 ```typescript
-import { McpPlugin, filesystemMcp } from 'yaaf';
+// Core (zero dependencies)
+import { Agent, buildTool, MemoryStore, ContextManager } from 'yaaf';
 
-const plugin = new McpPlugin({
-  servers: [
-    { name: 'filesystem', transport: 'stdio',
-      command: 'npx', args: ['@modelcontextprotocol/server-filesystem', '.'] },
-    { name: 'github', transport: 'stdio',
-      command: 'npx', args: ['@modelcontextprotocol/server-github'],
-      env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN! } },
-  ],
-});
+// Gateway — channels, soul, approvals (zero deps)
+import { Gateway, Soul, ApprovalManager } from 'yaaf/gateway';
 
-const mcpTools = await plugin.connect();
-const agent = new Agent({ tools: [...myTools, ...mcpTools], systemPrompt: '...' });
-```
+// CLI runtime — readline-based (zero deps)
+import { createCLI } from 'yaaf/cli-runtime';
 
----
+// Premium CLI — Ink/React terminal UI (requires: ink, react)
+import { createInkCLI } from 'yaaf/cli-ink';
 
-## In-Depth Docs
+// HTTP server (zero deps — uses node:http)
+import { createServer } from 'yaaf/server';
 
-| Topic | Doc |
-|---|---|
-| 🧠 Memory Strategies — session notes, topic files, LLM retrieval, Honcho, custom strategies | [docs/memory.md](docs/memory.md) |
-| ✂️ Context Compaction — summarize, micro-compact, sliding window, production pipeline | [docs/compaction.md](docs/compaction.md) |
-| 📡 Observability — OpenTelemetry spans, metrics, logs, custom instrumentation | [docs/telemetry.md](docs/telemetry.md) |
-| 🔌 Plugin Architecture — built-in plugins, writing custom adapters | [docs/plugins.md](docs/plugins.md) |
-
----
-
-## Multi-Provider Support
-
-### Gemini
-
-```typescript
-import { GeminiChatModel } from 'yaaf';
-
-const model = new GeminiChatModel({
-  apiKey: process.env.GEMINI_API_KEY!,
-  model:  'gemini-2.0-flash',
-});
-
-// Vertex AI
-const vertex = new GeminiChatModel({
-  vertexAI: true,
-  project:  'my-gcp-project',
-  location: 'us-central1',
-  model:    'gemini-1.5-pro',
-});
-```
-
-### OpenAI + Compatible Providers
-
-```typescript
-import { OpenAIChatModel } from 'yaaf';
-
-// OpenAI
-const openai   = new OpenAIChatModel({ apiKey: process.env.OPENAI_API_KEY!, model: 'gpt-4o' });
-
-// Groq
-const groq     = new OpenAIChatModel({ apiKey: process.env.GROQ_API_KEY!, baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' });
-
-// Ollama (local)
-const ollama   = new OpenAIChatModel({ apiKey: 'ollama', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' });
-
-// DeepSeek
-const deepseek = new OpenAIChatModel({ apiKey: process.env.DEEPSEEK_API_KEY!, baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' });
-```
-
-### Bring Your Own Model
-
-```typescript
-import type { ChatModel } from 'yaaf';
-
-class MyModel implements ChatModel {
-  async complete({ messages, tools, signal }) {
-    const res = await myInferenceAPI({ messages, tools });
-    return {
-      content:      res.text,
-      toolCalls:    res.toolCalls,
-      finishReason: res.done ? 'stop' : 'tool_calls',
-    };
-  }
-}
-
-const agent = new Agent({ chatModel: new MyModel(), tools: [...], systemPrompt: '...' });
+// Edge/worker (zero deps — uses Web Fetch API)
+import { createWorker } from 'yaaf/worker';
 ```
 
 ---
 
 ## Examples
 
-| Example | Features demonstrated |
-|---|---|
-| [travel-agent](examples/travel-agent/) | `Agent`, multi-turn REPL, tool events, Gemini + OpenAI |
-| [permissions-and-hooks](examples/permissions-and-hooks/) | `PermissionPolicy`, `cliApproval()`, `Hooks`, audit log |
-| [secure-storage](examples/secure-storage/) | `SecureStorage`, env/password/machine key modes |
-| [session-persistence](examples/session-persistence/) | `Session.resumeOrCreate()`, crash recovery |
-| [system-prompt-builder](examples/system-prompt-builder/) | `SystemPromptBuilder`, static/dynamic sections |
-| [model-router](examples/model-router/) | `RouterChatModel`, custom routing, `router.stats()` |
-| [plan-mode](examples/plan-mode/) | `planMode`, `onPlan` approval gate |
-| [vigil-autonomous](examples/vigil-autonomous/) | `vigil()`, tick loop, cron schedule |
+| Example | Features |
+|---------|----------|
+| [travel-agent](examples/travel-agent/) | Agent, multi-turn REPL, tool events, Gemini + OpenAI |
+| [permissions-and-hooks](examples/permissions-and-hooks/) | PermissionPolicy, cliApproval(), Hooks, audit log |
+| [secure-storage](examples/secure-storage/) | SecureStorage, env/password/machine key modes |
+| [session-persistence](examples/session-persistence/) | Session.resumeOrCreate(), crash recovery |
+| [system-prompt-builder](examples/system-prompt-builder/) | SystemPromptBuilder, static/dynamic sections |
+| [model-router](examples/model-router/) | RouterChatModel, custom routing, router.stats() |
+| [plan-mode](examples/plan-mode/) | planMode, onPlan approval gate |
+| [vigil-autonomous](examples/vigil-autonomous/) | vigil(), tick loop, cron schedule |
 
 ```bash
 cd examples/<example-name>
-GEMINI_API_KEY=...    npx tsx src/main.ts
-OPENAI_API_KEY=sk-... npx tsx src/main.ts
-
-# No API key needed
-cd examples/secure-storage    && npx tsx src/main.ts
-cd examples/session-persistence && npx tsx src/main.ts
-
-# Specific flags
-cd examples/plan-mode        && GEMINI_API_KEY=... npx tsx src/main.ts --auto
-cd examples/vigil-autonomous && GEMINI_API_KEY=... npx tsx src/main.ts --duration=30
-cd examples/travel-agent     && GEMINI_API_KEY=... npx tsx src/main.ts --demo
+GOOGLE_API_KEY=... npx tsx src/main.ts
 ```
 
 ---
 
-## Project Structure
+## Multi-Provider Support
 
-```
-yaaf/
-├── src/
-│   ├── index.ts              # Public API entry point
-│   ├── agent.ts              # Agent — primary user API
-│   ├── agents/
-│   │   ├── runner.ts         # AgentRunner: LLM ↔ tool loop + hooks + OTel
-│   │   ├── orchestrator.ts   # Multi-agent spawning
-│   │   ├── mailbox.ts        # File-based IPC messaging
-│   │   └── taskManager.ts    # Task lifecycle FSM
-│   ├── models/
-│   │   ├── gemini.ts         # GeminiChatModel
-│   │   ├── openai.ts         # OpenAIChatModel
-│   │   └── router.ts         # RouterChatModel
-│   ├── prompt/
-│   │   └── systemPrompt.ts   # SystemPromptBuilder
-│   ├── memory/
-│   │   ├── memoryStore.ts    # File-based memory (4-type taxonomy)
-│   │   ├── strategies.ts     # Pluggable memory strategies (7 built-in)
-│   │   ├── teamMemory.ts     # Multi-agent shared memory
-│   │   └── relevance.ts      # LLM-powered memory selection
-│   ├── context/
-│   │   ├── contextManager.ts # Token budgeting + compaction trigger
-│   │   └── strategies.ts     # Pluggable compaction strategies (7 built-in)
-│   ├── telemetry/
-│   │   ├── telemetry.ts      # OTel provider init (traces, metrics, logs)
-│   │   ├── tracing.ts        # Span API: agent.run / llm.request / tool.call
-│   │   └── attributes.ts     # Common span attribute helpers
-│   ├── storage/
-│   │   └── secureStorage.ts  # AES-256-GCM encrypted KV store
-│   ├── permissions.ts        # PermissionPolicy
-│   ├── hooks.ts              # Lifecycle hooks
-│   ├── sandbox.ts            # Execution sandbox
-│   ├── session.ts            # Session persistence
-│   ├── skills.ts             # Skill injection
-│   ├── vigil.ts              # Autonomous tick-driven agent
-│   ├── plugin/
-│   │   └── types.ts          # Adapter interfaces + PluginHost
-│   ├── integrations/
-│   │   ├── honcho.ts         # HonchoPlugin: cloud memory
-│   │   ├── agentfs.ts        # AgentFSPlugin: virtual filesystem
-│   │   ├── camoufox.ts       # CamoufoxPlugin: anti-detect browser
-│   │   └── mcp.ts            # McpPlugin: Model Context Protocol
-│   └── utils/
-│       ├── logger.ts         # Structured logging
-│       ├── retry.ts          # Exponential backoff
-│       └── tokens.ts         # Token estimation
-├── docs/
-│   ├── memory.md             # Memory strategy system (full reference)
-│   ├── compaction.md         # Context compaction (full reference)
-│   ├── telemetry.md          # OpenTelemetry integration
-│   └── plugins.md            # Plugin & adapter architecture
-├── examples/
-│   ├── travel-agent/
-│   ├── permissions-and-hooks/
-│   ├── secure-storage/
-│   ├── session-persistence/
-│   ├── system-prompt-builder/
-│   ├── model-router/
-│   ├── plan-mode/
-│   └── vigil-autonomous/
-├── package.json
-├── tsconfig.json
-└── README.md
+```typescript
+import { GeminiChatModel, OpenAIChatModel, RouterChatModel } from 'yaaf';
+
+// Gemini
+const gemini = new GeminiChatModel({ model: 'gemini-2.5-flash' });
+
+// OpenAI
+const openai = new OpenAIChatModel({ model: 'gpt-4o' });
+
+// Groq (OpenAI-compatible)
+const groq = new OpenAIChatModel({
+  baseUrl: 'https://api.groq.com/openai/v1',
+  model: 'llama-3.3-70b-versatile',
+});
+
+// Ollama (local)
+const ollama = new OpenAIChatModel({
+  baseUrl: 'http://localhost:11434/v1',
+  apiKey: 'ollama',
+  model: 'llama3.1',
+});
+
+// Smart routing — cheap requests → fast model, complex → capable
+const router = new RouterChatModel({
+  fast: gemini,
+  capable: openai,
+  route: (ctx) => ctx.messages.length > 10 ? 'capable' : 'fast',
+});
 ```
 
 ---
 
 ## Design Principles
 
-1. **Fail-Closed Safety** — permissions default to deny; tools are write-capable and permission-gated by default. Opt *in* to dangerous flags.
-2. **Async-First** — every I/O subsystem is async. `Agent.create()` handles prompt resolution and session loading before construction.
-3. **Prompt Cache Awareness** — `SystemPromptBuilder` separates static (session-cached) from dynamic (per-turn) sections to prevent accidental cache-busting.
-4. **Context is Finite** — `ContextManager` actively manages the token budget with a pluggable compaction pipeline. You choose the cost/quality trade-off.
-5. **Memory is Composable** — extraction (when/how to persist) and retrieval (what to inject) are separate, independent interfaces. Mix strategies freely.
-6. **Agents Are Independent** — swarm workers get their own `AbortController` and state; they communicate only through the mailbox. A crashed worker cannot take down the leader.
-7. **Plugin-First Extensibility** — every external capability (memory, browser, filesystem, OTel backends) is a typed adapter interface. No coupling to any specific vendor.
-8. **Observable by Default** — every major action emits both a typed event and an OpenTelemetry span. No monkey-patching required to instrument behavior.
+1. **Zero Runtime Dependencies** — The core framework ships nothing but TypeScript. Optional features (Ink, OTel) are peer dependencies.
+2. **Fail-Closed Safety** — Permissions default to deny. Tools are write-capable and permission-gated by default.
+3. **Ship Anywhere** — One agent, multiple delivery targets: CLI, HTTP API, edge function, chat bot.
+4. **Streaming First** — Every runtime supports streaming with a unified `RuntimeStreamEvent` type.
+5. **Memory is Composable** — Extraction (when to persist) and retrieval (what to inject) are independent interfaces.
+6. **Context is Finite** — `ContextManager` actively manages token budgets with 7 pluggable compaction strategies.
+7. **Observable by Default** — Every action emits both typed events and OpenTelemetry spans.
+8. **Plugin-First** — External capabilities are typed adapter interfaces. No vendor coupling.
 
 ---
 

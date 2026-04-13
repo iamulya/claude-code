@@ -40,6 +40,7 @@ import {
   type RunnerEventHandler,
   type ChatMessage,
   type ChatModel,
+  type RunnerStreamEvent,
 } from './agents/runner.js'
 import type { Tool } from './tools/tool.js'
 import type { Plugin, ToolProvider } from './plugin/types.js'
@@ -58,6 +59,10 @@ import {
   startAgentRunSpan,
   endAgentRunSpan,
 } from './telemetry/tracing.js'
+import { ContextOverflowError } from './errors.js'
+import { Logger } from './utils/logger.js'
+
+const logger = new Logger('agent')
 
 export type { ModelProvider }
 
@@ -432,26 +437,59 @@ export class Agent {
       }
     }
 
-    // Inject memory as a temporary system-level context injection (non-persisted)
+    // Gap #6 FIX: Inject memory as system prompt override (not fake messages)
+    // Uses the runner's setSystemOverride() to prepend memory context
+    // without polluting the conversation history.
     if (memoryPrefix) {
-      this.runner.addMessage({ role: 'user', content: `[Memory context]\n${memoryPrefix}` })
-      this.runner.addMessage({ role: 'assistant', content: 'Understood. I will use this context.' })
+      this.runner.setSystemOverride(`## Relevant Memory\n${memoryPrefix}`)
+    } else {
+      this.runner.setSystemOverride(undefined)
     }
 
+    // Gap #4 FIX: Wire ContextManager — check and trigger compaction before running
+    if (this.contextManager) {
+      try {
+        const shouldCompact = this.contextManager.shouldCompact()
+        if (shouldCompact) {
+          logger.info('Auto-compaction triggered before turn')
+          const compactionResult = await this.contextManager.compact()
+          logger.info(
+            `Compacted: ${compactionResult.messagesRemoved} messages removed, ` +
+            `${compactionResult.tokensFreed} tokens freed`,
+          )
+        }
+      } catch (err) {
+        // Compaction failure is non-fatal — log and continue
+        logger.warn('Auto-compaction failed', { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    // Gap #5 FIX: Context overflow recovery — catch overflow, compact, retry
     let response: string
     try {
       response = await this.runner.run(userMessage, signal)
     } catch (err) {
-      endAgentRunSpan({ error: err instanceof Error ? err.message : String(err) })
-      throw err
+      // Check if this is a context overflow (prompt too long)
+      if (this.isContextOverflow(err) && this.contextManager) {
+        logger.warn('Context overflow detected — triggering emergency compaction')
+        try {
+          await this.contextManager.compact()
+          // Retry after compaction
+          response = await this.runner.run(userMessage, signal)
+        } catch (retryErr) {
+          endAgentRunSpan({ error: retryErr instanceof Error ? retryErr.message : String(retryErr) })
+          throw retryErr
+        }
+      } else {
+        endAgentRunSpan({ error: err instanceof Error ? err.message : String(err) })
+        throw err
+      }
     }
 
-    // Remove the temporary memory injection messages from history
-    // (they were added above, so they are the last 2 messages before the new user+assistant pair)
-    // We do this by trimming them from the history post-execution is not cleanly possible without
-    // access to runner internals. Instead we track them via the runner's message count delta.
-    // NOTE: The cleanest fix is to pass memoryPrefix to runner.run() as a system override;
-    //       that requires a runner API change tracked as a follow-up.
+    // Sync runner messages to ContextManager for accurate tracking
+    if (this.contextManager) {
+      this.syncMessagesToContextManager()
+    }
 
     // Persist to session
     if (this.session) {
@@ -463,6 +501,68 @@ export class Agent {
 
     endAgentRunSpan({ responseLength: response.length })
     return response
+  }
+
+  /**
+   * Run one conversation turn in streaming mode.
+   * Yields progressive events as tokens arrive from the LLM.
+   *
+   * @example
+   * ```ts
+   * for await (const event of agent.runStream('Hello')) {
+   *   if (event.type === 'text_delta') process.stdout.write(event.content);
+   *   if (event.type === 'tool_call_result') console.log('Tool:', event.name);
+   * }
+   * ```
+   */
+  async *runStream(
+    userMessage: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<RunnerStreamEvent, void, undefined> {
+    const runSpan = startAgentRunSpan({
+      agentName: this.name,
+      userMessage,
+    })
+
+    const memoryPrefix = await this.buildMemoryPrefix(userMessage, signal)
+
+    // Inject memory as system prompt override
+    if (memoryPrefix) {
+      this.runner.setSystemOverride(`## Relevant Memory\n${memoryPrefix}`)
+    } else {
+      this.runner.setSystemOverride(undefined)
+    }
+
+    // Wire ContextManager compaction
+    if (this.contextManager) {
+      try {
+        if (this.contextManager.shouldCompact()) {
+          await this.contextManager.compact()
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    let lastContent = ''
+    try {
+      for await (const event of this.runner.runStream(userMessage, signal)) {
+        if (event.type === 'final_response') lastContent = event.content
+        yield event
+      }
+    } catch (err) {
+      endAgentRunSpan({ error: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+
+    // Sync and persist
+    if (this.contextManager) this.syncMessagesToContextManager()
+    if (this.session) {
+      await this.session.append([
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: lastContent },
+      ])
+    }
+
+    endAgentRunSpan({ responseLength: lastContent.length })
   }
 
   /**
@@ -607,6 +707,57 @@ export class Agent {
     }
 
     return ''
+  }
+
+  // ── ContextManager Integration (Gap #4) ────────────────────────────────
+
+  /**
+   * Sync the runner's message history to the ContextManager.
+   * This keeps the ContextManager's token tracking accurate.
+   */
+  private syncMessagesToContextManager(): void {
+    if (!this.contextManager) return
+
+    const history = this.runner.getHistory()
+    // The ContextManager has its own message array.
+    // We sync by ensuring the last N messages from the runner are tracked.
+    // This is a one-way push — the runner is the source of truth.
+    const cmMessageCount = this.contextManager.getMessageCount()
+    const newMessages = history.slice(cmMessageCount)
+
+    for (const msg of newMessages) {
+      this.contextManager.addMessage({
+        uuid: `runner-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: msg.role === 'tool' ? 'tool_result' : msg.role as 'user' | 'assistant' | 'system',
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        timestamp: Date.now(),
+        toolUseId: 'toolCallId' in msg ? (msg as { toolCallId: string }).toolCallId : undefined,
+      })
+    }
+  }
+
+  // ── Context Overflow Detection (Gap #5) ────────────────────────────────
+
+  /**
+   * Check if an error is a context overflow (prompt too long).
+   * Heuristic: checks for known API error patterns from various providers.
+   */
+  private isContextOverflow(err: unknown): boolean {
+    if (err instanceof ContextOverflowError) return true
+
+    if (err instanceof Error) {
+      const msg = err.message.toLowerCase()
+      return (
+        msg.includes('prompt is too long') ||
+        msg.includes('prompt_too_long') ||
+        msg.includes('context_length_exceeded') ||
+        msg.includes('maximum context length') ||
+        msg.includes('request too large') ||
+        msg.includes('413')
+      )
+    }
+
+    return false
   }
 }
 

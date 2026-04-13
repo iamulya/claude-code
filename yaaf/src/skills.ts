@@ -187,18 +187,36 @@ export function buildSkillSection(skills: Skill[], forcedNames?: string[]): stri
   return `\n\n---\n# Active Skills\n\n${blocks.join('\n\n---\n\n')}`
 }
 
-// ── Skill registry (in-memory, for dynamic loading) ──────────────────────────
+// ── Skill registry (in-memory, with hot-reload) ─────────────────────────────
+
+export type SkillRegistryEvents = {
+  /** Called when a skill is loaded or updated */
+  onLoad?: (skill: Skill) => void
+  /** Called when a skill is removed */
+  onRemove?: (name: string) => void
+  /** Called when an error occurs during watch/reload */
+  onError?: (error: Error, filePath: string) => void
+}
 
 export class SkillRegistry {
   private skills = new Map<string, Skill>()
+  private watchers: Array<{ close(): void }> = []
+  private events: SkillRegistryEvents = {}
+
+  constructor(events?: SkillRegistryEvents) {
+    if (events) this.events = events
+  }
 
   register(skill: Skill): this {
     this.skills.set(skill.name, skill)
+    this.events.onLoad?.(skill)
     return this
   }
 
   unregister(name: string): boolean {
-    return this.skills.delete(name)
+    const removed = this.skills.delete(name)
+    if (removed) this.events.onRemove?.(name)
+    return removed
   }
 
   get(name: string): Skill | undefined {
@@ -217,5 +235,101 @@ export class SkillRegistry {
 
   buildSection(forcedNames?: string[]): string {
     return buildSkillSection(this.list(), forcedNames)
+  }
+
+  /**
+   * Register a skill dynamically from raw markdown content.
+   * Useful for agents that create their own skills at runtime
+   * (like OpenClaw's self-writing skills).
+   *
+   * @param markdown - Full SKILL.md content with frontmatter
+   * @param sourcePath - Optional virtual path for this skill
+   */
+  registerDynamic(markdown: string, sourcePath?: string): Skill {
+    const { meta, body } = parseFrontmatter(markdown)
+    const skill: Skill = {
+      name: meta.name ?? `dynamic-${Date.now()}`,
+      description: meta.description,
+      version: meta.version,
+      always: meta.always ?? true,
+      tags: meta.tags ?? [],
+      instructions: body,
+      filePath: sourcePath,
+    }
+    this.register(skill)
+    return skill
+  }
+
+  /**
+   * Watch skill directories for changes. Hot-reloads on file
+   * create/update and removes on file delete.
+   *
+   * Inspired by OpenClaw's skills watcher (auto-refresh).
+   *
+   * @param dirs - Directories to watch
+   */
+  async watch(dirs: string[]): Promise<void> {
+    // Dynamic import since fs.watch may not be available in all envs
+    const { watch } = await import('fs')
+
+    for (const dir of dirs) {
+      try {
+        const watcher = watch(dir, { persistent: false }, async (eventType, filename) => {
+          if (!filename) return
+          if (!filename.endsWith('.md') && !filename.endsWith('.mdx')) return
+          if (filename.startsWith('_') || filename.startsWith('.')) return
+
+          const filePath = path.join(dir, filename)
+
+          if (eventType === 'rename') {
+            // Could be create or delete — try to read
+            try {
+              const skill = await loadSkill(filePath)
+              this.register(skill)
+            } catch {
+              // File was deleted — find and remove skill with this path
+              for (const [name, skill] of this.skills) {
+                if (skill.filePath === filePath) {
+                  this.unregister(name)
+                  break
+                }
+              }
+            }
+          } else if (eventType === 'change') {
+            try {
+              const skill = await loadSkill(filePath)
+              this.register(skill)
+            } catch (err) {
+              this.events.onError?.(
+                err instanceof Error ? err : new Error(String(err)),
+                filePath,
+              )
+            }
+          }
+        })
+
+        this.watchers.push(watcher)
+      } catch {
+        // Directory doesn't exist or watcher not supported — skip
+      }
+    }
+  }
+
+  /**
+   * Stop watching all directories.
+   */
+  stopWatching(): void {
+    for (const watcher of this.watchers) {
+      watcher.close()
+    }
+    this.watchers = []
+  }
+
+  /**
+   * Clear all skills and stop watching.
+   */
+  clear(): void {
+    this.stopWatching()
+    this.skills.clear()
   }
 }

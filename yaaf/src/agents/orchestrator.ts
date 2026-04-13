@@ -95,6 +95,12 @@ export type SpawnConfig = {
   color?: string
   /** Model override */
   model?: string
+  /**
+   * Per-agent timeout in milliseconds.
+   * If the agent doesn't complete within this time, it is killed.
+   * Default: no timeout.
+   */
+  timeoutMs?: number
 }
 
 /** Result of spawning an agent */
@@ -287,6 +293,21 @@ export class AgentOrchestrator {
     this.updateStatus(agentId, 'running')
     this.taskManager.transition(agent.taskId, 'running')
 
+    // Per-agent timeout (Gap #13)
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+    if (config.timeoutMs) {
+      timeoutTimer = setTimeout(() => {
+        if (agent.status === 'running' || agent.status === 'idle') {
+          this.kill(agentId)
+          this.events.emit('agent:completed', {
+            agentId,
+            success: false,
+            error: `Agent timed out after ${config.timeoutMs}ms`,
+          })
+        }
+      }, config.timeoutMs)
+    }
+
     try {
       const result = await this.runAgentFn({
         identity: agent.identity,
@@ -328,6 +349,12 @@ export class AgentOrchestrator {
         error: result.error,
       })
     } catch (err) {
+      // Distinguish abort (user kill) from crash
+      const isAbort = err instanceof Error && err.name === 'AbortError'
+      if (isAbort && agent.status === 'killed') {
+        // Already handled by kill()
+        return
+      }
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.updateStatus(agentId, 'failed')
       this.taskManager.transition(agent.taskId, 'failed', errorMsg)
@@ -336,6 +363,8 @@ export class AgentOrchestrator {
         success: false,
         error: errorMsg,
       })
+    } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer)
     }
   }
 
@@ -422,5 +451,16 @@ export class AgentOrchestrator {
       }
     }
     this.taskManager.evictTerminal()
+  }
+
+  /** Get a status summary of all agents (for debugging) */
+  statusSummary(): string {
+    const lines: string[] = []
+    for (const [id, agent] of this.agents) {
+      lines.push(`  ${id}: ${agent.status} (task: ${agent.taskId})`)
+    }
+    return lines.length > 0
+      ? `Agents (${this.agents.size}):\n${lines.join('\n')}`
+      : 'No agents'
   }
 }

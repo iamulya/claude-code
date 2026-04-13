@@ -363,6 +363,11 @@ export class ContextManager {
     return this.messages.length
   }
 
+  /** Get message count (method form — used by Agent integration) */
+  getMessageCount(): number {
+    return this.messages.length
+  }
+
   // ── Token Accounting ─────────────────────────────────────────────────────
 
   /** Estimate tokens for a single message */

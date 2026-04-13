@@ -179,15 +179,46 @@ export class ContextOverflowError extends YAAFError {
     maxTokens: number
     contextLimit: number
     provider?: string
-  }) {
-    super(
-      `Context overflow: ${opts.inputTokens} input + ${opts.maxTokens} output > ${opts.contextLimit} limit`,
-      { code: 'CONTEXT_OVERFLOW', retryable: false, provider: opts.provider },
-    )
+  })
+  constructor(message: string, opts?: {
+    status?: number
+    provider?: string
+    estimatedTokens?: number
+    contextLimit?: number
+  })
+  constructor(
+    messageOrOpts: string | {
+      inputTokens: number
+      maxTokens: number
+      contextLimit: number
+      provider?: string
+    },
+    extraOpts?: {
+      status?: number
+      provider?: string
+      estimatedTokens?: number
+      contextLimit?: number
+    },
+  ) {
+    if (typeof messageOrOpts === 'string') {
+      super(messageOrOpts, {
+        code: 'CONTEXT_OVERFLOW',
+        retryable: false,
+        provider: extraOpts?.provider,
+      })
+      this.inputTokens = extraOpts?.estimatedTokens ?? 0
+      this.maxTokens = 0
+      this.contextLimit = extraOpts?.contextLimit ?? 0
+    } else {
+      super(
+        `Context overflow: ${messageOrOpts.inputTokens} input + ${messageOrOpts.maxTokens} output > ${messageOrOpts.contextLimit} limit`,
+        { code: 'CONTEXT_OVERFLOW', retryable: false, provider: messageOrOpts.provider },
+      )
+      this.inputTokens = messageOrOpts.inputTokens
+      this.maxTokens = messageOrOpts.maxTokens
+      this.contextLimit = messageOrOpts.contextLimit
+    }
     this.name = 'ContextOverflowError'
-    this.inputTokens = opts.inputTokens
-    this.maxTokens = opts.maxTokens
-    this.contextLimit = opts.contextLimit
   }
 }
 
@@ -270,6 +301,13 @@ export function classifyAPIError(
 ): YAAFError {
   const retryAfterMs = parseRetryAfterHeader(headers)
 
+  // Network failure (status 0 = fetch failed)
+  if (status === 0) {
+    return new APIConnectionError(`${provider ?? 'API'} connection failed: ${body}`, {
+      provider,
+    })
+  }
+
   if (status === 401 || status === 403) {
     return new AuthError(`${provider ?? 'API'} authentication failed (${status}): ${body}`, {
       status,
@@ -290,6 +328,29 @@ export function classifyAPIError(
       provider,
       retryAfterMs,
     })
+  }
+
+  // Context overflow detection (Gap #5)
+  if (status === 413) {
+    return new ContextOverflowError(
+      `${provider ?? 'API'} request too large (413): ${body}`,
+      { status, provider, estimatedTokens: 0, contextLimit: 0 },
+    )
+  }
+
+  // Prompt-too-long patterns in 400 responses
+  const bodyLower = body.toLowerCase()
+  if (
+    status === 400 &&
+    (bodyLower.includes('prompt is too long') ||
+     bodyLower.includes('prompt_too_long') ||
+     bodyLower.includes('context_length_exceeded') ||
+     bodyLower.includes('maximum context length'))
+  ) {
+    return new ContextOverflowError(
+      `${provider ?? 'API'} context overflow (400): ${body}`,
+      { status, provider, estimatedTokens: 0, contextLimit: 0 },
+    )
   }
 
   return new APIError(`${provider ?? 'API'} error ${status}: ${body}`, {

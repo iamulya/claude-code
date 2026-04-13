@@ -8,7 +8,8 @@
  * The runner is LLM-agnostic — it works with any provider that implements
  * the `ChatModel` interface (OpenAI, Gemini, Ollama, Groq, etc.)
  *
- * v2: Added hooks, permissions, and sandbox support.
+ * v3: Added streaming support (runStream), concurrent tool execution,
+ *     input validation, tool result budget, and event system improvements.
  *
  * @example
  * ```ts
@@ -21,6 +22,11 @@
  * const response = await runner.run('Find all TODO comments');
  * console.log(response);
  * // The runner called grep, then summarized the results
+ *
+ * // Streaming alternative — progressive UI
+ * for await (const event of runner.runStream('Find all TODO comments')) {
+ *   if (event.type === 'text_delta') process.stdout.write(event.content);
+ * }
  * ```
  *
  * @module agents/runner
@@ -45,6 +51,8 @@ import {
   startToolExecutionSpan,
   endToolExecutionSpan,
 } from '../telemetry/tracing.js'
+import { StreamingToolExecutor, type ToolExecutionResult } from './streamingExecutor.js'
+import { applyToolResultBudget, type ToolResultBudgetConfig } from '../utils/toolResultBudget.js'
 
 // ── Chat Types (OpenAI-compatible, industry standard) ────────────────────────
 
@@ -125,6 +133,9 @@ export type SessionUsage = {
  * - Any OpenAI-compatible API
  */
 export interface ChatModel {
+  /** Optional model identifier — propagated to OTel spans (Gap #10) */
+  readonly model?: string
+
   complete(params: {
     messages: ChatMessage[]
     tools?: ToolSchema[]
@@ -152,6 +163,20 @@ export interface StreamingChatModel extends ChatModel {
   }): AsyncGenerator<ChatDelta, void, undefined>
 }
 
+// ── Runner Stream Events ─────────────────────────────────────────────────────
+
+/** Events yielded by `runner.runStream()` */
+export type RunnerStreamEvent =
+  | { type: 'text_delta'; content: string }
+  | { type: 'tool_call_start'; name: string; arguments: Record<string, unknown> }
+  | { type: 'tool_call_result'; name: string; result: string; durationMs: number; error?: boolean }
+  | { type: 'tool_blocked'; name: string; reason: string }
+  | { type: 'llm_request'; messageCount: number; toolCount: number }
+  | { type: 'llm_response'; hasToolCalls: boolean; contentLength: number; usage?: TokenUsage; durationMs: number }
+  | { type: 'iteration'; count: number; maxIterations: number }
+  | { type: 'usage'; usage: SessionUsage }
+  | { type: 'final_response'; content: string }
+
 // ── Runner Events ────────────────────────────────────────────────────────────
 
 export type RunnerEvents = {
@@ -160,6 +185,7 @@ export type RunnerEvents = {
   'tool:error': { name: string; error: string }
   'tool:blocked': { name: string; reason: string }
   'tool:sandbox-violation': { name: string; violationType: string; detail: string }
+  'tool:validation-failed': { name: string; message: string }
   'llm:request': { messageCount: number; toolCount: number }
   'llm:response': { hasToolCalls: boolean; contentLength: number; usage?: TokenUsage; durationMs: number }
   'llm:delta': ChatDelta
@@ -207,6 +233,18 @@ export type AgentRunnerConfig = {
    * Default: 5 retries with exponential backoff.
    */
   retry?: RetryConfig
+  /**
+   * Tool result budget configuration.
+   * Enforces aggregate size limits on tool results in context.
+   * @see ToolResultBudgetConfig
+   */
+  toolResultBudget?: ToolResultBudgetConfig
+  /**
+   * System prompt override (e.g. injected memory section).
+   * If set, prepended to the agent's systemPrompt as a section.
+   * Unlike addMessage(), this does NOT persist in message history.
+   */
+  systemPromptOverride?: string
 }
 
 /**
@@ -230,11 +268,15 @@ export class AgentRunner {
   private messages: ChatMessage[] = []
   private readonly toolSchemas: ToolSchema[]
   private readonly toolContext: ToolContext
-  private readonly config: Required<Omit<AgentRunnerConfig, 'hooks' | 'permissions' | 'sandbox' | 'retry'>> & {
+  /** Resolved model name — propagated to OTel spans (Gap #10) */
+  private readonly modelName: string
+  private readonly config: Required<Omit<AgentRunnerConfig, 'hooks' | 'permissions' | 'sandbox' | 'retry' | 'toolResultBudget' | 'systemPromptOverride'>> & {
     hooks?: Hooks
     permissions?: PermissionPolicy
     sandbox?: Sandbox
     retry?: RetryConfig
+    toolResultBudget?: ToolResultBudgetConfig
+    systemPromptOverride?: string
   }
   private eventHandlers = new Map<
     keyof RunnerEvents,
@@ -256,26 +298,41 @@ export class AgentRunner {
       maxTokens: config.maxTokens ?? 4096,
     }
 
-    // Convert tools to LLM-consumable schemas
-    this.toolSchemas = config.tools.map(t => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.userFacingName(undefined) || t.name,
-        parameters: t.inputSchema as Record<string, unknown>,
-      },
-    }))
+    // Resolve model name from ChatModel.model or fallback (Gap #10)
+    this.modelName = config.model.model ?? 'unknown'
 
-    // Default tool context (signal always injected at call time)
+    // Convert tools to LLM-consumable schemas (Gap #12: use prompt() for descriptions)
+    this.toolSchemas = config.tools.map(t => {
+      // Prefer prompt() if available, fall back to userFacingName/name
+      let description = t.userFacingName(undefined) || t.name
+      if (t.prompt) {
+        try {
+          const promptResult = t.prompt()
+          if (typeof promptResult === 'string' && promptResult.length > 0) {
+            description = promptResult
+          }
+        } catch { /* non-fatal */ }
+      }
+      return {
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description,
+          parameters: t.inputSchema as Record<string, unknown>,
+        },
+      }
+    })
+
+    // Default tool context
     this.toolContext = {
-      model: 'unknown',
+      model: this.modelName,
       tools: config.tools,
       signal: new AbortController().signal, // placeholder; overridden in run()
       messages: [],
     }
   }
 
-  // ── Event System ─────────────────────────────────────────────────────────
+  // ── Event System (Gap #11: added off + removeAllListeners) ──────────────
 
   on<K extends keyof RunnerEvents>(
     event: K,
@@ -287,6 +344,26 @@ export class AgentRunner {
     this.eventHandlers.get(event)!.push(
       handler as RunnerEventHandler<keyof RunnerEvents>,
     )
+  }
+
+  /** Remove a specific event handler */
+  off<K extends keyof RunnerEvents>(
+    event: K,
+    handler: RunnerEventHandler<K>,
+  ): void {
+    const handlers = this.eventHandlers.get(event)
+    if (!handlers) return
+    const idx = handlers.indexOf(handler as RunnerEventHandler<keyof RunnerEvents>)
+    if (idx !== -1) handlers.splice(idx, 1)
+  }
+
+  /** Remove all listeners, optionally for a specific event */
+  removeAllListeners(event?: keyof RunnerEvents): void {
+    if (event) {
+      this.eventHandlers.delete(event)
+    } else {
+      this.eventHandlers.clear()
+    }
   }
 
   private emit<K extends keyof RunnerEvents>(
@@ -301,8 +378,20 @@ export class AgentRunner {
 
   // ── Core Loop ────────────────────────────────────────────────────────────
 
+  /** Set a system prompt override (e.g. memory section) without adding messages */
+  setSystemOverride(override: string | undefined): void {
+    ;(this.config as { systemPromptOverride?: string }).systemPromptOverride = override
+  }
+
+  /** Build the full system prompt including any override sections */
+  private buildSystemPrompt(): string {
+    const base = this.config.systemPrompt
+    const override = this.config.systemPromptOverride
+    return override ? `${override}\n\n${base}` : base
+  }
+
   /**
-   * Run one conversation turn.
+   * Run one conversation turn (batch mode — blocks until complete).
    * Sends the user message, loops through tool calls, returns the final response.
    */
   async run(userMessage: string, signal?: AbortSignal): Promise<string> {
@@ -317,10 +406,15 @@ export class AgentRunner {
         maxIterations: this.config.maxIterations,
       })
 
+      // Apply tool result budget (Gap #7) before building message list
+      const budgeted = this.config.toolResultBudget
+        ? applyToolResultBudget(this.messages, this.config.toolResultBudget)
+        : { messages: this.messages, cleared: 0, charsFreed: 0 }
+
       // Build full message list with system prompt
       let allMessages: ChatMessage[] = [
-        { role: 'system', content: this.config.systemPrompt },
-        ...this.messages,
+        { role: 'system', content: this.buildSystemPrompt() },
+        ...budgeted.messages,
       ]
 
       this.emit('llm:request', {
@@ -334,7 +428,7 @@ export class AgentRunner {
       // ── LLM call with retry + OTel span ─────────────────────────────────
       const llmStart   = Date.now()
       const llmSpan    = startLLMRequestSpan({
-        model:        'unknown', // ChatModel doesn't expose model name
+        model:        this.modelName,
         messageCount: allMessages.length,
         toolCount:    this.toolSchemas.length,
       })
@@ -391,7 +485,7 @@ export class AgentRunner {
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
 
-      // If the LLM wants to call tools
+      // If the LLM wants to call tools — use concurrent execution (Gap #2)
       if (result.toolCalls && result.toolCalls.length > 0) {
         // Add assistant message with tool calls
         this.messages.push({
@@ -400,164 +494,43 @@ export class AgentRunner {
           toolCalls: result.toolCalls,
         })
 
-        // Execute each tool call
+        // Execute tools via StreamingToolExecutor (concurrent when safe)
+        const executor = new StreamingToolExecutor(
+          this.config.tools,
+          { ...this.toolContext, signal: signal ?? new AbortController().signal },
+          {
+            permissions: this.config.permissions,
+            hooks: this.config.hooks,
+            sandbox: this.config.sandbox,
+            messages: this.messages,
+            signal,
+          },
+        )
+
         for (const call of result.toolCalls) {
           let parsedArgs: Record<string, unknown>
-          try {
-            parsedArgs = JSON.parse(call.arguments)
-          } catch {
-            parsedArgs = {}
-          }
-
+          try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
           this.emit('tool:call', { name: call.name, arguments: parsedArgs })
+          executor.addTool(call)
+        }
 
-          // Start tool span (wraps permission check + execution)
-          const toolSpan = startToolCallSpan({ toolName: call.name, args: parsedArgs })
-
-          // ── Permission check ──────────────────────────────────────────
-          if (this.config.permissions) {
-            const outcome = await this.config.permissions.evaluate(call.name, parsedArgs)
-            if (outcome.action === 'deny') {
-              const reason = outcome.reason
-              this.emit('tool:blocked', { name: call.name, reason })
-              endToolCallSpan({ blocked: true, blockReason: reason, durationMs: 0 })
-              this.messages.push({
-                role: 'tool',
-                toolCallId: call.id,
-                name: call.name,
-                content: JSON.stringify({ error: `Permission denied: ${reason}` }),
-              })
-              continue
-            }
-          }
-
-          // ── beforeToolCall hook ───────────────────────────────────────
-          const hookCtx = {
-            toolName: call.name,
-            arguments: parsedArgs,
-            messages: this.messages as readonly ChatMessage[],
-            iteration: iterations,
-          }
-
-          const beforeResult = await dispatchBeforeToolCall(this.config.hooks, hookCtx)
-          if (beforeResult.action === 'block') {
-            this.emit('tool:blocked', { name: call.name, reason: beforeResult.reason })
-            endToolCallSpan({ blocked: true, blockReason: beforeResult.reason, durationMs: 0 })
-            this.messages.push({
-              role: 'tool',
-              toolCallId: call.id,
-              name: call.name,
-              content: JSON.stringify({ error: `Blocked by hook: ${beforeResult.reason}` }),
-            })
-            continue
-          }
-
-          // If hook modified args, use those
-          const effectiveArgs = beforeResult.action === 'modify'
-            ? beforeResult.arguments
-            : parsedArgs
-
-          const startTime = Date.now()
-          let toolResultStr: string
-          let sandboxDurationMs: number | undefined
-
-          try {
-            const tool = findToolByName(this.config.tools, call.name)
-            if (tool) {
-              const ctx: ToolContext = {
-                ...this.toolContext,
-                signal: signal ?? new AbortController().signal,
-                messages: this.messages.map(m => ({
-                  role: m.role,
-                  content: 'content' in m ? m.content : '',
-                })),
-              }
-
-              // ── Sandbox execution ───────────────────────────────────
-              let rawResult: unknown
-              const execSpan = startToolExecutionSpan()
-
-              if (this.config.sandbox) {
-                try {
-                  const sandboxed = await this.config.sandbox.execute(
-                    call.name,
-                    effectiveArgs,
-                    async (args) => tool.call(args, ctx),
-                  )
-                  rawResult        = sandboxed.value
-                  sandboxDurationMs = sandboxed.durationMs
-                  endToolExecutionSpan(execSpan, { durationMs: sandboxDurationMs })
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err)
-                  endToolExecutionSpan(execSpan, { error: msg })
-                  const isSandboxErr = err instanceof Error && err.name === 'SandboxError'
-                  if (isSandboxErr) {
-                    const sandboxErr = err as { violation?: { type: string; detail: string } }
-                    this.emit('tool:sandbox-violation', {
-                      name:          call.name,
-                      violationType: sandboxErr.violation?.type ?? 'unknown',
-                      detail:        sandboxErr.violation?.detail ?? msg,
-                    })
-                  }
-                  throw err
-                }
-              } else {
-                try {
-                  rawResult = await tool.call(effectiveArgs, ctx)
-                  endToolExecutionSpan(execSpan)
-                } catch (err) {
-                  endToolExecutionSpan(execSpan, { error: err instanceof Error ? err.message : String(err) })
-                  throw err
-                }
-              }
-
-              const res = rawResult as { data: unknown }
-              toolResultStr = typeof res.data === 'string'
-                ? res.data
-                : JSON.stringify(res.data, null, 2)
-
-              // Truncate if needed
-              if (tool.maxResultChars > 0 && toolResultStr.length > tool.maxResultChars) {
-                toolResultStr =
-                  toolResultStr.slice(0, tool.maxResultChars) +
-                  `\n... [truncated, ${toolResultStr.length} chars total]`
-              }
-            } else {
-              toolResultStr = JSON.stringify({ error: `Unknown tool: ${call.name}` })
-            }
-
-            const durationMs = sandboxDurationMs ?? (Date.now() - startTime)
+        // Collect results (ordered, potentially concurrent)
+        for await (const toolResult of executor.getAllResults()) {
+          if (toolResult.error) {
+            this.emit('tool:error', { name: toolResult.name, error: toolResult.content })
+          } else {
             this.emit('tool:result', {
-              name:      call.name,
-              result:    toolResultStr.slice(0, 200),
-              durationMs,
+              name:      toolResult.name,
+              result:    toolResult.content.slice(0, 200),
+              durationMs: toolResult.durationMs,
             })
-
-            // ── afterToolCall hook ──────────────────────────────────
-            await dispatchAfterToolCall(this.config.hooks, hookCtx, toolResultStr)
-
-            // Close tool call span
-            endToolCallSpan({ durationMs })
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err)
-            toolResultStr  = JSON.stringify({ error: errorMsg })
-            this.emit('tool:error', { name: call.name, error: errorMsg })
-            // Close tool call span with error
-            endToolCallSpan({ error: errorMsg })
-            await dispatchAfterToolCall(
-              this.config.hooks,
-              hookCtx,
-              undefined,
-              err instanceof Error ? err : new Error(errorMsg),
-            )
           }
 
-          // Add tool result to history
           this.messages.push({
             role: 'tool',
-            toolCallId: call.id,
-            name: call.name,
-            content: toolResultStr,
+            toolCallId: toolResult.toolCallId,
+            name: toolResult.name,
+            content: toolResult.content,
           })
         }
 
@@ -572,6 +545,249 @@ export class AgentRunner {
     }
 
     return '[Agent reached maximum iterations without producing a final response]'
+  }
+
+  // ── Streaming Loop (Gap #1) ─────────────────────────────────────────────
+
+  /**
+   * Run one conversation turn in streaming mode.
+   * Yields progressive events (text deltas, tool calls, results) as they arrive.
+   * Falls back to batch mode if the model doesn't implement StreamingChatModel.
+   */
+  async *runStream(
+    userMessage: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<RunnerStreamEvent, void, undefined> {
+    this.messages.push({ role: 'user', content: userMessage })
+
+    // Check if model supports streaming
+    const isStreamable = 'stream' in this.config.model &&
+      typeof (this.config.model as StreamingChatModel).stream === 'function'
+
+    let iterations = 0
+
+    while (iterations < this.config.maxIterations) {
+      iterations++
+      yield { type: 'iteration', count: iterations, maxIterations: this.config.maxIterations }
+
+      // Apply tool result budget
+      const budgeted = this.config.toolResultBudget
+        ? applyToolResultBudget(this.messages, this.config.toolResultBudget)
+        : { messages: this.messages, cleared: 0, charsFreed: 0 }
+
+      let allMessages: ChatMessage[] = [
+        { role: 'system', content: this.buildSystemPrompt() },
+        ...budgeted.messages,
+      ]
+
+      yield {
+        type: 'llm_request',
+        messageCount: allMessages.length,
+        toolCount: this.toolSchemas.length,
+      }
+
+      allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages)
+
+      const llmStart = Date.now()
+      const llmSpan = startLLMRequestSpan({
+        model:        this.modelName,
+        messageCount: allMessages.length,
+        toolCount:    this.toolSchemas.length,
+      })
+
+      let result: ChatResult
+
+      if (isStreamable) {
+        // ── Streaming path ──────────────────────────────────────────────
+        const streamingModel = this.config.model as StreamingChatModel
+
+        // Assemble ChatResult from stream deltas
+        let assembledContent = ''
+        const assembledToolCalls: Map<number, ToolCall> = new Map()
+        let finishReason: ChatResult['finishReason'] = 'stop'
+        let usage: TokenUsage | undefined
+
+        const retryConfig: RetryConfig = {
+          ...this.config.retry,
+          signal,
+          onRetry: (info) => {
+            this.emit('llm:retry', info)
+            return this.config.retry?.onRetry?.(info)
+          },
+        }
+
+        const stream = await withRetry(
+          async () => {
+            // Reset for retry
+            assembledContent = ''
+            assembledToolCalls.clear()
+            // Start the stream — we need to return the generator itself
+            return streamingModel.stream({
+              messages: allMessages,
+              tools: this.toolSchemas.length > 0 ? this.toolSchemas : undefined,
+              temperature: this.config.temperature,
+              maxTokens: this.config.maxTokens,
+              signal,
+            })
+          },
+          retryConfig,
+        )
+
+        for await (const delta of stream) {
+          this.emit('llm:delta', delta)
+
+          // Text content
+          if (delta.content) {
+            assembledContent += delta.content
+            yield { type: 'text_delta', content: delta.content }
+          }
+
+          // Tool call assembly
+          if (delta.toolCallDelta) {
+            const tc = delta.toolCallDelta
+            if (!assembledToolCalls.has(tc.index)) {
+              assembledToolCalls.set(tc.index, {
+                id: tc.id ?? `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: tc.name ?? '',
+                arguments: '',
+              })
+            }
+            const existing = assembledToolCalls.get(tc.index)!
+            if (tc.id) existing.id = tc.id
+            if (tc.name) existing.name = tc.name
+            if (tc.arguments) existing.arguments += tc.arguments
+          }
+
+          if (delta.finishReason) finishReason = delta.finishReason
+          if (delta.usage) usage = delta.usage
+        }
+
+        const toolCalls = assembledToolCalls.size > 0
+          ? [...assembledToolCalls.values()]
+          : undefined
+
+        result = {
+          content: assembledContent || undefined,
+          toolCalls,
+          finishReason,
+          usage,
+        }
+      } else {
+        // ── Batch fallback ───────────────────────────────────────────────
+        const retryConfig: RetryConfig = {
+          ...this.config.retry,
+          signal,
+          onRetry: (info) => {
+            this.emit('llm:retry', info)
+            return this.config.retry?.onRetry?.(info)
+          },
+        }
+
+        result = await withRetry(
+          () => this.config.model.complete({
+            messages: allMessages,
+            tools: this.toolSchemas.length > 0 ? this.toolSchemas : undefined,
+            temperature: this.config.temperature,
+            maxTokens: this.config.maxTokens,
+            signal,
+          }),
+          retryConfig,
+        )
+
+        // Yield the full content as a single delta for consistency
+        if (result.content) {
+          yield { type: 'text_delta', content: result.content }
+        }
+      }
+
+      const llmDurationMs = Date.now() - llmStart
+
+      // Track usage
+      this._sessionUsage.llmCalls++
+      this._sessionUsage.totalDurationMs += llmDurationMs
+      if (result.usage) {
+        this._sessionUsage.totalPromptTokens += result.usage.promptTokens
+        this._sessionUsage.totalCompletionTokens += result.usage.completionTokens
+      }
+
+      yield {
+        type: 'llm_response',
+        hasToolCalls: !!result.toolCalls?.length,
+        contentLength: result.content?.length ?? 0,
+        usage: result.usage,
+        durationMs: llmDurationMs,
+      }
+      yield { type: 'usage', usage: { ...this._sessionUsage } }
+
+      endLLMRequestSpan(llmSpan, {
+        inputTokens:      result.usage?.promptTokens,
+        outputTokens:     result.usage?.completionTokens,
+        cacheReadTokens:  result.usage?.cacheReadTokens,
+        cacheWriteTokens: result.usage?.cacheWriteTokens,
+        durationMs:       llmDurationMs,
+        hasToolCalls:     !!result.toolCalls?.length,
+        finishReason:     result.finishReason,
+      })
+
+      const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations)
+      let finalContent = result.content
+      if (afterLlm.action === 'override') finalContent = afterLlm.content
+
+      // ── Tool execution (concurrent) ─────────────────────────────────
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        this.messages.push({
+          role: 'assistant',
+          content: finalContent,
+          toolCalls: result.toolCalls,
+        })
+
+        const executor = new StreamingToolExecutor(
+          this.config.tools,
+          { ...this.toolContext, signal: signal ?? new AbortController().signal },
+          {
+            permissions: this.config.permissions,
+            hooks: this.config.hooks,
+            sandbox: this.config.sandbox,
+            messages: this.messages,
+            signal,
+          },
+        )
+
+        for (const call of result.toolCalls) {
+          let parsedArgs: Record<string, unknown>
+          try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
+          yield { type: 'tool_call_start', name: call.name, arguments: parsedArgs }
+          executor.addTool(call)
+        }
+
+        for await (const toolResult of executor.getAllResults()) {
+          yield {
+            type: 'tool_call_result',
+            name: toolResult.name,
+            result: toolResult.content.slice(0, 500),
+            durationMs: toolResult.durationMs,
+            error: toolResult.error,
+          }
+
+          this.messages.push({
+            role: 'tool',
+            toolCallId: toolResult.toolCallId,
+            name: toolResult.name,
+            content: toolResult.content,
+          })
+        }
+
+        continue
+      }
+
+      // Final response
+      const response = finalContent ?? ''
+      this.messages.push({ role: 'assistant', content: response })
+      yield { type: 'final_response', content: response }
+      return
+    }
+
+    yield { type: 'final_response', content: '[Agent reached maximum iterations without producing a final response]' }
   }
 
   /**

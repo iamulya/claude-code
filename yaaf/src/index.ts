@@ -1,7 +1,7 @@
 /**
  * YAAF — A production-grade autonomous agent framework
  *
- * Five core subsystems + a plugin/adapter architecture:
+ * Core subsystems:
  *
  * 1. **State Store** — Immutable, selector-based reactive state management
  * 2. **Tool System** — Schema-validated tool definitions with permission layers
@@ -156,7 +156,21 @@ export {
   type SessionUsage,
   type RunnerEvents,
   type RunnerEventHandler,
+  type RunnerStreamEvent,
 } from './agents/runner.js'
+
+// ── Streaming Tool Executor (concurrent execution) ───────────────────────────
+export {
+  StreamingToolExecutor,
+  type ToolExecutionResult,
+} from './agents/streamingExecutor.js'
+
+// ── Tool Result Budget ───────────────────────────────────────────────────────
+export {
+  applyToolResultBudget,
+  type ToolResultBudgetConfig,
+  type ToolResultBudgetResult,
+} from './utils/toolResultBudget.js'
 
 // ── Agent (high-level abstraction over AgentRunner) ───────────────────────────
 export {
@@ -167,6 +181,14 @@ export {
   type AgentConfig,
   type ModelProvider,
 } from './agent.js'
+
+// ── Stream Adapter (bridges Agent → runtime harnesses) ────────────────────────
+export {
+  adaptStream,
+  toStreamableAgent,
+  type RuntimeStreamEvent,
+  type StreamableAgent,
+} from './runtime/adapter.js'
 
 // ── Models (built-in ChatModel implementations) ───────────────────────────────
 export { OpenAIChatModel, type OpenAIModelConfig } from './models/openai.js'
@@ -272,6 +294,7 @@ export {
   SkillRegistry,
   type Skill,
   type SkillFrontmatter,
+  type SkillRegistryEvents,
 } from './skills.js'
 
 // ── MCP Integration ───────────────────────────────────────────────────────────
@@ -408,3 +431,186 @@ export {
   YAAF_LOGGER_NAME,
   type YAAFSpanType,
 } from './telemetry/attributes.js'
+
+// ── Cost Tracker (Gap 1 + 6) ─────────────────────────────────────────────────
+export {
+  CostTracker,
+  type ModelPricing,
+  type UsageRecord,
+  type ModelUsage as CostModelUsage,
+  type CostSnapshot,
+} from './utils/costTracker.js'
+
+// ── Guardrails (Gap 3) ───────────────────────────────────────────────────────
+export {
+  Guardrails,
+  BudgetExceededError,
+  type GuardrailConfig,
+  type GuardrailResource,
+  type GuardrailStatus,
+  type GuardrailCheckResult,
+  type GuardrailDetail,
+  type GuardrailEvent,
+  type GuardrailListener,
+} from './utils/guardrails.js'
+
+// ── Coordinator Mode (Gap 2) ─────────────────────────────────────────────────
+export {
+  buildCoordinatorPrompt,
+  buildWorkerResult,
+  formatTaskNotification,
+  parseTaskNotification,
+  type TaskNotification,
+  type TaskStatus as CoordinatorTaskStatus,
+  type WorkerDefinition,
+  type CoordinatorPromptConfig,
+} from './agents/coordinator.js'
+
+// ── Agent Summarization (Gap 5) ──────────────────────────────────────────────
+export {
+  startAgentSummarization,
+  type AgentSummarizationConfig,
+  type SummarizationHandle,
+} from './agents/agentSummary.js'
+
+// ── Notifications (Gap 7) ────────────────────────────────────────────────────
+export {
+  ConsoleNotifier,
+  WebhookNotifier,
+  CallbackNotifier,
+  CompositeNotifier,
+  BufferNotifier,
+  type NotificationChannel,
+  type Notification,
+  type NotificationType,
+} from './utils/notifier.js'
+
+// ── Auto Memory Extraction (Gap 4) ───────────────────────────────────────────
+export {
+  AutoMemoryExtractor,
+  type AutoExtractorConfig,
+} from './memory/autoExtract.js'
+
+// ── Tool-Use Summaries (Gap 8) ───────────────────────────────────────────────
+export {
+  generateToolUseSummary,
+  type ToolInfo,
+  type ToolSummaryConfig,
+} from './utils/toolSummary.js'
+
+// ── Structured Compaction Prompts (Gap 9) ─────────────────────────────────────
+export {
+  buildCompactionPrompt,
+  stripAnalysisBlock,
+  extractAnalysisBlock,
+  type CompactionPromptConfig,
+} from './context/compactionPrompts.js'
+
+// ── History Snipping (Gap 10) ────────────────────────────────────────────────
+export {
+  snipHistory,
+  deduplicateToolResults,
+  type SnipConfig,
+  type SnipResult,
+} from './context/historySnip.js'
+
+// ── Auto-Compact Circuit Breaker (Gap 11) ────────────────────────────────────
+export {
+  CompactionCircuitBreaker,
+  type CircuitBreakerConfig,
+} from './context/circuitBreaker.js'
+
+// ── Away/Resume Summary (Gap 12) ─────────────────────────────────────────────
+export {
+  generateAwaySummary,
+  type AwaySummaryConfig,
+} from './utils/awaySummary.js'
+
+// ── Scratchpad (Gap 13) ──────────────────────────────────────────────────────
+export {
+  Scratchpad,
+  type ScratchpadConfig,
+  type ScratchpadEntry,
+} from './agents/scratchpad.js'
+
+// ── Content Replacement State (Gap 14) ───────────────────────────────────────
+export {
+  ContentReplacementTracker,
+  type FileEdit,
+  type EditType,
+  type ContentReplacementSnapshot,
+} from './context/contentReplacement.js'
+
+// ── Workflow Agents (ADK Parity — A1) ────────────────────────────────────────
+export {
+  sequential,
+  parallel,
+  loop,
+  asStep,
+  transform,
+  conditional,
+  type WorkflowAgent,
+  type WorkflowStep,
+  type SequentialConfig,
+  type ParallelConfig,
+  type LoopConfig,
+} from './agents/workflow.js'
+
+// ── Agent Tool (ADK Parity — A4) ─────────────────────────────────────────────
+export {
+  agentTool,
+  agentTools,
+  type AgentToolConfig,
+} from './tools/agentTool.js'
+
+// ── Structured Output (ADK Parity — A2) ──────────────────────────────────────
+export {
+  structuredAgent,
+  parseStructuredOutput,
+  buildSchemaPromptSection,
+  type OutputSchema,
+  type ParseResult,
+  type ParseSuccess,
+  type ParseFailure,
+  type StructuredAgentConfig,
+} from './agents/structuredOutput.js'
+
+// ── Tool Loop Detection (OpenClaw Parity — O9) ──────────────────────────────
+export {
+  ToolLoopDetector,
+  type LoopDetectorConfig,
+  type ToolCallRecord,
+  type LoopInfo,
+} from './tools/loopDetector.js'
+
+// ── Heartbeat / Proactive Scheduling (OpenClaw Parity — O4) ─────────────────
+export {
+  Heartbeat,
+  type ScheduledTask as HeartbeatTask,
+  type StandingOrder,
+  type HeartbeatConfig,
+} from './automation/heartbeat.js'
+
+// ── Context Engine (OpenClaw Parity — O8) ────────────────────────────────────
+export {
+  ContextEngine,
+  type ContextSection as ContextEngineSection,
+  type ContextEngineConfig,
+  type ContextInspection,
+  type SoulTransform,
+} from './agents/contextEngine.js'
+
+// ── Delegate Architecture (OpenClaw Parity — O6) ────────────────────────────
+export {
+  AgentRouter,
+  type AgentEntry,
+  type RoutingRule,
+  type RoutableMessage,
+  type PresenceInfo,
+  type SessionScope,
+} from './agents/delegate.js'
+
+// ── Gateway / Channels / Approvals ───────────────────────────────────────────
+// NOT exported from the main barrel by design.
+// Import explicitly via:  import { Gateway } from 'yaaf/gateway'
+// See src/gateway.ts for the opt-in entry point.
