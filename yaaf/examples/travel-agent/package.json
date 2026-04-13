@@ -1,0 +1,18 @@
+{
+  "name": "travel-agent-yaaf-example",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx tsx src/main.ts",
+    "demo": "npx tsx src/main.ts --demo"
+  },
+  "dependencies": {
+    "@google/genai": "^1.49.0",
+      "yaaf": "file:../../"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.0"
+  }
+}

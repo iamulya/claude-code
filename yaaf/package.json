@@ -1,0 +1,48 @@
+{
+  "name": "yaaf",
+  "version": "0.2.0",
+  "description": "YAAF (Yet Another Agentic Framework) — a production-grade framework for persistent memory, context management, multi-agent swarms, and tool orchestration.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "keywords": [
+    "agent", "llm", "swarm", "memory", "framework", "gemini", "openai", "opentelemetry"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@google/genai": ">=0.7.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "^0.57.0",
+    "@opentelemetry/sdk-logs": "^0.57.0",
+    "@opentelemetry/sdk-metrics": "^1.30.0",
+    "@opentelemetry/sdk-trace-base": "^1.30.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/semantic-conventions": "^1.30.0"
+  },
+  "peerDependenciesMeta": {
+    "@google/genai": { "optional": true },
+    "@opentelemetry/api": { "optional": true },
+    "@opentelemetry/api-logs": { "optional": true },
+    "@opentelemetry/sdk-logs": { "optional": true },
+    "@opentelemetry/sdk-metrics": { "optional": true },
+    "@opentelemetry/sdk-trace-base": { "optional": true },
+    "@opentelemetry/resources": { "optional": true },
+    "@opentelemetry/semantic-conventions": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "^0.57.0",
+    "@opentelemetry/sdk-logs": "^0.57.0",
+    "@opentelemetry/sdk-metrics": "^1.30.0",
+    "@opentelemetry/sdk-trace-base": "^1.30.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/semantic-conventions": "^1.30.0"
+  }
+}
