@@ -622,4 +622,5 @@ export {
   YaafDoctor,
   type YaafDoctorConfig,
   type DoctorIssue,
+  type WatchOptions,
 } from './doctor/index.js'

@@ -20,6 +20,7 @@ import type { Hooks } from '../hooks.js'
 import {
   dispatchBeforeToolCall,
   dispatchAfterToolCall,
+  type HookEventCallbacks,
 } from '../hooks.js'
 import {
   startToolCallSpan,
@@ -68,6 +69,7 @@ export class StreamingToolExecutor {
       sandbox?: Sandbox
       messages: ChatMessage[]
       signal?: AbortSignal
+      hookCallbacks?: HookEventCallbacks
     },
   ) {
     this.siblingAbort = new AbortController()
@@ -194,7 +196,7 @@ export class StreamingToolExecutor {
         iteration: 0,
       }
 
-      const beforeResult = await dispatchBeforeToolCall(this.config.hooks, hookCtx)
+      const beforeResult = await dispatchBeforeToolCall(this.config.hooks, hookCtx, this.config.hookCallbacks)
       if (beforeResult.action === 'block') {
         endToolCallSpan({ blocked: true, blockReason: beforeResult.reason, durationMs: 0 })
         tracked.result = {
@@ -237,7 +239,7 @@ export class StreamingToolExecutor {
                 durationMs,
               }
               tracked.status = 'completed'
-              await dispatchAfterToolCall(this.config.hooks, hookCtx, undefined, new Error(validation.message))
+              await dispatchAfterToolCall(this.config.hooks, hookCtx, undefined, new Error(validation.message), this.config.hookCallbacks)
               return
             }
           }
@@ -292,7 +294,7 @@ export class StreamingToolExecutor {
 
         const durationMs = Date.now() - startTime
         endToolCallSpan({ durationMs })
-        await dispatchAfterToolCall(this.config.hooks, hookCtx, toolResultStr)
+        await dispatchAfterToolCall(this.config.hooks, hookCtx, toolResultStr, undefined, this.config.hookCallbacks)
 
         tracked.result = {
           toolCallId: tracked.call.id,
@@ -315,6 +317,7 @@ export class StreamingToolExecutor {
           hookCtx,
           undefined,
           err instanceof Error ? err : new Error(errorMsg),
+          this.config.hookCallbacks,
         )
 
         tracked.result = {

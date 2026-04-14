@@ -4,13 +4,47 @@ YAAF ships with a built-in expert agent that understands the framework deeply an
 
 ---
 
-## Three Modes
+## Quickstart — Zero Code
 
-| Mode | Command / API | LLM Required | Description |
-|------|---------------|:---:|-------------|
+The fastest way to enable the Doctor. Pick one:
+
+### Option A: One config flag
+
+```typescript
+const agent = new Agent({
+  model: 'gpt-4o',
+  tools: [myTools],
+  doctor: true,   // ← that's it
+});
+```
+
+### Option B: One environment variable (no code changes at all)
+
+```bash
+YAAF_DOCTOR=1 npx tsx src/main.ts
+```
+
+Both approaches auto-attach the Doctor to your agent. It silently watches for `tool:error`, `tool:blocked`, `llm:retry`, sandbox violations, and iteration limits. When something goes wrong, it diagnoses the error using its own LLM call and logs the result.
+
+```
+[agent] 🩺 Doctor: Tool "bash" was blocked
+[agent] 🩺 Doctor: Doctor diagnosis: 1 runtime error(s) analyzed
+        The `bash` tool was blocked because the LLM attempted `rm -rf /tmp/*`
+        which matches the DANGEROUS_PATTERNS list in PermissionPolicy.
+        Fix: Add cliApproval({ dangerousPatterns: true }) to your permissions.
+```
+
+---
+
+## Modes
+
+| Mode | How | LLM | Description |
+|------|-----|:---:|-------------|
+| **Auto-Attach** | `doctor: true` or `YAAF_DOCTOR=1` | ✅ | Watches agent events, diagnoses errors (zero code) |
 | **Interactive** | `yaaf doctor` | ✅ | Ask questions, get code-grounded answers |
-| **Daemon** | `yaaf doctor --daemon` | ✅ | Proactive background watcher (Vigil-based) |
-| **Watch** | `yaaf doctor --watch` | ❌ | Lightweight `tsc --noEmit` loop (zero API cost) |
+| **Live Watch** | `doctor.watch(agent)` | ✅ | Programmatic event-stream tap with custom handlers |
+| **Daemon** | `yaaf doctor --daemon` | ✅ | Periodic tsc + test watcher (Vigil-based) |
+| **File Watch** | `yaaf doctor --watch` | ❌ | Lightweight `tsc --noEmit` loop (zero API cost) |
 
 ---
 
@@ -173,6 +207,118 @@ const stop = doctor.startWatch({
 stop();
 ```
 
+### Live Agent Watching — `doctor.watch(agent)`
+
+The most powerful mode. The Doctor **taps directly into your running agent's event stream** and watches for **16 event types** across every YAAF subsystem:
+
+**Tool errors:**
+
+| Event | What it catches |
+|-------|----------------|
+| `tool:error` | Tool threw an exception during execution |
+| `tool:blocked` | Permission policy denied a tool call |
+| `tool:sandbox-violation` | Tool escaped sandbox boundaries |
+| `tool:validation-failed` | LLM sent arguments that don't match the schema |
+| `tool:loop-detected` | Same tool called repeatedly with identical output |
+
+**LLM errors:**
+
+| Event | What it catches |
+|-------|----------------|
+| `llm:retry` | LLM API call failed (surfaces first + last retry) |
+| `llm:empty-response` | Model returned nothing useful (empty/whitespace only) |
+
+**Context & Recovery:**
+
+| Event | What it catches |
+|-------|----------------|
+| `iteration` | Agent approaching `maxIterations` limit |
+| `context:overflow-recovery` | Emergency compaction triggered (or failed) by token overflow |
+| `context:output-continuation` | Output token limit hit, synthetic continuation injected |
+| `context:compaction-triggered` | ContextManager auto-compaction ran (with before/after stats) |
+| `context:budget-warning` | Context approaching compaction threshold |
+
+**Hooks & Guardrails:**
+
+| Event | What it catches |
+|-------|----------------|
+| `hook:error` | A user-provided hook threw an error (swallowed to prevent crash) |
+| `hook:blocked` | A hook returned `{ action: 'block' }` |
+| `guardrail:warning` | Cost/token/turn budget approaching limit |
+| `guardrail:blocked` | Budget exceeded — agent stopped |
+
+Errors are accumulated in a **debounced buffer** — cascading failures (e.g., 20 `tool:blocked` events from one permission misconfiguration) are batched into a single LLM diagnosis call.
+
+```typescript
+import { Agent, YaafDoctor, buildTool } from 'yaaf';
+
+// The developer's agent
+const agent = new Agent({
+  model: 'gemini-2.5-flash',
+  systemPrompt: 'You are a coding assistant.',
+  tools: [readFileTool, writeFileTool, bashTool],
+});
+
+// Create the doctor and attach it to the agent
+const doctor = new YaafDoctor();
+
+doctor.onIssue((issue) => {
+  if (issue.type === 'runtime_error') {
+    console.log(`\n🔴 RUNTIME ERROR: ${issue.summary}`);
+    console.log(`   ${issue.details}`);
+  } else if (issue.type === 'pattern_warning') {
+    console.log(`\n🩺 DOCTOR SAYS: ${issue.summary}`);
+    console.log(`   ${issue.details}`);
+  }
+});
+
+// Start watching — subscribes to agent events
+doctor.watch(agent, {
+  debounceMs: 2000,     // Wait 2s after last error before diagnosing
+  maxBufferSize: 5,     // Force-diagnose after 5 errors
+  autoDiagnose: true,   // Use LLM to analyze (set false for raw events only)
+});
+
+// Agent runs normally — Doctor watches silently in the background
+await agent.run('Refactor the auth module and add tests');
+
+// When done, stop watching
+doctor.unwatch(agent);
+// Or: doctor.unwatchAll();
+```
+
+**What this looks like at runtime:**
+
+```
+> agent.run('Delete all temp files then rebuild')
+
+🔴 RUNTIME ERROR: Tool "bash" was blocked
+   Tool: bash
+   Reason: Command matches DANGEROUS_PATTERN: rm -rf
+   Fix: Check your PermissionPolicy — ensure this tool is allowed or has an approval handler.
+
+🩺 DOCTOR SAYS: Doctor diagnosis: 1 runtime error(s) analyzed
+   The `bash` tool was blocked because the LLM attempted `rm -rf /tmp/*` which matches
+   the DANGEROUS_PATTERNS list in your PermissionPolicy.
+
+   Fix: Add an approval handler for destructive commands:
+   ```ts
+   permissions: cliApproval({ dangerousPatterns: true })
+   ```
+   Or if you trust this operation, add it to the allow-list:
+   ```ts
+   permissions: new PermissionPolicy().allow('bash', { commands: ['rm -rf /tmp/*'] })
+   ```
+```
+
+**Watch options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `debounceMs` | `number` | `2000` | Quiet period before flushing error buffer |
+| `maxBufferSize` | `number` | `5` | Force-flush after this many errors |
+| `autoDiagnose` | `boolean` | `true` | Use Doctor's LLM to analyze errors |
+
 ---
 
 ## Configuration
@@ -265,31 +411,54 @@ It uses **tools to read your code** — so answers are always grounded in your a
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   YaafDoctor                         │
-│                                                     │
-│  ask(question)          → Agent.run() with tools     │
-│  askStream(question)    → Agent.runStream()          │
-│  healthCheck()          → tsc + npm test (no LLM)    │
-│  startDaemon()          → Vigil tick loop + LLM      │
-│  startWatch()           → setInterval + tsc (no LLM) │
-│                                                     │
-│  ┌────────────────┐  ┌──────────────────────────┐   │
-│  │  ErrorTracker   │  │   6 Code Intel Tools     │   │
-│  │  (diff-based,   │  │   read_file              │   │
-│  │   only surfaces │  │   grep_search            │   │
-│  │   NEW errors)   │  │   list_dir               │   │
-│  │                 │  │   run_tsc                 │   │
-│  │                 │  │   run_tests               │   │
-│  │                 │  │   get_project_structure   │   │
-│  └─────────────────┘  └──────────────────────────┘   │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐   │
-│  │           YAAF Framework (dogfooded)          │   │
-│  │   Agent · Vigil · ContextManager · buildTool  │   │
-│  │   Model Specs Registry · Error Recovery       │   │
-│  └──────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                       YaafDoctor                             │
+│                                                             │
+│  ask(question)          → Agent.run() with tools             │
+│  askStream(question)    → Agent.runStream()                  │
+│  healthCheck()          → tsc + npm test (no LLM)            │
+│  startDaemon()          → Vigil tick loop + LLM              │
+│  startWatch()           → setInterval + tsc (no LLM)         │
+│  watch(agent)           → event stream tap + LLM diagnosis   │
+│                                                             │
+│  ┌────────────────┐  ┌──────────────────────────────────┐   │
+│  │  ErrorTracker   │  │  RuntimeErrorBuffer              │   │
+│  │  (diff-based,   │  │  (debounced accumulator —        │   │
+│  │   for daemon)   │  │   batches cascading errors       │   │
+│  │                 │  │   into one LLM diagnosis call)   │   │
+│  └─────────────────┘  └──────────────────────────────────┘   │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Event Subscriptions (watch mode)                     │   │
+│  │  tool:error · tool:blocked · tool:sandbox-violation   │   │
+│  │  tool:validation-failed · llm:retry · iteration       │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │           YAAF Framework (dogfooded)                  │   │
+│  │   Agent · Vigil · ContextManager · buildTool          │   │
+│  │   RunnerEvents · Model Specs · Error Recovery         │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+              doctor.watch(devAgent)
+                      │
+          ┌───────────┼───────────────┐
+          ▼           ▼               ▼
+    tool:error   tool:blocked    llm:retry
+          │           │               │
+          └───────────┼───────────────┘
+                      ▼
+            RuntimeErrorBuffer
+            (debounce 2s / max 5)
+                      │
+                      ▼
+              Doctor's own LLM
+            (diagnose + suggest fix)
+                      │
+                      ▼
+            onIssue() handlers
+       (console, Slack, log, CI, etc.)
 ```
 
-The Doctor is built entirely with YAAF's own primitives — `Agent` for interactive mode, `Vigil` for daemon mode, `buildTool()` for code intelligence, and `ContextManager` with model-aware auto-configuration. The ultimate dogfood.
+The Doctor is built entirely with YAAF's own primitives — `Agent` for interactive mode, `Vigil` for daemon mode, `buildTool()` for code intelligence, `RunnerEvents` for live agent watching, and `ContextManager` with model-aware auto-configuration. The ultimate dogfood.

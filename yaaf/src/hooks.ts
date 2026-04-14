@@ -94,15 +94,28 @@ export type Hooks = {
 
 // ── Hook dispatcher (used internally by AgentRunner) ─────────────────────────
 
+/** Optional callbacks for the runner to emit events from hook dispatchers. */
+export type HookEventCallbacks = {
+  onError?: (hookName: string, error: string) => void
+  onBlock?: (hookName: string, toolName: string, reason: string) => void
+}
+
 export async function dispatchBeforeToolCall(
   hooks: Hooks | undefined,
   ctx: HookContext,
+  callbacks?: HookEventCallbacks,
 ): Promise<HookResult> {
   if (!hooks?.beforeToolCall) return { action: 'continue' }
   try {
-    return (await hooks.beforeToolCall(ctx)) ?? { action: 'continue' }
+    const result = (await hooks.beforeToolCall(ctx)) ?? { action: 'continue' }
+    if (result.action === 'block') {
+      callbacks?.onBlock?.('beforeToolCall', ctx.toolName, result.reason)
+    }
+    return result
   } catch (err) {
-    logger.error('beforeToolCall hook threw', { error: err instanceof Error ? err.message : String(err) })
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error('beforeToolCall hook threw', { error: msg })
+    callbacks?.onError?.('beforeToolCall', msg)
     return { action: 'continue' }
   }
 }
@@ -112,12 +125,19 @@ export async function dispatchAfterToolCall(
   ctx: HookContext,
   result: unknown,
   error?: Error,
+  callbacks?: HookEventCallbacks,
 ): Promise<HookResult> {
   if (!hooks?.afterToolCall) return { action: 'continue' }
   try {
-    return (await hooks.afterToolCall(ctx, result, error)) ?? { action: 'continue' }
+    const hookResult = (await hooks.afterToolCall(ctx, result, error)) ?? { action: 'continue' }
+    if (hookResult.action === 'block') {
+      callbacks?.onBlock?.('afterToolCall', ctx.toolName, hookResult.reason)
+    }
+    return hookResult
   } catch (err) {
-    logger.error('afterToolCall hook threw', { error: err instanceof Error ? err.message : String(err) })
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error('afterToolCall hook threw', { error: msg })
+    callbacks?.onError?.('afterToolCall', msg)
     return { action: 'continue' }
   }
 }
@@ -125,12 +145,15 @@ export async function dispatchAfterToolCall(
 export async function dispatchBeforeLLM(
   hooks: Hooks | undefined,
   messages: ChatMessage[],
+  callbacks?: HookEventCallbacks,
 ): Promise<ChatMessage[]> {
   if (!hooks?.beforeLLM) return messages
   try {
     return (await hooks.beforeLLM(messages)) ?? messages
   } catch (err) {
-    logger.error('beforeLLM hook threw', { error: err instanceof Error ? err.message : String(err) })
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error('beforeLLM hook threw', { error: msg })
+    callbacks?.onError?.('beforeLLM', msg)
     return messages
   }
 }
@@ -139,12 +162,15 @@ export async function dispatchAfterLLM(
   hooks: Hooks | undefined,
   response: ChatResult,
   iteration: number,
+  callbacks?: HookEventCallbacks,
 ): Promise<LLMHookResult> {
   if (!hooks?.afterLLM) return { action: 'continue' }
   try {
     return (await hooks.afterLLM(response, iteration)) ?? { action: 'continue' }
   } catch (err) {
-    logger.error('afterLLM hook threw', { error: err instanceof Error ? err.message : String(err) })
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error('afterLLM hook threw', { error: msg })
+    callbacks?.onError?.('afterLLM', msg)
     return { action: 'continue' }
   }
 }

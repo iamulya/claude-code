@@ -112,8 +112,8 @@ export type VigilEvents = {
   'cron:fire': { task: ScheduledTask; response: string }
   /** Agent produced structured output via the brief channel */
   'brief': { message: string; timestamp: Date }
-  /** Tick or cron task failed */
-  'error': { source: 'tick' | 'cron'; error: Error; task?: ScheduledTask }
+  /** Tick, cron task, or persistence operation failed */
+  'error': { source: 'tick' | 'cron' | 'persist'; error: Error; task?: ScheduledTask }
   /** Vigil started autonomous loop */
   'start': { tickInterval: number; taskCount: number }
   /** Vigil stopped */
@@ -497,7 +497,9 @@ export class Vigil extends Agent {
       await fsp.mkdir(this.storageDir, { recursive: true })
       await fsp.writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8')
     } catch (err) {
-      logger.error('Failed to persist tasks', { error: err instanceof Error ? err.message : String(err) })
+      const error = err instanceof Error ? err : new Error(String(err))
+      logger.error('Failed to persist tasks', { error: error.message })
+      this.emitVigil('error', { source: 'persist', error })
     }
   }
 

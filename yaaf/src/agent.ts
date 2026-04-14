@@ -29,6 +29,7 @@
  *       return { action: 'continue' };
  *     },
  *   },
+ *   doctor: true,  // built-in diagnostics agent watches for errors
  * });
  * ```
  */
@@ -62,6 +63,7 @@ import {
 } from './telemetry/tracing.js'
 import { ContextOverflowError } from './errors.js'
 import { Logger } from './utils/logger.js'
+import type { WatchOptions } from './doctor/index.js'
 
 const logger = new Logger('agent')
 
@@ -279,6 +281,31 @@ export type AgentConfig = {
    * ```
    */
   plugins?: Plugin[]
+
+  /**
+   * Enable the built-in YAAF Doctor to watch this agent for runtime errors.
+   *
+   * When enabled, the Doctor subscribes to the agent's event stream
+   * (tool:error, tool:blocked, llm:retry, etc.) and proactively
+   * diagnoses issues using its own LLM call.
+   *
+   * - `true` — enable with default settings
+   * - `WatchOptions` — enable with custom debounce/buffer/diagnose settings
+   * - `false` / omitted — disabled (default)
+   *
+   * Can also be enabled globally via the `YAAF_DOCTOR=1` env var
+   * (no code changes needed).
+   *
+   * @example
+   * ```ts
+   * const agent = new Agent({
+   *   model: 'gpt-4o',
+   *   tools: [myTools],
+   *   doctor: true,   // that's it — errors are diagnosed automatically
+   * });
+   * ```
+   */
+  doctor?: boolean | WatchOptions
 }
 
 // resolveProvider moved to src/models/resolver.ts — use resolveModel(config) directly.
@@ -337,6 +364,7 @@ export class Agent {
   private readonly session?: Session
   private readonly planMode?: PlanModeConfig
   protected readonly config: AgentConfig
+  private _doctor?: import('./doctor/index.js').YaafDoctor
 
   constructor(config: AgentConfig) {
     this.name = config.name ?? 'Agent'
@@ -414,6 +442,29 @@ export class Agent {
       for (const msg of config.session.getMessages()) {
         this.runner.addMessage(msg as ChatMessage)
       }
+    }
+
+    // Auto-attach Doctor if enabled via config or YAAF_DOCTOR env var.
+    // Uses dynamic import() so the doctor module is never loaded unless needed.
+    const doctorEnabled = config.doctor ?? (process.env.YAAF_DOCTOR === '1' || process.env.YAAF_DOCTOR === 'true')
+    if (doctorEnabled) {
+      const watchOpts: WatchOptions = typeof config.doctor === 'object' ? config.doctor : {}
+      import('./doctor/index.js').then(({ YaafDoctor }) => {
+        this._doctor = new YaafDoctor({
+          projectRoot: process.cwd(),
+        })
+        this._doctor.onIssue((issue) => {
+          if (issue.type === 'runtime_error') {
+            logger.warn(`🩺 Doctor: ${issue.summary}`, { details: issue.details })
+          } else if (issue.type === 'pattern_warning') {
+            logger.info(`🩺 Doctor: ${issue.summary}`, { details: issue.details })
+          }
+        })
+        this._doctor.watch(this, watchOpts)
+        logger.info('Doctor attached — watching for runtime errors')
+      }).catch((err) => {
+        logger.error('Failed to attach Doctor', { error: err instanceof Error ? err.message : String(err) })
+      })
     }
   }
 
@@ -509,10 +560,21 @@ export class Agent {
             `Compacted: ${compactionResult.messagesRemoved} messages removed, ` +
             `${compactionResult.tokensFreed} tokens freed`,
           )
+          // Emit compaction event via runner so Doctor can observe it
+          this.runner.emitContextEvent('context:compaction-triggered', {
+            tokensBefore: compactionResult.tokensFreed,
+            tokensAfter: 0,
+            strategy: 'auto',
+          })
         }
       } catch (err) {
         // Compaction failure is non-fatal — log and continue
-        logger.warn('Auto-compaction failed', { error: err instanceof Error ? err.message : String(err) })
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.warn('Auto-compaction failed', { error: errMsg })
+        this.runner.emitContextEvent('context:overflow-recovery', {
+          error: `Auto-compaction failed: ${errMsg}`,
+          compactionTriggered: false,
+        })
       }
     }
 
@@ -523,12 +585,21 @@ export class Agent {
     } catch (err) {
       // Check if this is a context overflow (prompt too long)
       if (this.isContextOverflow(err) && this.contextManager) {
+        const errMsg = err instanceof Error ? err.message : String(err)
         logger.warn('Context overflow detected — triggering emergency compaction')
+        this.runner.emitContextEvent('context:overflow-recovery', {
+          error: errMsg,
+          compactionTriggered: true,
+        })
         try {
           await this.contextManager.compact()
           // Retry after compaction
           response = await this.runner.run(userMessage, signal)
         } catch (retryErr) {
+          this.runner.emitContextEvent('context:overflow-recovery', {
+            error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+            compactionTriggered: false,
+          })
           endAgentRunSpan({ error: retryErr instanceof Error ? retryErr.message : String(retryErr) })
           throw retryErr
         }
@@ -634,6 +705,17 @@ export class Agent {
   ): this {
     this.runner.on(event, handler)
     return this // fluent
+  }
+
+  /**
+   * Remove a previously registered event handler.
+   */
+  off<K extends keyof RunnerEvents>(
+    event: K,
+    handler: RunnerEventHandler<K>,
+  ): this {
+    this.runner.off(event, handler)
+    return this
   }
 
   /** Reset the conversation history */

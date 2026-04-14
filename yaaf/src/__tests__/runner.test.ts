@@ -27,20 +27,8 @@ import {
   type RunnerStreamEvent,
 } from '../agents/runner.js'
 import { buildTool, type Tool, type ToolContext } from '../tools/tool.js'
+import { createMockModel, collectEvents } from './_helpers.js'
 
-// ── Mock Model ──────────────────────────────────────────────────────────────
-
-function createMockModel(responses: ChatResult[]): ChatModel & { model: string } {
-  let callIndex = 0
-  return {
-    model: 'test-model-v1',
-    async complete() {
-      const result = responses[callIndex] ?? { content: '[no more responses]', finishReason: 'stop' as const }
-      callIndex++
-      return result
-    }
-  }
-}
 
 function createStreamingMockModel(responses: ChatResult[]): StreamingChatModel & { model: string } {
   let callIndex = 0
@@ -284,7 +272,7 @@ describe('AgentRunner', () => {
       let emittedModel = ''
       runner.on('llm:request', () => { emittedModel = (model as { model: string }).model })
       await runner.run('Test')
-      expect(emittedModel).toBe('test-model-v1')
+      expect(emittedModel).toBe('test-model')
     })
   })
 

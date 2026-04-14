@@ -42,6 +42,7 @@ import {
   dispatchAfterToolCall,
   dispatchBeforeLLM,
   dispatchAfterLLM,
+  type HookEventCallbacks,
 } from '../hooks.js'
 import {
   startLLMRequestSpan,
@@ -181,17 +182,49 @@ export type RunnerStreamEvent =
 // ── Runner Events ────────────────────────────────────────────────────────────
 
 export type RunnerEvents = {
+  // ── Tool lifecycle ──────────────────────────────────────────────────────
   'tool:call': { name: string; arguments: Record<string, unknown> }
   'tool:result': { name: string; result: unknown; durationMs: number }
   'tool:error': { name: string; error: string }
   'tool:blocked': { name: string; reason: string }
   'tool:sandbox-violation': { name: string; violationType: string; detail: string }
   'tool:validation-failed': { name: string; message: string }
+  /** Tool returned suspiciously similar output to a previous call (loop risk) */
+  'tool:loop-detected': { name: string; repetitions: number; hash: string }
+
+  // ── LLM lifecycle ──────────────────────────────────────────────────────
   'llm:request': { messageCount: number; toolCount: number }
   'llm:response': { hasToolCalls: boolean; contentLength: number; usage?: TokenUsage; durationMs: number }
   'llm:delta': ChatDelta
   'llm:retry': { attempt: number; maxRetries: number; error: unknown; delayMs: number }
+  /** LLM returned nothing useful (empty or whitespace only) */
+  'llm:empty-response': { iteration: number }
+
+  // ── Context & Recovery ─────────────────────────────────────────────────
+  /** Agent approaching iteration limit */
   'iteration': { count: number; maxIterations: number }
+  /** Context overflow caught → emergency compaction triggered */
+  'context:overflow-recovery': { error: string; compactionTriggered: boolean }
+  /** Output token limit hit → synthetic continuation injected */
+  'context:output-continuation': { iteration: number; contentLength: number }
+  /** ContextManager auto-compaction threshold reached */
+  'context:compaction-triggered': { tokensBefore: number; tokensAfter: number; strategy: string }
+  /** Context warning — approaching compaction threshold */
+  'context:budget-warning': { usedTokens: number; budgetTokens: number; pctUsed: number }
+
+  // ── Hook lifecycle ─────────────────────────────────────────────────────
+  /** A user-provided hook threw an error (was swallowed) */
+  'hook:error': { hookName: string; error: string }
+  /** A hook returned 'block' — tool call was prevented */
+  'hook:blocked': { hookName: string; toolName: string; reason: string }
+
+  // ── Guardrail events ───────────────────────────────────────────────────
+  /** Guardrail budget approaching limit */
+  'guardrail:warning': { resource: string; current: number; limit: number; pctUsed: number }
+  /** Guardrail budget exceeded — agent blocked */
+  'guardrail:blocked': { resource: string; current: number; limit: number; reason: string }
+
+  // ── Session & Usage ────────────────────────────────────────────────────
   'usage': SessionUsage
 }
 
@@ -393,6 +426,30 @@ export class AgentRunner {
     }
   }
 
+  /**
+   * Emit a context-lifecycle event (compaction, overflow-recovery).
+   * Used by the owning Agent to surface context events to Doctor listeners.
+   * Kept separate from the generic `emit` to avoid exposing it too broadly.
+   */
+  emitContextEvent(
+    event: 'context:compaction-triggered' | 'context:overflow-recovery',
+    data: RunnerEvents['context:compaction-triggered'] | RunnerEvents['context:overflow-recovery'],
+  ): void {
+    this.emit(event as any, data as any)
+  }
+
+  /** Shared callbacks for hook dispatchers to emit runner events */
+  private get hookCallbacks(): HookEventCallbacks {
+    return {
+      onError: (hookName: string, error: string) => {
+        this.emit('hook:error', { hookName, error })
+      },
+      onBlock: (hookName: string, toolName: string, reason: string) => {
+        this.emit('hook:blocked', { hookName, toolName, reason })
+      },
+    }
+  }
+
   // ── Core Loop ────────────────────────────────────────────────────────────
 
   /** Set a system prompt override (e.g. memory section) without adding messages */
@@ -440,7 +497,7 @@ export class AgentRunner {
       })
 
       // ── beforeLLM hook ──────────────────────────────────────────────────
-      allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages)
+      allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages, this.hookCallbacks)
 
       // ── LLM call with retry + OTel span ─────────────────────────────────
       const llmStart   = Date.now()
@@ -498,9 +555,14 @@ export class AgentRunner {
       })
 
       // ── afterLLM hook ───────────────────────────────────────────────────
-      const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations)
+      const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations, this.hookCallbacks)
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
+
+      // ── Empty response detection ─────────────────────────────────────
+      if (!result.toolCalls?.length && !(finalContent ?? '').trim()) {
+        this.emit('llm:empty-response', { iteration: iterations })
+      }
 
       // If the LLM wants to call tools — use concurrent execution (Gap #2)
       if (result.toolCalls && result.toolCalls.length > 0) {
@@ -521,6 +583,7 @@ export class AgentRunner {
             sandbox: this.config.sandbox,
             messages: this.messages,
             signal,
+            hookCallbacks: this.hookCallbacks,
           },
         )
 
@@ -603,7 +666,7 @@ export class AgentRunner {
         toolCount: this.toolSchemas.length,
       }
 
-      allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages)
+      allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages, this.hookCallbacks)
 
       const llmStart = Date.now()
       const llmSpan = startLLMRequestSpan({
@@ -726,7 +789,15 @@ export class AgentRunner {
           try {
             await this.config.contextManager.compact('Automatic emergency compaction due to token limits.')
             recoveredFromOverflow = true
+            this.emit('context:overflow-recovery', {
+              error: errMsg,
+              compactionTriggered: true,
+            })
           } catch (compactErr) {
+            this.emit('context:overflow-recovery', {
+              error: errMsg,
+              compactionTriggered: false,
+            })
             throw err // Re-throw original if compaction fails
           }
         } else {
@@ -770,12 +841,16 @@ export class AgentRunner {
         finishReason:     result.finishReason,
       })
 
-      const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations)
+      const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations, this.hookCallbacks)
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
 
       // ── Max Output Tokens Recovery ───────────────────────────────────
       if (result.finishReason === 'length') {
+        this.emit('context:output-continuation', {
+          iteration: iterations,
+          contentLength: (finalContent ?? '').length,
+        })
         this.messages.push({
           role: 'assistant',
           content: finalContent ?? '',
@@ -787,6 +862,11 @@ export class AgentRunner {
         })
         iterations--
         continue
+      }
+
+      // ── Empty response detection ─────────────────────────────────────
+      if (!result.toolCalls?.length && !(finalContent ?? '').trim()) {
+        this.emit('llm:empty-response', { iteration: iterations })
       }
 
       // ── Tool execution (concurrent) ─────────────────────────────────
@@ -806,17 +886,29 @@ export class AgentRunner {
             sandbox: this.config.sandbox,
             messages: this.messages,
             signal,
+            hookCallbacks: this.hookCallbacks,
           },
         )
 
         for (const call of result.toolCalls) {
           let parsedArgs: Record<string, unknown>
           try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
+          this.emit('tool:call', { name: call.name, arguments: parsedArgs })
           yield { type: 'tool_call_start', name: call.name, arguments: parsedArgs }
           executor.addTool(call)
         }
 
         for await (const toolResult of executor.getAllResults()) {
+          if (toolResult.error) {
+            this.emit('tool:error', { name: toolResult.name, error: toolResult.content })
+          } else {
+            this.emit('tool:result', {
+              name:      toolResult.name,
+              result:    toolResult.content.slice(0, 200),
+              durationMs: toolResult.durationMs,
+            })
+          }
+
           yield {
             type: 'tool_call_result',
             name: toolResult.name,

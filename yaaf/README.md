@@ -18,7 +18,7 @@ yaaf dev
 |---------|------|-------------|---------------|
 | Runtime deps | **0** | 50+ | 15+ |
 | CLI scaffold | `yaaf init` | ❌ | ❌ |
-| Built-in expert agent | `yaaf doctor` | ❌ | ❌ |
+| Built-in diagnostics | `doctor: true` (16 events) | ❌ | ❌ |
 | Ship as CLI product | `createCLI()` | ❌ | ❌ |
 | Ship as HTTP API | `createServer()` | ❌ | ❌ |
 | Ship to edge | `createWorker()` | ❌ | ✅ |
@@ -146,7 +146,7 @@ The full documentation is split into focused chapters:
 | Doc | Description |
 |-----|-------------|
 | [Multi-Agent](docs/multi-agent.md) | Orchestrator, Mailbox IPC, AgentRouter, delegates |
-| [YAAF Doctor](docs/doctor.md) | Built-in expert agent, daemon mode, error diagnosis |
+| [YAAF Doctor](docs/doctor.md) | Built-in diagnostic agent, 16-event live watch, auto-attach, daemon mode |
 | [Observability](docs/telemetry.md) | OpenTelemetry spans, metrics, logs, cost tracking |
 | [Plugins](docs/plugins.md) | Plugin architecture, MCP, Honcho, AgentFS, Camoufox |
 | [Security](docs/security.md) | Sandbox, SecureStorage, session persistence, approvals |
@@ -233,39 +233,43 @@ const router = new RouterChatModel({
 
 ---
 
-## YAAF Doctor — Built-in Expert Agent
+## YAAF Doctor — Built-in Diagnostic Agent
 
-Every YAAF project ships with a built-in diagnostic agent. No extra install needed.
+Every YAAF agent ships with a built-in diagnostic agent. No extra install, no extra code.
+
+**One flag:**
+```typescript
+const agent = new Agent({
+  model: 'gpt-4o',
+  tools: [myTools],
+  doctor: true,   // ← watches for runtime errors, diagnoses automatically
+});
+```
+
+**Or one env var (zero code changes):**
+```bash
+YAAF_DOCTOR=1 npx tsx src/main.ts
+```
+
+The Doctor silently subscribes to **16 event types** across every YAAF subsystem:
+
+| Subsystem | Events watched |
+|-----------|---------------|
+| **Tools** | `tool:error` · `tool:blocked` · `tool:sandbox-violation` · `tool:validation-failed` · `tool:loop-detected` |
+| **LLM** | `llm:retry` · `llm:empty-response` |
+| **Context** | `context:overflow-recovery` · `context:output-continuation` · `context:compaction-triggered` · `context:budget-warning` · `iteration` |
+| **Hooks & Guardrails** | `hook:error` · `hook:blocked` · `guardrail:warning` · `guardrail:blocked` |
+
+When something fails, the Doctor uses its own LLM call to diagnose the root cause and log a fix — including code suggestions. Cascading errors (e.g., 20 `tool:blocked` from one permission bug) are batched into a single diagnosis call.
 
 ```bash
-# Interactive REPL — ask anything about your YAAF project
-npx yaaf doctor
-
-# Background daemon — watches for errors, suggests fixes
-npx yaaf doctor --daemon
-
-# Lightweight watcher — just tsc, no LLM, zero cost
-npx yaaf doctor --watch
+# Also available as a standalone CLI:
+npx yaaf doctor                 # Interactive REPL — ask anything
+npx yaaf doctor --daemon        # Periodic tsc + test watcher
+npx yaaf doctor --watch         # Lightweight tsc loop (no LLM)
 ```
 
-Or embed it programmatically:
-
-```typescript
-import { Agent, YaafDoctor } from 'yaaf';
-
-// Run alongside your agent
-const doctor = new YaafDoctor();
-doctor.onIssue((issue) => console.log(`🩺 ${issue.summary}`));
-await doctor.startDaemon();
-
-// One-shot health check
-const issues = await doctor.healthCheck();
-
-// Ask a question
-const answer = await doctor.ask('Why is my context overflowing?');
-```
-
-The Doctor is built entirely with YAAF's own primitives — `Agent` for interactive Q&A, `Vigil` for the daemon loop, `buildTool()` for code intelligence. **[Full documentation →](docs/doctor.md)**
+**[Full documentation →](docs/doctor.md)**
 
 ---
 
@@ -277,7 +281,7 @@ The Doctor is built entirely with YAAF's own primitives — `Agent` for interact
 4. **Streaming First** — Every runtime supports streaming with a unified `RuntimeStreamEvent` type.
 5. **Memory is Composable** — Extraction (when to persist) and retrieval (what to inject) are independent interfaces.
 6. **Context is Finite** — `ContextManager` actively manages token budgets with 7 pluggable compaction strategies.
-7. **Observable by Default** — Every action emits both typed events and OpenTelemetry spans.
+7. **Observable by Default** — Every action emits typed `RunnerEvents` (22 event types) and OpenTelemetry spans. The built-in Doctor watches all of them.
 8. **Plugin-First** — External capabilities are typed adapter interfaces. No vendor coupling.
 
 ---

@@ -1,14 +1,14 @@
 /**
- * Tests for the 9 OpenClaw-parity features:
- * - O9: Tool Loop Detection
- * - O3: SOUL.md Personality
- * - O1: Gateway / Channels
- * - O7: Response Chunking
- * - O4: Heartbeat / Proactive Scheduling
- * - O8: Context Engine
- * - O5: Async Approvals
- * - O6: Delegate Architecture
- * - O2: Skill Hot-Reload (SkillRegistry.registerDynamic)
+ * YAAF extension features test suite
+ *
+ * - ToolLoopDetector: loop detection and prevention
+ * - Soul / Personality: SOUL.md parsing and system-prompt injection
+ * - Gateway + Channels: inbound/outbound message routing and chunking
+ * - Heartbeat: scheduled task execution
+ * - ContextEngine: composable system-prompt building
+ * - ApprovalManager: async human-in-the-loop approvals
+ * - AgentRouter: named-agent routing and session isolation
+ * - SkillRegistry: dynamic skill hot-reload
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

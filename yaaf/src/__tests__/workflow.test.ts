@@ -1,8 +1,9 @@
 /**
- * Tests for the 3 ADK-parity features:
- * - Workflow Agents (sequential, parallel, loop)
- * - AgentTool (agent-as-tool)
- * - Structured Output (schema-enforced JSON)
+ * Workflow, AgentTool, and StructuredOutput tests
+ *
+ * - Workflow Agents: sequential, parallel, loop, transform, conditional
+ * - AgentTool: agent-as-tool wrapping
+ * - Structured Output: schema-enforced JSON generation
  */
 
 import { describe, it, expect } from 'vitest'
