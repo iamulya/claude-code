@@ -1,8 +1,8 @@
 # YAAF — Yet Another Agentic Framework
 
-> A production-grade, multi-provider autonomous agent framework for TypeScript.
+> A production-grade, security-hardened, multi-provider autonomous agent framework for TypeScript.
 
-Zero runtime dependencies. Multi-provider (Gemini, OpenAI, Groq, Ollama). Ship agents as CLIs, web APIs, edge functions, or chat bots — all from one codebase.
+Zero runtime dependencies. Multi-provider (Gemini, OpenAI, Anthropic, Groq, Ollama). OWASP LLM Top 10 aligned (9.3/10). Ship agents as CLIs, web APIs, edge functions, or chat bots — all from one codebase.
 
 ```bash
 npm install yaaf
@@ -23,6 +23,12 @@ yaaf dev
 | Ship as HTTP API | `createServer()` | ❌ | ❌ |
 | Ship to edge | `createWorker()` | ❌ | ✅ |
 | Premium terminal UI | `createInkCLI()` | ❌ | ❌ |
+| OWASP LLM security | **9.3/10** (11 modules) | ❌ | ❌ |
+| IAM (RBAC + ABAC) | Built-in | ❌ | ❌ |
+| A2A protocol | Client + Server | ❌ | ❌ |
+| Remote WebSocket sessions | Built-in (RFC 6455) | ❌ | ❌ |
+| OpenAPI → Tools | `OpenAPIToolset` | Plugin | ❌ |
+| MCP OAuth | PKCE + Client Credentials | ❌ | ❌ |
 | Memory strategies | 7 built-in | 3 | ❌ |
 | Context compaction | 7 strategies | ❌ | ❌ |
 | Model specs registry | 40+ models | ❌ | ❌ |
@@ -68,9 +74,105 @@ for await (const event of agent.runStream('Explain relativity')) {
 **Set one API key and go:**
 
 ```bash
-export GOOGLE_API_KEY=...           # → auto-selects Gemini
+export GEMINI_API_KEY=...           # → auto-selects Gemini
 export OPENAI_API_KEY=sk-...        # → auto-selects GPT-4o
 export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
+```
+
+---
+
+## Security — OWASP LLM Top 10 Aligned (9.3/10)
+
+YAAF ships with 11 security modules across 3 defense layers — zero external dependencies.
+
+### One-Line Security
+
+```typescript
+const agent = new Agent({
+  systemPrompt: 'You are a helpful assistant.',
+  tools: [myTools],
+  security: true,                 // ← enables PromptGuard + OutputSanitizer + PiiRedactor
+  toolResultBoundaries: true,     // ← wraps tool outputs in safe delimiters
+});
+```
+
+### Fine-Grained Control
+
+```typescript
+const agent = new Agent({
+  systemPrompt: '...',
+  security: {
+    promptGuard: { mode: 'block', sensitivity: 'high' },
+    outputSanitizer: { stripHtml: true },
+    piiRedactor: { categories: ['email', 'ssn', 'credit_card', 'api_key'] },
+  },
+  toolResultBoundaries: true,
+});
+```
+
+### OWASP Scorecard
+
+| # | Risk | Score | Components |
+|---|------|-------|------------|
+| LLM01 | Prompt Injection | **10/10** | PromptGuard (15+ patterns) · InputAnomalyDetector (entropy, repetition) · tool result boundaries |
+| LLM02 | Insecure Output | **9/10** | OutputSanitizer (XSS/HTML/URL) · StructuredOutputValidator (JSON schema, URL allowlists) |
+| LLM04 | Model DoS | **10/10** | Guardrails (global budgets) · PerUserRateLimiter (per-identity) · InputAnomalyDetector (length) |
+| LLM05 | Supply Chain | **8/10** | TrustPolicy (SHA-256 hashes, semver constraints, MCP tool allowlists) |
+| LLM06 | Sensitive Info | **9/10** | PiiRedactor (9 categories, Luhn validation, bidirectional) |
+| LLM07 | Insecure Plugins | **9/10** | TrustPolicy (integrity verification, unknown entity policy) |
+| LLM08 | Excessive Agency | **10/10** | IAM (RBAC + ABAC) · Permissions · PerUserRateLimiter |
+| LLM09 | Overreliance | **8/10** | GroundingValidator (keyword overlap scoring) · StructuredOutputValidator |
+
+### Security Architecture
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                  LAYER 1: INPUT PROTECTION                    │
+│  PromptGuard · InputAnomalyDetector · PiiRedactor (input)     │
+├───────────────────────────────────────────────────────────────┤
+│                LAYER 2: EXECUTION SAFETY                      │
+│  TrustPolicy · Tool Result Boundaries · PerUserRateLimiter    │
+├───────────────────────────────────────────────────────────────┤
+│                 LAYER 3: OUTPUT PROTECTION                    │
+│  OutputSanitizer · StructuredOutputValidator · GroundingValid. │
+├───────────────────────────────────────────────────────────────┤
+│    SecurityAuditLog — centralized event log, NDJSON, SIEM     │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**[Full security documentation →](docs/security.md)**
+
+---
+
+## IAM — Identity & Access Management
+
+Built-in RBAC, ABAC, multi-tenant data scoping, and audit logging:
+
+```typescript
+import { Agent, rbac, abac, TenantScopeStrategy } from 'yaaf';
+
+const agent = new Agent({
+  systemPrompt: '...',
+  tools: [invoiceTool, reportTool, adminTool],
+  accessPolicy: {
+    authorization: rbac({
+      viewer: ['search_*', 'read_*'],
+      editor: ['search_*', 'read_*', 'write_*'],
+      admin: ['*'],
+    }),
+    dataScope: new TenantScopeStrategy({ field: 'tenantId' }),
+    onDecision: (event) => auditLog.write(event),
+  },
+});
+
+// Each run carries user identity
+const result = await agent.run('Show my invoices', {
+  user: {
+    userId: 'alice-123',
+    roles: ['editor'],
+    attributes: { tenantId: 'acme', department: 'finance' },
+  },
+});
 ```
 
 ---
@@ -83,26 +185,37 @@ export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
 │   createCLI()    createServer()    createWorker()    createInkCLI() │
 │   yaaf/cli-runtime   yaaf/server     yaaf/worker      yaaf/cli-ink │
 ├─────────────────────────────────────────────────────────────────────┤
+│                    Remote & Interop Layer                            │
+│   RemoteSessionServer (yaaf/remote)     A2A Server/Client           │
+│   WebSocket (RFC 6455) + HTTP fallback  Agent Cards + JSON-RPC 2.0  │
+├─────────────────────────────────────────────────────────────────────┤
 │                      Stream Adapter                                 │
 │         adaptStream()  ←  RunnerStreamEvent → RuntimeStreamEvent    │
 ├─────────────────────────────────────────────────────────────────────┤
 │                        Agent (high-level)                           │
 │   run() / runStream() / events / hooks / permissions / sandbox      │
+│   security: true  ·  toolResultBoundaries  ·  accessPolicy          │
 ├────────────────────┬───────────────────────────────────┬────────────┤
 │   AgentRunner      │     Memory                        │  Context   │
 │   LLM ↔ Tool loop  │     MemoryStore + 7 strategies    │  Manager + │
 │   Streaming        │     TeamMemory (multi-agent)      │  7 compact │
 │   Retry + backoff  │     Relevance scoring             │  strategies│
 ├────────────────────┼───────────────────────────────────┼────────────┤
-│   Tools            │     Models                       │  Plugins    │
-│   buildTool()      │     GeminiChatModel              │  MCP        │
-│   ToolLoopDetector │     OpenAIChatModel              │  Honcho     │
-│   Schema validation│     RouterChatModel              │  AgentFS    │
-│                    │     BYO ChatModel interface      │  Camoufox   │
+│   Tools            │     Models                        │  Plugins   │
+│   buildTool()      │     GeminiChatModel               │  MCP +     │
+│   OpenAPIToolset   │     OpenAIChatModel               │  MCP OAuth │
+│   ToolLoopDetector │     AnthropicChatModel            │  Honcho    │
+│   Schema validation│     RouterChatModel               │  AgentFS   │
+│                    │     BYO ChatModel interface       │  Camoufox  │
 ├────────────────────┴───────────────────────────────────┴────────────┤
 │  Skills · Permissions · Hooks · Sandbox · Session · SecureStorage   │
 │  SystemPromptBuilder · ContextEngine · Vigil · Heartbeat · Gateway  │
 │  Doctor (built-in expert agent) · Model Specs Registry              │
+├─────────────────────────────────────────────────────────────────────┤
+│                      Security & IAM                                 │
+│  PromptGuard · OutputSanitizer · PiiRedactor · InputAnomalyDetector │
+│  TrustPolicy · GroundingValidator · PerUserRateLimiter              │
+│  StructuredOutputValidator · SecurityAuditLog · RBAC/ABAC · Scoping │
 ├─────────────────────────────────────────────────────────────────────┤
 │                       OpenTelemetry                                 │
 │              Traces · Metrics · Logs · Cost tracking                │
@@ -132,6 +245,13 @@ The full documentation is split into focused chapters:
 | [Permissions & Hooks](docs/permissions.md) | `PermissionPolicy`, `Hooks`, `cliApproval()` |
 | [System Prompts](docs/prompts.md) | `SystemPromptBuilder`, `ContextEngine`, `Soul` |
 
+### Security & IAM
+
+| Doc | Description |
+|-----|-------------|
+| [Security](docs/security.md) | OWASP LLM alignment, 11 security modules, `security: true`, audit log |
+| [IAM](docs/iam.md) | RBAC, ABAC, tenant scoping, identity providers, audit |
+
 ### Delivery & Deployment
 
 | Doc | Description |
@@ -149,7 +269,15 @@ The full documentation is split into focused chapters:
 | [YAAF Doctor](docs/doctor.md) | Built-in diagnostic agent, 16-event live watch, auto-attach, daemon mode |
 | [Observability](docs/telemetry.md) | OpenTelemetry spans, metrics, logs, cost tracking |
 | [Plugins](docs/plugins.md) | Plugin architecture, MCP, Honcho, AgentFS, Camoufox |
-| [Security](docs/security.md) | Sandbox, SecureStorage, session persistence, approvals |
+
+### Interoperability
+
+| Doc | Description |
+|-----|-------------|
+| [A2A Protocol](docs/a2a.md) | Cross-framework agent communication (JSON-RPC 2.0, Agent Cards) |
+| [Remote Sessions](docs/remote-sessions.md) | WebSocket + HTTP server for distributed agent serving |
+| [MCP OAuth](docs/mcp-oauth.md) | OAuth 2.0 (PKCE + Client Credentials) for authenticated MCP servers |
+| [OpenAPI Toolset](docs/openapi.md) | Auto-generate tools from OpenAPI 3.x specs |
 
 ---
 
@@ -160,6 +288,29 @@ YAAF uses opt-in subpackages to keep the core zero-dep:
 ```typescript
 // Core (zero dependencies)
 import { Agent, buildTool, MemoryStore, ContextManager } from 'yaaf';
+
+// Security (zero dependencies — included in core)
+import {
+  PromptGuard, OutputSanitizer, PiiRedactor,
+  TrustPolicy, GroundingValidator, PerUserRateLimiter,
+  InputAnomalyDetector, StructuredOutputValidator, SecurityAuditLog,
+  securityHooks,
+} from 'yaaf';
+
+// IAM (zero dependencies — included in core)
+import { rbac, abac, TenantScopeStrategy } from 'yaaf';
+
+// A2A — cross-framework agent interop (zero deps)
+import { A2AClient, A2AServer, serveA2A, a2aTool } from 'yaaf';
+
+// MCP OAuth — authenticated MCP server connections (zero deps)
+import { McpOAuthClient, FileTokenStore, oauthMcpServer } from 'yaaf';
+
+// OpenAPI — auto-generate tools from specs (zero deps)
+import { OpenAPIToolset } from 'yaaf';
+
+// Remote sessions — WebSocket/HTTP agent serving (zero deps)
+import { RemoteSessionServer, startRemoteServer } from 'yaaf/remote';
 
 // Gateway — channels, soul, approvals (zero deps)
 import { Gateway, Soul, ApprovalManager } from 'yaaf/gateway';
@@ -183,7 +334,19 @@ import { createWorker } from 'yaaf/worker';
 
 | Example | Features |
 |---------|----------|
+| [a2a-interop](examples/a2a-interop/) | A2A protocol, YAAF ↔ Vercel AI SDK cross-framework communication |
+| [remote-sessions](examples/remote-sessions/) | WebSocket server, HTTP chat, session persistence, management |
+| [mcp-oauth](examples/mcp-oauth/) | OAuth 2.0 (PKCE + Client Credentials), token persistence, mock server |
+| [openapi-tools](examples/openapi-tools/) | OpenAPIToolset, auto-generated tools, httpbin.org live API |
+| [multi-agent-workflow](examples/multi-agent-workflow/) | Orchestrator, delegates, multi-agent pipeline |
+| [agent-swarm](examples/agent-swarm/) | Mailbox IPC, peer-to-peer swarm communication |
+| [deep-research](examples/deep-research/) | Multi-step research, context assembly, structured synthesis |
 | [travel-agent](examples/travel-agent/) | Agent, multi-turn REPL, tool events, Gemini + OpenAI |
+| [doctor-diagnostics](examples/doctor-diagnostics/) | Doctor auto-diagnosis, 16-event watch, error batching |
+| [streaming-agent](examples/streaming-agent/) | runStream(), text_delta events, streaming UX |
+| [structured-output](examples/structured-output/) | JSON schema output, structured data extraction |
+| [memory-agent](examples/memory-agent/) | Memory strategies, extraction + retrieval |
+| [guardrails-and-cost](examples/guardrails-and-cost/) | Cost tracking, guardrails, token budgets |
 | [permissions-and-hooks](examples/permissions-and-hooks/) | PermissionPolicy, cliApproval(), Hooks, audit log |
 | [secure-storage](examples/secure-storage/) | SecureStorage, env/password/machine key modes |
 | [session-persistence](examples/session-persistence/) | Session.resumeOrCreate(), crash recovery |
@@ -194,7 +357,8 @@ import { createWorker } from 'yaaf/worker';
 
 ```bash
 cd examples/<example-name>
-GOOGLE_API_KEY=... npx tsx src/main.ts
+npm install
+GEMINI_API_KEY=... npx tsx src/index.ts
 ```
 
 ---
@@ -202,13 +366,16 @@ GOOGLE_API_KEY=... npx tsx src/main.ts
 ## Multi-Provider Support
 
 ```typescript
-import { GeminiChatModel, OpenAIChatModel, RouterChatModel } from 'yaaf';
+import { GeminiChatModel, OpenAIChatModel, AnthropicChatModel, RouterChatModel } from 'yaaf';
 
 // Gemini
 const gemini = new GeminiChatModel({ model: 'gemini-2.5-flash' });
 
 // OpenAI
 const openai = new OpenAIChatModel({ model: 'gpt-4o' });
+
+// Anthropic
+const claude = new AnthropicChatModel({ model: 'claude-sonnet-4' });
 
 // Groq (OpenAI-compatible)
 const groq = new OpenAIChatModel({
@@ -226,8 +393,70 @@ const ollama = new OpenAIChatModel({
 // Smart routing — cheap requests → fast model, complex → capable
 const router = new RouterChatModel({
   fast: gemini,
-  capable: openai,
+  capable: claude,
   route: (ctx) => ctx.messages.length > 10 ? 'capable' : 'fast',
+});
+```
+
+---
+
+## A2A — Cross-Framework Agent Interop
+
+Expose any YAAF agent as an [A2A](https://a2a-protocol.org) server, or call remote agents from any framework:
+
+```typescript
+import { Agent, serveA2A, A2AClient, a2aTool } from 'yaaf';
+
+// Expose a YAAF agent as an A2A server
+const handle = await serveA2A(myAgent, {
+  name: 'Weather Specialist',
+  skills: [{ id: 'weather', name: 'Weather Lookup' }],
+  port: 4100,
+});
+// Agent Card at: http://localhost:4100/.well-known/agent.json
+
+// Call any remote A2A agent as a YAAF tool (one-liner)
+const weatherTool = a2aTool('https://weather-agent.example.com');
+const agent = new Agent({ tools: [weatherTool] });
+```
+
+---
+
+## Remote Sessions — WebSocket Agent Serving
+
+Serve agents over WebSocket + HTTP with persistent sessions:
+
+```typescript
+import { RemoteSessionServer } from 'yaaf/remote';
+
+const server = new RemoteSessionServer(myAgent, {
+  port: 8080,
+  maxSessions: 100,
+  sessionTimeoutMs: 30 * 60_000,
+});
+
+const handle = await server.start();
+// HTTP:      POST http://localhost:8080/chat
+// WebSocket: ws://localhost:8080/ws
+// Sessions:  GET  http://localhost:8080/sessions
+```
+
+Zero-dependency WebSocket (RFC 6455 built-in — no `ws` package).
+
+---
+
+## OpenAPI → Tools (Zero Config)
+
+Auto-generate agent tools from any OpenAPI 3.x spec:
+
+```typescript
+import { Agent, OpenAPIToolset } from 'yaaf';
+
+const toolset = OpenAPIToolset.fromSpec(mySpec);
+// or: OpenAPIToolset.fromUrl('https://api.example.com/openapi.json')
+
+const agent = new Agent({
+  tools: toolset.tools, // Each endpoint becomes a callable tool
 });
 ```
 
@@ -276,13 +505,15 @@ npx yaaf doctor --watch         # Lightweight tsc loop (no LLM)
 ## Design Principles
 
 1. **Zero Runtime Dependencies** — The core framework ships nothing but TypeScript. Optional features (Ink, OTel) are peer dependencies.
-2. **Fail-Closed Safety** — Permissions default to deny. Tools are write-capable and permission-gated by default.
+2. **Secure by Default** — `security: true` enables OWASP-aligned protection with one line. Permissions default to deny. Tools are write-capable and permission-gated by default.
 3. **Ship Anywhere** — One agent, multiple delivery targets: CLI, HTTP API, edge function, chat bot.
 4. **Streaming First** — Every runtime supports streaming with a unified `RuntimeStreamEvent` type.
 5. **Memory is Composable** — Extraction (when to persist) and retrieval (what to inject) are independent interfaces.
 6. **Context is Finite** — `ContextManager` actively manages token budgets with 7 pluggable compaction strategies.
 7. **Observable by Default** — Every action emits typed `RunnerEvents` (22 event types) and OpenTelemetry spans. The built-in Doctor watches all of them.
-8. **Plugin-First** — External capabilities are typed adapter interfaces. No vendor coupling.
+8. **Defense in Depth** — 3 security layers (input → execution → output) with 11 composable modules, centralized audit logging, and per-user rate limiting.
+9. **Identity-Aware** — Built-in RBAC + ABAC authorization with data scoping ensures agents only access what users are permitted to see.
+10. **Plugin-First** — External capabilities are typed adapter interfaces. No vendor coupling. Plugin integrity verified via `TrustPolicy`.
 
 ---
 

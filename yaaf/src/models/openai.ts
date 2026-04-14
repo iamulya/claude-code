@@ -69,6 +69,31 @@ export type OpenAIModelConfig = {
   contextWindowTokens?: number
   /** Maximum output tokens per completion (default: 4_096) */
   maxOutputTokens?: number
+  /**
+   * Role name to use for system messages.
+   * - `'system'`   — standard role for GPT-4 class models (default)
+   * - `'developer'` — required for o1, o3, o4 and future reasoning models
+   *
+   * When not set, YAAF auto-detects based on the model name prefix:
+   * models starting with `o1`, `o3`, or `o4` default to `'developer'`.
+   */
+  systemRole?: 'system' | 'developer'
+  /**
+   * Allow the model to call multiple tools in parallel within a single turn.
+   * Defaults to `true` (OpenAI API default). Set to `false` to force sequential
+   * tool calls — useful when tools have side-effects that depend on ordering.
+   */
+  parallelToolCalls?: boolean
+  /**
+   * Reasoning effort for o-series models (o1, o3, o4).
+   * Controls the trade-off between response quality and latency/cost.
+   * - `'low'`    — fastest, cheapest, least reasoning
+   * - `'medium'` — balanced (default for o3-mini)
+   * - `'high'`   — most thorough reasoning
+   *
+   * Ignored for non-reasoning models.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high'
 }
 
 // ── OpenAI response types (local — avoids untyped JSON) ──────────────────────
@@ -85,7 +110,11 @@ type OpenAIResponse = {
     }
     finish_reason: string
   }>
-  usage?: { prompt_tokens: number; completion_tokens: number }
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    prompt_tokens_details?: { cached_tokens?: number }
+  }
 }
 
 /** SSE delta shape from OpenAI streaming */
@@ -96,19 +125,28 @@ type OpenAIStreamDelta = {
       tool_calls?: Array<{
         index: number
         id?: string
+        type?: string
         function?: { name?: string; arguments?: string }
       }>
     }
     finish_reason?: string | null
   }>
-  usage?: { prompt_tokens: number; completion_tokens: number } | null
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    prompt_tokens_details?: { cached_tokens?: number }
+  } | null
 }
 
-// ── Shared helpers ───────────────────────────────────────────────────────────
+/** Returns true for o-series reasoning models that use the developer role */
+function isOSeriesModel(model: string): boolean {
+  return /^(o1|o3|o4)(-|$)/.test(model)
+}
 
 function buildRequestBody(
   model: string,
   maxOutputTokens: number,
+  config: Pick<OpenAIModelConfig, 'systemRole' | 'parallelToolCalls' | 'reasoningEffort'>,
   params: {
     messages: ChatMessage[]
     tools?: ToolSchema[]
@@ -117,6 +155,11 @@ function buildRequestBody(
   },
   stream?: boolean,
 ): Record<string, unknown> {
+  // o-series models use 'developer' instead of 'system' for the system role.
+  // Auto-detect by model prefix, with manual override via config.systemRole.
+  const oSeries = isOSeriesModel(model)
+  const systemRole = config.systemRole ?? (oSeries ? 'developer' : 'system')
+
   const messages = params.messages.map(msg => {
     if (msg.role === 'tool') {
       return { role: 'tool' as const, tool_call_id: msg.toolCallId, content: msg.content }
@@ -132,19 +175,41 @@ function buildRequestBody(
         })),
       }
     }
+    // Remap 'system' → actual role name (may be 'developer' for o-series)
+    if (msg.role === 'system') {
+      return { role: systemRole, content: msg.content }
+    }
     return { role: msg.role, content: msg.content }
   })
 
   const body: Record<string, unknown> = {
     model,
     messages,
-    temperature: params.temperature ?? 0.2,
+    // max_completion_tokens is the current field (max_tokens is deprecated and
+    // incompatible with o-series reasoning models). We send both for backward
+    // compatibility with third-party OpenAI-compatible providers that haven't
+    // adopted the new field yet.
+    max_completion_tokens: params.maxTokens ?? maxOutputTokens,
     max_tokens: params.maxTokens ?? maxOutputTokens,
+  }
+
+  // o-series models do not support the temperature parameter
+  if (!oSeries) {
+    body.temperature = params.temperature ?? 0.2
+  }
+
+  // reasoning_effort: only meaningful for o-series, silently ignored otherwise
+  if (oSeries && config.reasoningEffort) {
+    body.reasoning_effort = config.reasoningEffort
   }
 
   if (params.tools?.length) {
     body.tools = params.tools
     body.tool_choice = 'auto'
+    // parallel_tool_calls: only send when explicitly set (API default is true)
+    if (config.parallelToolCalls !== undefined) {
+      body.parallel_tool_calls = config.parallelToolCalls
+    }
   }
 
   if (stream) {
@@ -159,6 +224,9 @@ function buildRequestBody(
 function parseFinishReason(reason: string | null | undefined): ChatResult['finishReason'] {
   if (reason === 'tool_calls') return 'tool_calls'
   if (reason === 'length') return 'length'
+  // content_filter maps to stop — we surface it as stop since YAAF's
+  // finishReason union doesn't have a dedicated content_filter value.
+  // Callers that need to distinguish can inspect raw events via hooks.
   return 'stop'
 }
 
@@ -173,6 +241,7 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
   private readonly baseUrl: string
   private readonly timeoutMs: number
   private readonly extraHeaders: Record<string, string>
+  private readonly modelConfig: Pick<OpenAIModelConfig, 'systemRole' | 'parallelToolCalls' | 'reasoningEffort'>
 
   constructor(config: OpenAIModelConfig) {
     const model = config.model ?? 'gpt-4o-mini'
@@ -182,6 +251,11 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
     this.model = model
     this.timeoutMs = config.timeoutMs ?? 60_000
     this.extraHeaders = config.headers ?? {}
+    this.modelConfig = {
+      systemRole: config.systemRole,
+      parallelToolCalls: config.parallelToolCalls,
+      reasoningEffort: config.reasoningEffort,
+    }
     // Auto-resolve from registry; explicit config always wins
     const specs = resolveModelSpecs(model)
     this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
@@ -239,7 +313,7 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
     maxTokens?: number
     signal?: AbortSignal
   }): Promise<ChatResult> {
-    const body = buildRequestBody(this.model, this.maxOutputTokens, params)
+    const body = buildRequestBody(this.model, this.maxOutputTokens, this.modelConfig, params)
     const response = await this.doFetch(body, params.signal)
     const data = await response.json() as OpenAIResponse
     const choice = data.choices[0]!
@@ -262,6 +336,8 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
       result.usage = {
         promptTokens: data.usage.prompt_tokens,
         completionTokens: data.usage.completion_tokens,
+        // Capture prompt cache read tokens (available when context caching is active)
+        cacheReadTokens: data.usage.prompt_tokens_details?.cached_tokens,
       }
     }
 
@@ -277,7 +353,7 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
     maxTokens?: number
     signal?: AbortSignal
   }): AsyncGenerator<ChatDelta, void, undefined> {
-    const body = buildRequestBody(this.model, this.maxOutputTokens, params, true)
+    const body = buildRequestBody(this.model, this.maxOutputTokens, this.modelConfig, params, true)
     const response = await this.doFetch(body, params.signal)
 
     const reader = response.body?.getReader()
@@ -350,6 +426,7 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
               delta.usage = {
                 promptTokens: chunk.usage.prompt_tokens,
                 completionTokens: chunk.usage.completion_tokens,
+                cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens,
               }
             }
 

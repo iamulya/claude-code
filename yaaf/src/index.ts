@@ -30,7 +30,16 @@ export {
   type ValidationResult,
 } from './tools/tool.js'
 
+// ── OpenAPI Toolset ──────────────────────────────────────────────────────────
+export {
+  OpenAPIToolset,
+  type OpenAPIToolsetOptions,
+  type AuthConfig as OpenAPIAuthConfig,
+  type ParsedOperation,
+} from './tools/openapi/index.js'
+
 // ── Memory ───────────────────────────────────────────────────────────────────
+
 export {
   MemoryStore,
   type MemoryType,
@@ -180,6 +189,8 @@ export {
   ollamaAgent,
   type AgentConfig,
   type ModelProvider,
+  type PlanModeConfig,
+  type RunOptions,
 } from './agent.js'
 
 // ── Stream Adapter (bridges Agent → runtime harnesses) ────────────────────────
@@ -193,6 +204,7 @@ export {
 // ── Models (built-in ChatModel implementations) ───────────────────────────────
 export { OpenAIChatModel, type OpenAIModelConfig } from './models/openai.js'
 export { GeminiChatModel, type GeminiModelConfig } from './models/gemini.js'
+export { AnthropicChatModel, type AnthropicModelConfig } from './models/anthropic.js'
 
 // ── Vigil (Autonomous Agent Mode) ────────────────────────────────────────────
 export {
@@ -243,6 +255,127 @@ export {
   type PermissionMode,
   type ApprovalHandler,
 } from './permissions.js'
+
+// ── Identity & Access Management (IAM) ───────────────────────────────────────
+export {
+  // Authorization strategies
+  RoleStrategy,
+  AttributeStrategy,
+  CompositeStrategy as CompositeAuthStrategy,
+  rbac,
+  abac,
+  when,
+  allowAllStrategy,
+  denyAllStrategy,
+  // Data scoping strategies
+  TenantScopeStrategy,
+  OwnershipScopeStrategy,
+  AttributeScopeStrategy,
+  HierarchyScopeStrategy,
+  ResolverScopeStrategy,
+  CompositeScope,
+  systemAwareScope,
+  // Types
+  type UserContext,
+  type UserCredentials,
+  type AuthorizationStrategy,
+  type AuthorizationContext,
+  type AuthorizationDecision,
+  type DataScopeStrategy,
+  type DataScope,
+  type ScopeContext,
+  type PermissionResolver,
+  type ResolvedPermissions,
+  type PermissionGrant,
+  type IdentityProvider,
+  type IncomingRequest,
+  type AccessPolicy,
+  type AccessDecisionEvent,
+  type RoleStrategyConfig,
+  type AttributeRule,
+  type AttributeStrategyConfig,
+  type TenantScopeConfig,
+  type OwnershipScopeConfig,
+  type AttributeScopeRule,
+  type AttributeScopeConfig,
+  type HierarchyNode,
+  type HierarchyScopeConfig,
+  type ResolverScopeConfig,
+  type SystemAwareScopeConfig,
+} from './iam/index.js'
+
+// ── Security Middleware (OWASP LLM Top 10) ────────────────────────────────────
+export {
+  PromptGuard,
+  promptGuard,
+  strictPromptGuard,
+  type PromptGuardConfig,
+  type PromptGuardSensitivity,
+  type PromptGuardMode,
+  type PromptGuardPattern,
+  type PromptGuardEvent,
+  type PromptGuardResult,
+  OutputSanitizer,
+  outputSanitizer,
+  strictSanitizer,
+  type OutputSanitizerConfig,
+  type SanitizeEvent,
+  type SanitizeResult,
+  PiiRedactor,
+  piiRedactor,
+  strictPiiRedactor,
+  type PiiRedactorConfig,
+  type PiiRedactorMode,
+  type PiiCategory,
+  type PiiDetection,
+  type PiiEvent,
+  type PiiScanResult,
+  type CustomPiiPattern,
+  TrustPolicy,
+  trustPolicy,
+  type TrustPolicyConfig,
+  type TrustPolicyMode,
+  type PluginTrust,
+  type McpServerTrust,
+  type TrustVerificationEvent,
+  type PluginVerificationResult,
+  type McpToolFilterResult,
+  GroundingValidator,
+  groundingValidator,
+  strictGroundingValidator,
+  type GroundingValidatorConfig,
+  type GroundingMode,
+  type GroundingSentence,
+  type GroundingAssessment,
+  PerUserRateLimiter,
+  perUserRateLimiter,
+  type PerUserRateLimiterConfig,
+  type RateLimitEvent,
+  type RateLimitCheckResult,
+  type UserUsageSummary,
+  InputAnomalyDetector,
+  inputAnomalyDetector,
+  type InputAnomalyConfig,
+  type InputAnomalyEvent,
+  type InputAnomalyResult,
+  type AnomalyType,
+  StructuredOutputValidator,
+  structuredOutputValidator,
+  type OutputValidatorConfig,
+  type OutputValidationEvent,
+  type OutputValidationViolation,
+  type FieldRule,
+  type FieldType,
+  SecurityAuditLog,
+  securityAuditLog,
+  type AuditLogConfig,
+  type AuditEntry,
+  type AuditSeverity,
+  type AuditCategory,
+  type AuditStats,
+  securityHooks,
+  type SecurityHooksConfig,
+} from './security/index.js'
 
 // ── Session Persistence ──────────────────────────────────────────────────────
 export {
@@ -624,3 +757,38 @@ export {
   type DoctorIssue,
   type WatchOptions,
 } from './doctor/index.js'
+
+// ── A2A Protocol (Agent-to-Agent Interop) ────────────────────────────────────
+export {
+  A2AClient,
+  A2AServer,
+  a2aTool,
+  serveA2A,
+  type AgentCard,
+  type AgentSkill,
+  type A2AMessage,
+  type A2APart,
+  type A2ATask,
+  type A2ATaskStatus,
+  type A2AArtifact,
+  type A2AClientConfig,
+  type A2AServerConfig,
+  type A2AAgent,
+} from './integrations/a2a.js'
+
+// ── MCP OAuth (OAuth 2.0 for MCP Servers) ────────────────────────────────────
+export {
+  McpOAuthClient,
+  FileTokenStore,
+  oauthMcpServer,
+  type McpOAuthConfig,
+  type OAuthTokens,
+  type TokenStore,
+  type AuthorizationUrlResult,
+  type CallbackResult,
+} from './integrations/mcpOAuth.js'
+
+// ── Remote Sessions ──────────────────────────────────────────────────────────
+// NOT exported from the main barrel by design (like Gateway).
+// Import explicitly via:  import { RemoteSessionServer } from 'yaaf/remote'
+// See src/remote.ts for the opt-in entry point.

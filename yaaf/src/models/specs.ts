@@ -28,77 +28,79 @@ const MODEL_SPECS: Record<string, ModelSpecs> = {
   // ── OpenAI ─────────────────────────────────────────────────────────────────
 
   // GPT-4o family
-  'gpt-4o':               { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
-  'gpt-4o-mini':          { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
-  'gpt-4o-2024-11-20':    { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
-  'gpt-4o-2024-08-06':    { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
+  'gpt-4o': { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
+  'gpt-4o-mini': { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
+  'gpt-4o-2024-11-20': { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
+  'gpt-4o-2024-08-06': { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
   'gpt-4o-mini-2024-07-18': { contextWindowTokens: 128_000, maxOutputTokens: 16_384 },
 
   // GPT-4 Turbo
-  'gpt-4-turbo':          { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
-  'gpt-4-turbo-preview':  { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
-  'gpt-4-1106-preview':   { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
+  'gpt-4-turbo': { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
+  'gpt-4-turbo-preview': { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
+  'gpt-4-1106-preview': { contextWindowTokens: 128_000, maxOutputTokens: 4_096 },
 
   // GPT-4 Classic
-  'gpt-4':                { contextWindowTokens: 8_192,   maxOutputTokens: 4_096 },
-  'gpt-4-32k':            { contextWindowTokens: 32_768,  maxOutputTokens: 4_096 },
+  'gpt-4': { contextWindowTokens: 8_192, maxOutputTokens: 4_096 },
+  'gpt-4-32k': { contextWindowTokens: 32_768, maxOutputTokens: 4_096 },
 
   // GPT-3.5
-  'gpt-3.5-turbo':        { contextWindowTokens: 16_385,  maxOutputTokens: 4_096 },
+  'gpt-3.5-turbo': { contextWindowTokens: 16_385, maxOutputTokens: 4_096 },
 
   // o-series reasoning
-  'o1':                   { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
-  'o1-mini':              { contextWindowTokens: 128_000, maxOutputTokens: 65_536 },
-  'o3-mini':              { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
-  'o3':                   { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
+  'o1': { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
+  'o1-mini': { contextWindowTokens: 128_000, maxOutputTokens: 65_536 },
+  'o3-mini': { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
+  'o3': { contextWindowTokens: 200_000, maxOutputTokens: 100_000 },
 
   // ── Google Gemini ───────────────────────────────────────────────────────────
 
-  'gemini-2.5-pro':        { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
-  'gemini-2.5-flash':      { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
-  'gemini-2.0-flash':      { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
+  'gemini-3-flash-preview':           { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
+  'gemini-2.5-pro':                    { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
+  'gemini-2.5-flash':                  { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
+  'gemini-2.5-flash-preview-04-17':    { contextWindowTokens: 1_048_576, maxOutputTokens: 65_536 },
+  'gemini-2.0-flash':                  { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
   'gemini-2.0-flash-lite': { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
-  'gemini-2.0-pro':        { contextWindowTokens: 2_097_152, maxOutputTokens: 8_192 },
-  'gemini-1.5-pro':        { contextWindowTokens: 2_097_152, maxOutputTokens: 8_192 },
-  'gemini-1.5-flash':      { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
-  'gemini-1.5-flash-8b':   { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
-  'gemini-1.0-pro':        { contextWindowTokens: 32_760,    maxOutputTokens: 8_192 },
+  'gemini-2.0-pro': { contextWindowTokens: 2_097_152, maxOutputTokens: 8_192 },
+  'gemini-1.5-pro': { contextWindowTokens: 2_097_152, maxOutputTokens: 8_192 },
+  'gemini-1.5-flash': { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
+  'gemini-1.5-flash-8b': { contextWindowTokens: 1_048_576, maxOutputTokens: 8_192 },
+  'gemini-1.0-pro': { contextWindowTokens: 32_760, maxOutputTokens: 8_192 },
 
   // ── Anthropic Claude ────────────────────────────────────────────────────────
 
-  'claude-opus-4':         { contextWindowTokens: 200_000, maxOutputTokens: 32_000 },
-  'claude-sonnet-4':       { contextWindowTokens: 200_000, maxOutputTokens: 16_000 },
-  'claude-haiku-4':        { contextWindowTokens: 200_000, maxOutputTokens: 16_000 },
-  'claude-3-5-sonnet':     { contextWindowTokens: 200_000, maxOutputTokens: 8_192 },
-  'claude-3-5-haiku':      { contextWindowTokens: 200_000, maxOutputTokens: 8_192 },
-  'claude-3-opus':         { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
-  'claude-3-sonnet':       { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
-  'claude-3-haiku':        { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
+  'claude-opus-4': { contextWindowTokens: 200_000, maxOutputTokens: 32_000 },
+  'claude-sonnet-4': { contextWindowTokens: 200_000, maxOutputTokens: 16_000 },
+  'claude-haiku-4': { contextWindowTokens: 200_000, maxOutputTokens: 16_000 },
+  'claude-3-5-sonnet': { contextWindowTokens: 200_000, maxOutputTokens: 8_192 },
+  'claude-3-5-haiku': { contextWindowTokens: 200_000, maxOutputTokens: 8_192 },
+  'claude-3-opus': { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
+  'claude-3-sonnet': { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
+  'claude-3-haiku': { contextWindowTokens: 200_000, maxOutputTokens: 4_096 },
 
   // ── Meta Llama (via Groq / Together / Ollama) ───────────────────────────────
 
-  'llama-3.3-70b-versatile':  { contextWindowTokens: 128_000, maxOutputTokens: 32_768 },
-  'llama-3.1-70b-versatile':  { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
-  'llama-3.1-8b-instant':     { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
-  'llama-3.2-3b-preview':     { contextWindowTokens: 8_192,   maxOutputTokens: 8_192 },
+  'llama-3.3-70b-versatile': { contextWindowTokens: 128_000, maxOutputTokens: 32_768 },
+  'llama-3.1-70b-versatile': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
+  'llama-3.1-8b-instant': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
+  'llama-3.2-3b-preview': { contextWindowTokens: 8_192, maxOutputTokens: 8_192 },
   'llama-3.2-11b-vision-preview': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
-  'llama3.1':                 { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
-  'llama3.2':                 { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
-  'llama3.3':                 { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
+  'llama3.1': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
+  'llama3.2': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
+  'llama3.3': { contextWindowTokens: 128_000, maxOutputTokens: 8_000 },
 
   // ── Mistral / Mixtral ────────────────────────────────────────────────────────
 
-  'mistral-large':         { contextWindowTokens: 128_000, maxOutputTokens: 8_192 },
-  'mistral-small':         { contextWindowTokens: 128_000, maxOutputTokens: 8_192 },
-  'mistral-7b':            { contextWindowTokens: 32_768,  maxOutputTokens: 8_192 },
-  'mixtral-8x7b':          { contextWindowTokens: 32_768,  maxOutputTokens: 32_768 },
-  'mixtral-8x22b':         { contextWindowTokens: 65_536,  maxOutputTokens: 65_536 },
+  'mistral-large': { contextWindowTokens: 128_000, maxOutputTokens: 8_192 },
+  'mistral-small': { contextWindowTokens: 128_000, maxOutputTokens: 8_192 },
+  'mistral-7b': { contextWindowTokens: 32_768, maxOutputTokens: 8_192 },
+  'mixtral-8x7b': { contextWindowTokens: 32_768, maxOutputTokens: 32_768 },
+  'mixtral-8x22b': { contextWindowTokens: 65_536, maxOutputTokens: 65_536 },
 
   // ── DeepSeek ─────────────────────────────────────────────────────────────────
 
-  'deepseek-chat':         { contextWindowTokens: 64_000,  maxOutputTokens: 8_192 },
-  'deepseek-coder':        { contextWindowTokens: 64_000,  maxOutputTokens: 8_192 },
-  'deepseek-r1':           { contextWindowTokens: 64_000,  maxOutputTokens: 8_192 },
+  'deepseek-chat': { contextWindowTokens: 64_000, maxOutputTokens: 8_192 },
+  'deepseek-coder': { contextWindowTokens: 64_000, maxOutputTokens: 8_192 },
+  'deepseek-r1': { contextWindowTokens: 64_000, maxOutputTokens: 8_192 },
 }
 
 /**

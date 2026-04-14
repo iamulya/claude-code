@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.50.0",
+    "yaaf": "file:../../"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.0"
+  },
+  "name": "streaming-agent-yaaf-example"
+}

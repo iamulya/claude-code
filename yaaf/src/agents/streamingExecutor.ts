@@ -17,6 +17,7 @@ import { findToolByName, type Tool, type ToolContext } from '../tools/tool.js'
 import type { PermissionPolicy } from '../permissions.js'
 import type { Sandbox } from '../sandbox.js'
 import type { Hooks } from '../hooks.js'
+import type { AccessPolicy, UserContext, DataScope } from '../iam/types.js'
 import {
   dispatchBeforeToolCall,
   dispatchAfterToolCall,
@@ -65,11 +66,14 @@ export class StreamingToolExecutor {
     private readonly toolContext: ToolContext,
     private readonly config: {
       permissions?: PermissionPolicy
+      accessPolicy?: AccessPolicy
+      user?: UserContext
       hooks?: Hooks
       sandbox?: Sandbox
       messages: ChatMessage[]
       signal?: AbortSignal
       hookCallbacks?: HookEventCallbacks
+      toolResultBoundaries?: boolean
     },
   ) {
     this.siblingAbort = new AbortController()
@@ -98,6 +102,8 @@ export class StreamingToolExecutor {
     } catch {
       parsedArgs = {}
     }
+    // Strip internal Gemini thought_signature passthrough key
+    delete parsedArgs.__yaaf_sig__
 
     const isConcurrencySafe = tool
       ? (() => { try { return tool.isConcurrencySafe(parsedArgs) } catch { return false } })()
@@ -168,6 +174,8 @@ export class StreamingToolExecutor {
       } catch {
         parsedArgs = {}
       }
+      // Strip internal Gemini thought_signature passthrough key
+      delete parsedArgs.__yaaf_sig__
 
       // ── Permission check ──────────────────────────────────────────────
       const toolSpan = startToolCallSpan({ toolName: tracked.call.name, args: parsedArgs })
@@ -186,6 +194,49 @@ export class StreamingToolExecutor {
           tracked.status = 'completed'
           return
         }
+      }
+
+      // ── IAM authorization check (identity-aware) ───────────────────────
+      if (this.config.accessPolicy?.authorization && this.config.user) {
+        const startMs = Date.now()
+        const decision = await this.config.accessPolicy.authorization.evaluate({
+          user: this.config.user,
+          toolName: tracked.call.name,
+          arguments: parsedArgs,
+        })
+
+        // Audit callback
+        this.config.accessPolicy.onDecision?.({
+          user: this.config.user,
+          toolName: tracked.call.name,
+          arguments: parsedArgs,
+          decision,
+          timestamp: new Date(),
+          durationMs: Date.now() - startMs,
+        })
+
+        if (decision.action === 'deny') {
+          endToolCallSpan({ blocked: true, blockReason: decision.reason, durationMs: 0 })
+          tracked.result = {
+            toolCallId: tracked.call.id,
+            name: tracked.call.name,
+            content: JSON.stringify({ error: `Access denied: ${decision.reason}` }),
+            error: true,
+            durationMs: 0,
+          }
+          tracked.status = 'completed'
+          return
+        }
+      }
+
+      // ── IAM data scoping ───────────────────────────────────────────────
+      let resolvedScope: DataScope | undefined
+      if (this.config.accessPolicy?.dataScope && this.config.user) {
+        resolvedScope = await this.config.accessPolicy.dataScope.resolve({
+          user: this.config.user,
+          toolName: tracked.call.name,
+          arguments: parsedArgs,
+        })
       }
 
       // ── beforeToolCall hook ───────────────────────────────────────────
@@ -251,6 +302,13 @@ export class StreamingToolExecutor {
               role: m.role,
               content: 'content' in m ? m.content : '',
             })),
+            // IAM: inject user context and resolved scope into tools
+            extra: {
+              ...this.toolContext.extra,
+              ...(this.config.user ? { user: this.config.user } : {}),
+              ...(resolvedScope ? { scope: resolvedScope } : {}),
+              ...(this.config.user?.credentials ? { credentials: this.config.user.credentials } : {}),
+            },
           }
 
           const execSpan = startToolExecutionSpan()
@@ -289,6 +347,13 @@ export class StreamingToolExecutor {
             toolResultStr =
               toolResultStr.slice(0, tool.maxResultChars) +
               `\n... [truncated, ${toolResultStr.length} chars total]`
+          }
+
+          // Wrap in safe boundaries for indirect injection defense
+          if (this.config.toolResultBoundaries) {
+            const safeName = tracked.call.name.replace(/[\[\]]/g, '_')
+            const safeContent = toolResultStr.replace(/\[\/TOOL_OUTPUT\]/g, '[/TOOL\\_OUTPUT]')
+            toolResultStr = `[TOOL_OUTPUT:${safeName}]\n${safeContent}\n[/TOOL_OUTPUT]`
           }
         }
 

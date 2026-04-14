@@ -50,6 +50,8 @@ import type { MemoryStrategy, MemoryContext } from './memory/strategies.js'
 import { ContextManager } from './context/contextManager.js'
 import type { Hooks } from './hooks.js'
 import type { PermissionPolicy } from './permissions.js'
+import type { AccessPolicy } from './iam/types.js'
+import type { SecurityHooksConfig } from './security/index.js'
 import type { Sandbox } from './sandbox.js'
 import type { Session } from './session.js'
 import type { Skill } from './skills.js'
@@ -68,6 +70,30 @@ import type { WatchOptions } from './doctor/index.js'
 const logger = new Logger('agent')
 
 export type { ModelProvider }
+
+/**
+ * Options for `agent.run()` and `agent.runStream()`.
+ */
+export type RunOptions = {
+  /** Abort signal for cancellation */
+  signal?: AbortSignal
+  /**
+   * User context for IAM — identifies who is making this request.
+   * Used by `accessPolicy` for authorization and data scoping.
+   *
+   * @example
+   * ```ts
+   * await agent.run('Show invoices', {
+   *   user: {
+   *     userId: 'alice-123',
+   *     roles: ['editor'],
+   *     attributes: { tenantId: 'acme', department: 'finance' },
+   *   },
+   * })
+   * ```
+   */
+  user?: import('./iam/types.js').UserContext
+}
 
 
 // ── Plan Mode Config ──────────────────────────────────────────────────────────
@@ -118,7 +144,7 @@ export type AgentConfig = {
   /**
    * Model name.
    * Defaults per provider:
-   *   gemini → gemini-2.0-flash
+   *   gemini → gemini-3-flash-preview
    *   openai → gpt-4o-mini
    */
   model?: string
@@ -161,6 +187,37 @@ export type AgentConfig = {
    * @see PermissionPolicy, allowAll(), denyAll(), cliApproval()
    */
   permissions?: PermissionPolicy
+
+  /**
+   * Access Policy — identity-aware authorization and data scoping.
+   *
+   * Combines:
+   * - **Authorization** (RBAC/ABAC) — decides if a user can call a tool
+   * - **Data Scoping** — determines what data the user sees through tools
+   * - **Identity Provider** — resolves user identity from incoming requests
+   * - **Audit** — logs every authorization decision
+   *
+   * Complements `permissions` (tool safety) with identity-aware access control.
+   * `permissions` runs first ("is this tool safe?"), then `accessPolicy`
+   * evaluates ("is this user authorized?").
+   *
+   * @see AccessPolicy, rbac(), abac(), TenantScopeStrategy
+   *
+   * @example
+   * ```ts
+   * const agent = new Agent({
+   *   accessPolicy: {
+   *     authorization: rbac({
+   *       viewer: ['search_*', 'read_*'],
+   *       admin: ['*'],
+   *     }),
+   *     dataScope: new TenantScopeStrategy({ bypassRoles: ['super_admin'] }),
+   *     onDecision: (event) => auditLog.write(event),
+   *   },
+   * })
+   * ```
+   */
+  accessPolicy?: AccessPolicy
 
   /**
    * Lifecycle hooks — inspect, modify, or block tool calls and LLM turns.
@@ -306,6 +363,39 @@ export type AgentConfig = {
    * ```
    */
   doctor?: boolean | WatchOptions
+
+  /**
+   * Security middleware configuration — auto-enables OWASP-aligned
+   * protection (prompt injection, output sanitization, PII redaction).
+   *
+   * When set, hooks are composed automatically with any manually provided
+   * hooks (security hooks run first).
+   *
+   * @example
+   * ```ts
+   * const agent = new Agent({
+   *   systemPrompt: '...',
+   *   security: {
+   *     promptGuard: { mode: 'block', sensitivity: 'high' },
+   *     outputSanitizer: true,
+   *     piiRedactor: { categories: ['email', 'ssn', 'api_key'] },
+   *   },
+   * });
+   * ```
+   */
+  security?: SecurityHooksConfig | boolean
+
+  /**
+   * Enable tool result boundaries — wraps tool outputs in safe delimiters
+   * to prevent indirect prompt injection from tool results.
+   *
+   * When true, each tool result is wrapped in `[TOOL_OUTPUT:name]...[/TOOL_OUTPUT]`
+   * boundaries, and an instruction is added to the system prompt telling the
+   * LLM to treat content inside these boundaries as data, not instructions.
+   *
+   * Default: false (opt-in to avoid breaking existing tool result parsing).
+   */
+  toolResultBoundaries?: boolean
 }
 
 // resolveProvider moved to src/models/resolver.ts — use resolveModel(config) directly.
@@ -346,6 +436,67 @@ const DEFAULT_PLANNING_PROMPT = `Before executing, produce a detailed numbered p
 Do NOT execute any tools yet. Output only the plan — no preamble, no tool calls.
 Format: a numbered list where each item is one concrete action.`
 
+// ── Security hook composition ─────────────────────────────────────────────────
+
+/**
+ * Compose security middleware hooks with user-defined hooks.
+ * Security hooks run BEFORE user hooks on input and AFTER user hooks on output.
+ */
+function composeSecurityHooks(config: AgentConfig): Hooks | undefined {
+  const hasSecurity = config.security !== undefined && config.security !== false
+  if (!hasSecurity && !config.hooks) return config.hooks
+
+  if (!hasSecurity) return config.hooks
+
+  // Import securityHooks function inline to avoid circular dependency
+  const { securityHooks } = require('./security/index.js') as typeof import('./security/index.js')
+
+  const secConfig: SecurityHooksConfig = config.security === true ? {} : (config.security as SecurityHooksConfig ?? {})
+  const secHooks = securityHooks(secConfig)
+  const userHooks = config.hooks
+
+  // If no user hooks, just use the security hooks
+  if (!userHooks) return secHooks
+
+  // Compose: security hooks wrap user hooks
+  const composed: Hooks = { ...userHooks }
+
+  // beforeLLM: security first, then user
+  if (secHooks.beforeLLM || userHooks.beforeLLM) {
+    composed.beforeLLM = async (messages) => {
+      let msgs = messages
+      if (secHooks.beforeLLM) {
+        const result = await secHooks.beforeLLM(msgs)
+        if (result) msgs = result
+      }
+      if (userHooks.beforeLLM) {
+        const result = await userHooks.beforeLLM(msgs)
+        if (result) msgs = result
+      }
+      return msgs !== messages ? msgs : undefined
+    }
+  }
+
+  // afterLLM: user first, then security (security sanitizes final output)
+  if (secHooks.afterLLM || userHooks.afterLLM) {
+    composed.afterLLM = async (response, iteration) => {
+      let resp = response
+      if (userHooks.afterLLM) {
+        const result = await userHooks.afterLLM(resp, iteration)
+        if (result?.action === 'override') {
+          resp = { ...resp, content: result.content }
+        }
+      }
+      if (secHooks.afterLLM) {
+        return await secHooks.afterLLM(resp, iteration) ?? { action: 'continue' as const }
+      }
+      return { action: 'continue' as const }
+    }
+  }
+
+  return composed
+}
+
 // ── Agent ────────────────────────────────────────────────────────────────────
 
 /**
@@ -365,6 +516,8 @@ export class Agent {
   private readonly planMode?: PlanModeConfig
   protected readonly config: AgentConfig
   private _doctor?: import('./doctor/index.js').YaafDoctor
+  /** Current user context for IAM evaluation (set per-run) */
+  private _currentUser?: import('./iam/types.js').UserContext
 
   constructor(config: AgentConfig) {
     this.name = config.name ?? 'Agent'
@@ -396,11 +549,11 @@ export class Agent {
     const resolvedContextManager: ContextManager | undefined =
       config.contextManager === 'auto'
         ? new ContextManager({
-            contextWindowTokens: modelSpecs.contextWindowTokens,
-            maxOutputTokens:     modelSpecs.maxOutputTokens,
-            // 'truncate' needs no LLM — safe zero-dep default for auto mode
-            compactionStrategy: 'truncate',
-          })
+          contextWindowTokens: modelSpecs.contextWindowTokens,
+          maxOutputTokens: modelSpecs.maxOutputTokens,
+          // 'truncate' needs no LLM — safe zero-dep default for auto mode
+          compactionStrategy: 'truncate',
+        })
         : config.contextManager
 
     // Merge ToolProvider plugin tools into the tools array
@@ -427,10 +580,12 @@ export class Agent {
       temperature: config.temperature,
       // If no explicit maxTokens, use the model-specific output token limit
       maxTokens: config.maxTokens ?? modelSpecs.maxOutputTokens,
-      hooks: config.hooks,
+      hooks: composeSecurityHooks(config),
       permissions: config.permissions,
+      accessPolicy: config.accessPolicy,
       sandbox: config.sandbox,
       contextManager: resolvedContextManager,
+      toolResultBoundaries: config.toolResultBoundaries,
     }
 
     this.runner = new AgentRunner(runnerConfig)
@@ -518,10 +673,20 @@ export class Agent {
    * - Applies plan mode (if configured) — plans before executing
    * - Persists messages to session (if configured)
    */
-  async run(userMessage: string, signal?: AbortSignal): Promise<string> {
+  async run(userMessage: string, optionsOrSignal?: RunOptions | AbortSignal): Promise<string> {
+    // Backward compat: accept bare AbortSignal or RunOptions
+    const options: RunOptions = optionsOrSignal instanceof AbortSignal
+      ? { signal: optionsOrSignal }
+      : optionsOrSignal ?? {}
+    const signal = options.signal
+    const user = options.user
+
+    // Store user context for IAM evaluation during tool calls
+    this._currentUser = user
+    this.runner.setCurrentUser(user)
     // OTel: start a span for this run turn
     const runSpan = startAgentRunSpan({
-      agentName:    this.name,
+      agentName: this.name,
       userMessage,
     })
 
@@ -640,8 +805,17 @@ export class Agent {
    */
   async *runStream(
     userMessage: string,
-    signal?: AbortSignal,
+    optionsOrSignal?: RunOptions | AbortSignal,
   ): AsyncGenerator<RunnerStreamEvent, void, undefined> {
+    // Backward compat: accept bare AbortSignal or RunOptions
+    const options: RunOptions = optionsOrSignal instanceof AbortSignal
+      ? { signal: optionsOrSignal }
+      : optionsOrSignal ?? {}
+    const signal = options.signal
+    const user = options.user
+    this._currentUser = user
+    this.runner.setCurrentUser(user)
+
     const runSpan = startAgentRunSpan({
       agentName: this.name,
       userMessage,

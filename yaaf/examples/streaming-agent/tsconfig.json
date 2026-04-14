@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","module":"Node16","moduleResolution":"Node16","types":["node"],"strict":false,"esModuleInterop":true,"skipLibCheck":true,"outDir":"./dist","rootDir":"./src","declaration":false,"paths":{"yaaf":["../../dist/index.d.ts"]}},"include":["src/**/*.ts"]}

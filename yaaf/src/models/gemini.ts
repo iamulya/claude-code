@@ -71,9 +71,9 @@ export type GeminiModelConfig =
 type GeminiContent = { role: string; parts: GeminiPart[] }
 
 type GeminiPart =
-  | { text: string }
-  | { functionCall: { id?: string; name: string; args: Record<string, unknown> } }
-  | { functionResponse: { id?: string; name: string; response: { output: unknown } } }
+  | { text: string; thoughtSignature?: never }
+  | { functionCall: { id?: string; name: string; args: Record<string, unknown> }; thoughtSignature?: string }
+  | { functionResponse: { id?: string; name: string; response: { output: unknown } }; thoughtSignature?: never }
 
 type GeminiFunctionDeclaration = {
   name: string
@@ -160,7 +160,15 @@ function toGeminiContents(messages: ChatMessage[]): {
         for (const tc of msg.toolCalls) {
           let args: Record<string, unknown>
           try { args = JSON.parse(tc.arguments) } catch { args = {} }
-          parts.push({ functionCall: { id: tc.id, name: tc.name, args } })
+          // Extract and strip the thought_signature we encoded during parseCandidate
+          const thoughtSignature = args.__yaaf_sig__ as string | undefined
+          if (thoughtSignature) delete args.__yaaf_sig__
+          // thoughtSignature must be a sibling of functionCall on the Part,
+          // NOT nested inside functionCall — this is per Gemini 3 API spec
+          const part: GeminiPart = thoughtSignature
+            ? { functionCall: { id: tc.id, name: tc.name, args }, thoughtSignature }
+            : { functionCall: { id: tc.id, name: tc.name, args } }
+          parts.push(part)
         }
       }
       if (parts.length > 0) contents.push({ role: 'model', parts })
@@ -205,6 +213,10 @@ function buildGeminiConfig(
   if (params.tools?.length) {
     genConfig.tools = [{ functionDeclarations: toGeminiFunctions(params.tools) }]
     genConfig.toolConfig = { functionCallingConfig: { mode: 'AUTO' } }
+    // Thinking models (e.g. gemini-3-flash-preview) require thought_signature
+    // when tools are present. Setting thinkingBudget:0 disables the thinking
+    // chain for tool-calling turns, which avoids this SDK-level requirement.
+    genConfig.thinkingConfig = { thinkingBudget: 0 }
   }
 
   return genConfig
@@ -226,19 +238,25 @@ function parseCandidate(
 
     const fc = part.functionCall as Record<string, unknown> | undefined
     if (fc) {
+      // thoughtSignature is on the outer Part object (sibling of functionCall),
+      // not nested inside functionCall itself. Embed it in args for round-trip.
+      const args: Record<string, unknown> = (fc.args as Record<string, unknown>) ?? {}
+      const thoughtSignature = part.thoughtSignature as string | undefined
+      if (thoughtSignature) args.__yaaf_sig__ = thoughtSignature
+
       toolCalls.push({
         id: (fc.id as string | undefined) ??
           `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: (fc.name as string) ?? '',
-        arguments: JSON.stringify(fc.args ?? {}),
+        arguments: JSON.stringify(args),
       })
     }
   }
 
   const finishReason: ChatResult['finishReason'] =
     toolCalls.length > 0 ? 'tool_calls'
-    : candidate.finishReason === 'MAX_TOKENS' ? 'length'
-    : 'stop'
+      : candidate.finishReason === 'MAX_TOKENS' ? 'length'
+        : 'stop'
 
   const result: ChatResult = {
     content: textParts.join('') || undefined,
@@ -269,7 +287,7 @@ export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatMode
   private readonly config: GeminiModelConfig
 
   constructor(config: GeminiModelConfig) {
-    const model = config.model ?? 'gemini-2.0-flash'
+    const model = config.model ?? 'gemini-3-flash-preview'
     super(`gemini:${model}`)
     this.config = config
     this.model = model
@@ -345,62 +363,77 @@ export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatMode
       systemInstruction,
     })
 
-    const stream = client.models.generateContentStream({
+    const stream = await client.models.generateContentStream({
       model: this.model,
       contents,
       config: genConfig,
     })
 
+    // Per-stream function call index counter.
+    // Gemini delivers each parallel FC in its own chunk, and each must get a
+    // unique index so the runner's assembledToolCalls map can track them separately.
+    let fcIndex = 0
+
     for await (const chunk of stream) {
       const candidate = chunk.candidates?.[0]
       if (!candidate?.content?.parts) continue
 
-      const delta: ChatDelta = {}
-      let hasContent = false
-
-      for (const part of candidate.content.parts) {
-        // Text delta
-        if (typeof part.text === 'string' && part.text.length > 0) {
-          delta.content = (delta.content ?? '') + part.text
-          hasContent = true
-        }
-
-        // Function call delta
-        const fc = part.functionCall as Record<string, unknown> | undefined
-        if (fc) {
-          delta.toolCallDelta = {
-            index: 0,
-            id: (fc.id as string | undefined) ??
-              `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: fc.name as string,
-            arguments: JSON.stringify(fc.args ?? {}),
-          }
-          hasContent = true
-        }
-      }
+      // Text content and finish reason are accumulated into a single delta.
+      // Function calls are yielded as individual deltas (one per FC part) so
+      // the runner can track them by index.
+      let baseHasContent = false
+      const baseDelta: ChatDelta = {}
 
       // Finish reason
       if (candidate.finishReason) {
         const toolCalled = candidate.content.parts.some(
           p => (p as Record<string, unknown>).functionCall !== undefined,
         )
-        delta.finishReason = toolCalled
+        baseDelta.finishReason = toolCalled
           ? 'tool_calls'
           : candidate.finishReason === 'MAX_TOKENS' ? 'length' : 'stop'
-        hasContent = true
+        baseHasContent = true
       }
 
       // Usage (may be on the final chunk)
       if (chunk.usageMetadata) {
-        delta.usage = {
+        baseDelta.usage = {
           promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
           completionTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
           cacheReadTokens: chunk.usageMetadata.cachedContentTokenCount,
         }
-        hasContent = true
+        baseHasContent = true
       }
 
-      if (hasContent) yield delta
+      for (const part of candidate.content.parts) {
+        // Text delta — fold into baseDelta
+        if (typeof part.text === 'string' && part.text.length > 0) {
+          baseDelta.content = (baseDelta.content ?? '') + part.text
+          baseHasContent = true
+        }
+
+        // Function call delta — yield one delta per FC part with a unique index.
+        // thoughtSignature is a Part-level sibling and only appears on the first
+        // FC part in a parallel group (per Gemini 3 API spec).
+        const fc = part.functionCall as Record<string, unknown> | undefined
+        if (fc) {
+          const args: Record<string, unknown> = (fc.args as Record<string, unknown>) ?? {}
+          const sig = part.thoughtSignature as string | undefined
+          if (sig) args.__yaaf_sig__ = sig
+
+          yield {
+            toolCallDelta: {
+              index: fcIndex++,
+              id: (fc.id as string | undefined) ??
+                `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              name: fc.name as string,
+              arguments: JSON.stringify(args),
+            },
+          }
+        }
+      }
+
+      if (baseHasContent) yield baseDelta
     }
   }
 }

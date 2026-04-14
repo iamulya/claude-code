@@ -51,7 +51,8 @@ const DEFAULT_PRICING: Record<string, ModelPricing> = {
   'o1-mini': { inputPerMillion: 3, outputPerMillion: 12 },
   'o3-mini': { inputPerMillion: 1.1, outputPerMillion: 4.4 },
   // Gemini
-  'gemini-2.5-pro': { inputPerMillion: 1.25, outputPerMillion: 10 },
+  'gemini-3-flash-preview':         { inputPerMillion: 0.15, outputPerMillion: 0.60 },
+  'gemini-2.5-pro':                 { inputPerMillion: 1.25, outputPerMillion: 10 },
   'gemini-2.5-flash': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'gemini-2.0-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
   'gemini-1.5-pro': { inputPerMillion: 1.25, outputPerMillion: 5 },

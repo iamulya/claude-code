@@ -7,10 +7,11 @@
 
 import { OpenAIChatModel, type OpenAIModelConfig } from './openai.js'
 import { GeminiChatModel, type GeminiModelConfig } from './gemini.js'
+import { AnthropicChatModel, type AnthropicModelConfig } from './anthropic.js'
 import type { ChatModel } from '../agents/runner.js'
 
 /** Provider identifiers supported by the built-in resolver. */
-export type ModelProvider = 'openai' | 'gemini' | 'ollama' | 'groq'
+export type ModelProvider = 'openai' | 'gemini' | 'anthropic' | 'ollama' | 'groq'
 
 /** Subset of AgentConfig fields the resolver needs. */
 export type ResolverConfig = {
@@ -55,19 +56,22 @@ export function resolveModel(config: ResolverConfig): ChatModel {
   let provider = config.provider
   if (!provider) {
     if (process.env.GEMINI_API_KEY) provider = 'gemini'
+    else if (process.env.ANTHROPIC_API_KEY) provider = 'anthropic'
     else if (process.env.OPENAI_API_KEY) provider = 'openai'
     else {
       throw new Error(
         [
           'YAAF: No LLM provider configured. Set one of:',
-          '  GEMINI_API_KEY=...   (Google Gemini)',
-          '  OPENAI_API_KEY=...   (OpenAI / Groq / Ollama)',
+          '  GEMINI_API_KEY=...      (Google Gemini)',
+          '  ANTHROPIC_API_KEY=...   (Anthropic Claude)',
+          '  OPENAI_API_KEY=...      (OpenAI / Groq / Ollama)',
           '',
           'Or pass chatModel, provider+apiKey, or provider+baseUrl to the Agent constructor.',
           '',
           'Examples:',
-          '  GEMINI_API_KEY=... npx tsx src/main.ts',
-          '  OPENAI_API_KEY=sk-... npx tsx src/main.ts',
+          '  GEMINI_API_KEY=...     npx tsx src/main.ts',
+          '  ANTHROPIC_API_KEY=sk-ant-... npx tsx src/main.ts',
+          '  OPENAI_API_KEY=sk-...  npx tsx src/main.ts',
         ].join('\n')
       )
     }
@@ -91,6 +95,15 @@ export function resolveModel(config: ResolverConfig): ChatModel {
         maxOutputTokens: config.maxTokens,
       }
     return new GeminiChatModel(geminiConfig)
+  }
+
+  if (provider === 'anthropic') {
+    const anthropicConfig: AnthropicModelConfig = {
+      apiKey: config.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '',
+      model: config.model ?? 'claude-sonnet-4',
+      maxOutputTokens: config.maxTokens,
+    }
+    return new AnthropicChatModel(anthropicConfig)
   }
 
   // Everything else is OpenAI-compatible
