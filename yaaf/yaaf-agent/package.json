@@ -1,0 +1,19 @@
+{
+  "name": "@yaaf/agent",
+  "version": "0.1.0",
+  "description": "YAAF Expert Agent — built with YAAF, for YAAF developers",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "daemon": "tsx src/main.ts --daemon",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "yaaf": "file:.."
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

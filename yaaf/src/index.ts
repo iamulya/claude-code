@@ -341,6 +341,8 @@ export { PluginBase } from './plugin/base.js'
 export { BaseLLMAdapter } from './models/base.js'
 // resolveModel — construct a ChatModel from AgentConfig provider settings
 export { resolveModel, KNOWN_BASE_URLS, type ResolverConfig } from './models/resolver.js'
+// Model specs registry — look up or extend per-model context/output token limits
+export { resolveModelSpecs, registerModelSpecs, type ModelSpecs } from './models/specs.js'
 export {
   PluginHost,
   type Plugin,
@@ -614,3 +616,10 @@ export {
 // NOT exported from the main barrel by design.
 // Import explicitly via:  import { Gateway } from 'yaaf/gateway'
 // See src/gateway.ts for the opt-in entry point.
+
+// ── Doctor (Embedded Expert Agent) ───────────────────────────────────────────
+export {
+  YaafDoctor,
+  type YaafDoctorConfig,
+  type DoctorIssue,
+} from './doctor/index.js'

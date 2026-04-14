@@ -53,6 +53,7 @@ import {
 } from '../telemetry/tracing.js'
 import { StreamingToolExecutor, type ToolExecutionResult } from './streamingExecutor.js'
 import { applyToolResultBudget, type ToolResultBudgetConfig } from '../utils/toolResultBudget.js'
+import type { ContextManager } from '../context/contextManager.js'
 
 // ── Chat Types (OpenAI-compatible, industry standard) ────────────────────────
 
@@ -245,6 +246,10 @@ export type AgentRunnerConfig = {
    * Unlike addMessage(), this does NOT persist in message history.
    */
   systemPromptOverride?: string
+  /**
+   * Optional context manager for auto-recovery on context overflows.
+   */
+  contextManager?: ContextManager
 }
 
 /**
@@ -270,13 +275,14 @@ export class AgentRunner {
   private readonly toolContext: ToolContext
   /** Resolved model name — propagated to OTel spans (Gap #10) */
   private readonly modelName: string
-  private readonly config: Required<Omit<AgentRunnerConfig, 'hooks' | 'permissions' | 'sandbox' | 'retry' | 'toolResultBudget' | 'systemPromptOverride'>> & {
+  private readonly config: Required<Omit<AgentRunnerConfig, 'hooks' | 'permissions' | 'sandbox' | 'retry' | 'toolResultBudget' | 'systemPromptOverride' | 'contextManager'>> & {
     hooks?: Hooks
     permissions?: PermissionPolicy
     sandbox?: Sandbox
     retry?: RetryConfig
     toolResultBudget?: ToolResultBudgetConfig
     systemPromptOverride?: string
+    contextManager?: ContextManager
   }
   private eventHandlers = new Map<
     keyof RunnerEvents,
@@ -291,11 +297,22 @@ export class AgentRunner {
   }
 
   constructor(config: AgentRunnerConfig) {
+    // Derive maxTokens priority:
+    //   1. Explicit config.maxTokens (user override)
+    //   2. model.maxOutputTokens (from model specs registry — set on our built-in models)
+    //   3. Hard fallback 4_096 (for bring-your-own ChatModel that exposes no property)
+    const modelMaxOutputTokens =
+      (config.model as unknown as Record<string, unknown>).maxOutputTokens
+    const resolvedMaxTokens =
+      config.maxTokens ??
+      (typeof modelMaxOutputTokens === 'number' ? modelMaxOutputTokens : undefined) ??
+      4_096
+
     this.config = {
       ...config,
       maxIterations: config.maxIterations ?? 15,
       temperature: config.temperature ?? 0.2,
-      maxTokens: config.maxTokens ?? 4096,
+      maxTokens: resolvedMaxTokens,
     }
 
     // Resolve model name from ChatModel.model or fallback (Gap #10)
@@ -595,11 +612,13 @@ export class AgentRunner {
         toolCount:    this.toolSchemas.length,
       })
 
-      let result: ChatResult
+      let result: ChatResult | undefined
+      let recoveredFromOverflow = false
 
-      if (isStreamable) {
-        // ── Streaming path ──────────────────────────────────────────────
-        const streamingModel = this.config.model as StreamingChatModel
+      try {
+        if (isStreamable) {
+          // ── Streaming path ──────────────────────────────────────────────
+          const streamingModel = this.config.model as StreamingChatModel
 
         // Assemble ChatResult from stream deltas
         let assembledContent = ''
@@ -698,7 +717,29 @@ export class AgentRunner {
         if (result.content) {
           yield { type: 'text_delta', content: result.content }
         }
+      } // closes `else`
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase()
+        const isContextError = errMsg.includes('prompt_too_long') || errMsg.includes('context_length_exceeded') || errMsg.includes('too large') || errMsg.includes('maximum context length')
+
+        if (this.config.contextManager && isContextError) {
+          try {
+            await this.config.contextManager.compact('Automatic emergency compaction due to token limits.')
+            recoveredFromOverflow = true
+          } catch (compactErr) {
+            throw err // Re-throw original if compaction fails
+          }
+        } else {
+          throw err
+        }
       }
+
+      if (recoveredFromOverflow) {
+        iterations--
+        continue
+      }
+
+      if (!result) break;
 
       const llmDurationMs = Date.now() - llmStart
 
@@ -732,6 +773,21 @@ export class AgentRunner {
       const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations)
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
+
+      // ── Max Output Tokens Recovery ───────────────────────────────────
+      if (result.finishReason === 'length') {
+        this.messages.push({
+          role: 'assistant',
+          content: finalContent ?? '',
+          toolCalls: result.toolCalls,
+        })
+        this.messages.push({
+          role: 'user',
+          content: 'Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+        })
+        iterations--
+        continue
+      }
 
       // ── Tool execution (concurrent) ─────────────────────────────────
       if (result.toolCalls && result.toolCalls.length > 0) {

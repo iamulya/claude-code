@@ -9,6 +9,7 @@
  *   yaaf add tool <name>     Add a tool scaffold
  *   yaaf add skill <name>    Add a SKILL.md template
  *   yaaf context list        Inspect the system prompt
+ *   yaaf doctor              YAAF expert agent (diagnoses your project)
  *   yaaf run                 Run agent in production mode
  *   yaaf status              Show agent status
  *
@@ -50,6 +51,7 @@ ${BOLD}COMMANDS${RESET}
   ${GREEN}add${RESET} tool <name>       Add a new tool to the project
   ${GREEN}add${RESET} skill <name>      Add a new SKILL.md to the project
   ${GREEN}context${RESET} list          Inspect the assembled system prompt
+  ${GREEN}doctor${RESET}                Diagnose your YAAF project (expert agent)
   ${GREEN}run${RESET}                   Run agent entry point
   ${GREEN}status${RESET}               Show project status
 
@@ -62,6 +64,9 @@ ${BOLD}EXAMPLES${RESET}
   ${DIM}$${RESET} yaaf dev
   ${DIM}$${RESET} yaaf add tool weather
   ${DIM}$${RESET} yaaf add skill security-review
+  ${DIM}$${RESET} yaaf doctor
+  ${DIM}$${RESET} yaaf doctor --daemon
+  ${DIM}$${RESET} yaaf doctor --watch
 `
 }
 
@@ -111,6 +116,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 
       case 'status':
         await showStatus()
+        break
+
+      case 'doctor':
+        await runDoctor(rest)
         break
 
       default:
@@ -202,6 +211,118 @@ async function showStatus(): Promise<void> {
   }
 
   console.log()
+}
+
+// ── Doctor command ──────────────────────────────────────────────────────────
+
+async function runDoctor(args: string[]): Promise<void> {
+  const { YaafDoctor } = await import('../doctor/index.js')
+  const readline = await import('readline')
+
+  const isDaemon = args.includes('--daemon')
+  const isWatch = args.includes('--watch')
+
+  const doctor = new YaafDoctor({
+    projectRoot: process.cwd(),
+  })
+
+  // ── Watch Mode (no LLM) ──────────────────────────────────────────────
+  if (isWatch) {
+    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(watch mode — no LLM)${RESET}`)
+    console.log(`${DIM}   Checking tsc every 10s. Ctrl+C to stop.${RESET}\n`)
+
+    let tickCount = 0
+    doctor.startWatch({
+      intervalSec: 10,
+      onError: (errors) => {
+        tickCount++
+        console.log(`${RED}  ✗ ${errors.length} new error(s):${RESET}`)
+        for (const e of errors.slice(0, 10)) console.log(`    ${e}`)
+      },
+      onClear: () => {
+        console.log(`${GREEN}  ✓ All errors resolved!${RESET}`)
+      },
+    })
+
+    // Keep process alive
+    await new Promise(() => {})
+    return
+  }
+
+  // ── Daemon Mode ─────────────────────────────────────────────────────
+  if (isDaemon) {
+    const interval = parseInt(process.env.CHECK_INTERVAL_SEC ?? '30', 10)
+    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(daemon — every ${interval}s)${RESET}`)
+    console.log(`${DIM}   Watching for errors. Ctrl+C to stop.${RESET}\n`)
+
+    doctor.onIssue((issue) => {
+      const icon = issue.type === 'compile_error' ? `${RED}🔴${RESET}` : `${YELLOW}🟡${RESET}`
+      console.log(`\n${icon} ${BOLD}${issue.summary}${RESET}`)
+      console.log(`${DIM}${issue.details.split('\n').slice(0, 8).join('\n')}${RESET}\n`)
+    })
+
+    await doctor.startDaemon()
+
+    process.on('SIGINT', () => {
+      doctor.stopDaemon()
+      console.log(`${DIM}\nDoctor stopped.${RESET}`)
+      process.exit(0)
+    })
+
+    // Keep alive
+    await new Promise(() => {})
+    return
+  }
+
+  // ── Interactive Mode ────────────────────────────────────────────────
+  console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET}`)
+  console.log(`${DIM}   I'm an expert on YAAF. Ask me anything about your project.${RESET}`)
+  console.log(`${DIM}   I can read files, search code, run tsc, run tests, and diagnose issues.${RESET}`)
+  console.log(`${DIM}   Type "exit" to quit, "reset" to clear history.${RESET}\n`)
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: `${CYAN}  doctor>${RESET} `,
+  })
+
+  rl.prompt()
+
+  rl.on('line', async (line) => {
+    const input = line.trim()
+    if (!input) { rl.prompt(); return }
+    if (input === 'exit' || input === 'quit') {
+      console.log(`${DIM}  Goodbye!${RESET}`)
+      rl.close()
+      process.exit(0)
+    }
+    if (input === 'reset') {
+      doctor.reset()
+      console.log(`${GREEN}  ✓ Conversation reset${RESET}`)
+      rl.prompt()
+      return
+    }
+
+    try {
+      console.log()
+      for await (const event of doctor.askStream(input)) {
+        if (event.type === 'text_delta') {
+          process.stdout.write(event.content)
+        } else if (event.type === 'tool_call_start') {
+          console.log(`${DIM}  ⚙ ${event.name}...${RESET}`)
+        } else if (event.type === 'tool_call_result') {
+          console.log(`${DIM}  ✓ ${event.name} (${event.durationMs}ms)${RESET}`)
+        }
+      }
+      console.log('\n')
+    } catch (err: any) {
+      console.error(`${RED}  Error: ${err.message}${RESET}\n`)
+    }
+
+    rl.prompt()
+  })
+
+  rl.on('close', () => process.exit(0))
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────

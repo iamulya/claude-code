@@ -29,8 +29,15 @@ const agent = new Agent({
   provider: 'gemini',           // 'gemini' | 'openai' | auto-detect
   model: 'gemini-2.5-flash',
   temperature: 0.3,
-  maxTokens: 8192,
+  // maxTokens auto-derived from model specs registry — 65,536 for gemini-2.5-flash
+  // Override only when you need a specific cap:
+  // maxTokens: 8192,
   maxIterations: 15,            // Max tool-call rounds per run()
+
+  // ── Context Management ────────────────────────────────
+  // 'auto' creates a ContextManager from the model's real context specs;
+  // enables overflow recovery and mid-thought continuation automatically.
+  contextManager: 'auto',
 
   // ── Tools ─────────────────────────────────────────────
   tools: [readFile, writeFile, exec, search],
@@ -91,8 +98,9 @@ const agent = new Agent({
 | `model` | `string` | auto | Model ID override |
 | `chatModel` | `ChatModel` | auto | Bring-your-own model |
 | `temperature` | `number` | `0.7` | Sampling temperature |
-| `maxTokens` | `number` | — | Max output tokens |
+| `maxTokens` | `number` | model-specific¹ | Max output tokens per call |
 | `maxIterations` | `number` | `15` | Max tool-call rounds |
+| `contextManager` | `ContextManager \| 'auto'` | — | Context tracking & compaction; `'auto'` uses model specs |
 | `permissions` | `PermissionPolicy` | allow all | Tool permission gating |
 | `hooks` | `Hooks` | — | Lifecycle callbacks |
 | `sandbox` | `Sandbox` | — | Execution sandboxing |
@@ -100,6 +108,8 @@ const agent = new Agent({
 | `planMode` | `PlanModeConfig` | — | Think-first execution |
 | `skills` | `Skill[]` | `[]` | Markdown capability packs |
 | `memoryStrategy` | `MemoryStrategy` | — | Long-term memory |
+
+¹ `maxTokens` defaults to the model's registered `maxOutputTokens` from the [Model Specs Registry](./compaction.md#model-specs-registry) (e.g. `16_384` for `gpt-4o`, `8_192` for `gemini-2.0-flash`). Only specify it to override the model's default.
 
 ## Streaming
 

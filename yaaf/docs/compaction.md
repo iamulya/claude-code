@@ -2,6 +2,81 @@
 
 As conversations grow, the token count approaches the model's context limit. YAAF's `ContextManager` monitors the token budget and triggers **compaction** automatically when usage exceeds a configurable threshold. The compaction algorithm is **fully pluggable**.
 
+> [!TIP]
+> **Zero-config path**: Pass `contextManager: 'auto'` to any `Agent` and YAAF will create and configure a `ContextManager` automatically using the model's real context window and output token limits — no manual numbers needed.
+
+---
+
+## Quickstart
+
+### Auto mode (recommended)
+
+```typescript
+import { Agent } from 'yaaf';
+
+// YAAF looks up gpt-4o's specs (128K context, 16K output) and configures
+// the ContextManager automatically. Overflow recovery is enabled by default.
+const agent = new Agent({
+  model: 'gpt-4o',
+  contextManager: 'auto',
+  systemPrompt: 'You are a helpful assistant.',
+});
+```
+
+`'auto'` uses the [Model Specs Registry](#model-specs-registry) to resolve the correct `contextWindowTokens` and `maxOutputTokens` for the chosen model. It enables:
+- **Proactive compaction** before the context fills up
+- **Emergency overflow recovery** if the API returns a context-too-large error
+- **Max-output-tokens continuation** when the model's response gets cut off mid-thought
+
+### Manual configuration
+
+```typescript
+import { Agent, ContextManager, SummarizeStrategy } from 'yaaf';
+
+const agent = new Agent({
+  model: 'gpt-4o',
+  contextManager: new ContextManager({
+    contextWindowTokens: 128_000,   // or use resolveModelSpecs('gpt-4o')
+    maxOutputTokens:      16_384,
+    strategy: new SummarizeStrategy(),
+    llmAdapter: myModel,            // needed for Summarize / SessionMemory strategies
+  }),
+});
+```
+
+---
+
+## Model Specs Registry
+
+YAAF ships a built-in registry of context and output token limits for 40+ well-known models. The registry is used automatically in `'auto'` mode and by the model constructors — no manual numbers needed for any of these:
+
+| Family | Models covered |
+|---|---|
+| **OpenAI GPT-4o** | `gpt-4o`, `gpt-4o-mini`, dated snapshots |
+| **OpenAI o-series** | `o1`, `o1-mini`, `o3`, `o3-mini` |
+| **OpenAI GPT-4** | `gpt-4-turbo`, `gpt-4`, `gpt-4-32k`, `gpt-3.5-turbo` |
+| **Google Gemini** | `gemini-2.5-pro/flash`, `gemini-2.0-flash`, `gemini-1.5-pro/flash` |
+| **Anthropic Claude** | `claude-opus-4`, `claude-sonnet-4`, `claude-3-5-sonnet/haiku`, `claude-3-*` |
+| **Meta Llama** | `llama-3.3-70b`, `llama-3.1-*`, `llama-3.2-*` (Groq / Ollama / Together) |
+| **Mistral / Mixtral** | `mistral-large/small`, `mixtral-8x7b/8x22b` |
+| **DeepSeek** | `deepseek-chat`, `deepseek-coder`, `deepseek-r1` |
+
+Matching is prefix-aware — `'claude-3-5-sonnet-20241022'` correctly resolves to the `claude-3-5-sonnet` entry. You can extend the registry at runtime:
+
+```typescript
+import { registerModelSpecs, resolveModelSpecs } from 'yaaf';
+
+// Register a private/fine-tuned model
+registerModelSpecs('my-fine-tuned-llama', {
+  contextWindowTokens: 32_000,
+  maxOutputTokens: 4_096,
+});
+
+// Query the registry directly
+const specs = resolveModelSpecs('gpt-4o');
+// → { contextWindowTokens: 128_000, maxOutputTokens: 16_384 }
+```
+
 ---
 
 ## Architecture
@@ -40,21 +115,7 @@ As conversations grow, the token count approaches the model's context limit. YAA
     └───────────────┘    └────────────────┘    └────────────────┘
 ```
 
-**ContextManager configuration:**
 
-```typescript
-import { ContextManager, SummarizeStrategy } from 'yaaf';
-
-const ctx = new ContextManager({
-  contextWindowTokens: 200_000,  // model's hard limit
-  maxOutputTokens:      16_384,  // output token reserve
-  autoCompactThreshold:    0.85, // compact when 85% full (default)
-  strategy: new SummarizeStrategy(),
-  llmAdapter: myModel,           // needed by Summarize and SessionMemory strategies
-});
-```
-
----
 
 ## Built-in Strategies
 

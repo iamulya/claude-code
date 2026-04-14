@@ -50,6 +50,7 @@ import {
   APIConnectionError,
   AbortError,
 } from '../errors.js'
+import { resolveModelSpecs } from './specs.js'
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -181,8 +182,10 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
     this.model = model
     this.timeoutMs = config.timeoutMs ?? 60_000
     this.extraHeaders = config.headers ?? {}
-    this.contextWindowTokens = config.contextWindowTokens ?? 128_000
-    this.maxOutputTokens = config.maxOutputTokens ?? 4_096
+    // Auto-resolve from registry; explicit config always wins
+    const specs = resolveModelSpecs(model)
+    this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
+    this.maxOutputTokens = config.maxOutputTokens ?? specs.maxOutputTokens
   }
 
   // ── Shared fetch ──────────────────────────────────────────────────────────

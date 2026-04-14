@@ -46,7 +46,7 @@ import type { Tool } from './tools/tool.js'
 import type { Plugin, ToolProvider } from './plugin/types.js'
 import type { MemoryStore } from './memory/memoryStore.js'
 import type { MemoryStrategy, MemoryContext } from './memory/strategies.js'
-import type { ContextManager } from './context/contextManager.js'
+import { ContextManager } from './context/contextManager.js'
 import type { Hooks } from './hooks.js'
 import type { PermissionPolicy } from './permissions.js'
 import type { Sandbox } from './sandbox.js'
@@ -55,6 +55,7 @@ import type { Skill } from './skills.js'
 import { buildSkillSection } from './skills.js'
 import type { SystemPromptBuilder } from './prompt/systemPrompt.js'
 import { resolveModel, type ModelProvider } from './models/resolver.js'
+import { resolveModelSpecs } from './models/specs.js'
 import {
   startAgentRunSpan,
   endAgentRunSpan,
@@ -232,8 +233,29 @@ export type AgentConfig = {
   /**
    * ContextManager integration. If provided, the agent uses it for
    * token-budget-aware context assembly and auto-compaction.
+   *
+   * Pass `'auto'` to have the agent create a ContextManager automatically
+   * using the model's resolved context window and output token limits from
+   * the built-in specs registry (recommended). This enables overflow recovery
+   * and micro-compaction with zero manual configuration.
+   *
+   * @example Auto-managed context (recommended)
+   * ```ts
+   * const agent = new Agent({ model: 'gpt-4o', contextManager: 'auto' })
+   * ```
+   *
+   * @example Manual configuration
+   * ```ts
+   * const agent = new Agent({
+   *   contextManager: new ContextManager({
+   *     contextWindowTokens: 128_000,
+   *     maxOutputTokens: 16_384,
+   *     strategy: new CompositeStrategy([new MicroCompactStrategy(), new SummarizeStrategy()]),
+   *   }),
+   * })
+   * ```
    */
-  contextManager?: ContextManager
+  contextManager?: ContextManager | 'auto'
 
   /**
    * Plugins — registered in order before the agent is used.
@@ -321,11 +343,37 @@ export class Agent {
     this.config = config
     // Support both the new memoryStrategy and the deprecated memory (MemoryStore) field
     this.memoryStrategy = config.memoryStrategy
-    this.contextManager = config.contextManager
+    // contextManager is assigned below after model specs are resolved (supports 'auto')
     this.session = config.session
     this.planMode = config.planMode === true ? {} : config.planMode
 
     const chatModel = resolveModel(config)
+
+    // Resolve LLM-specific context limits from the model specs registry.
+    // The resolved model exposes contextWindowTokens / maxOutputTokens as
+    // properties if it's one of our built-in classes; fall back to the
+    // registry lookup by model name string otherwise.
+    const modelSpecs = (() => {
+      const m = chatModel as unknown as Record<string, unknown>
+      if (typeof m.contextWindowTokens === 'number' && typeof m.maxOutputTokens === 'number') {
+        return { contextWindowTokens: m.contextWindowTokens as number, maxOutputTokens: m.maxOutputTokens as number }
+      }
+      return resolveModelSpecs(config.model)
+    })()
+
+    // Resolve the contextManager — supports 'auto' shorthand.
+    // 'auto' creates a ContextManager pre-configured with the model's
+    // actual context window and output token limits from the registry,
+    // enabling overflow recovery and micro-compaction with zero config.
+    const resolvedContextManager: ContextManager | undefined =
+      config.contextManager === 'auto'
+        ? new ContextManager({
+            contextWindowTokens: modelSpecs.contextWindowTokens,
+            maxOutputTokens:     modelSpecs.maxOutputTokens,
+            // 'truncate' needs no LLM — safe zero-dep default for auto mode
+            compactionStrategy: 'truncate',
+          })
+        : config.contextManager
 
     // Merge ToolProvider plugin tools into the tools array
     const pluginTools: Tool[] = []
@@ -349,13 +397,17 @@ export class Agent {
       systemPrompt,
       maxIterations: config.maxIterations,
       temperature: config.temperature,
-      maxTokens: config.maxTokens,
+      // If no explicit maxTokens, use the model-specific output token limit
+      maxTokens: config.maxTokens ?? modelSpecs.maxOutputTokens,
       hooks: config.hooks,
       permissions: config.permissions,
       sandbox: config.sandbox,
+      contextManager: resolvedContextManager,
     }
 
     this.runner = new AgentRunner(runnerConfig)
+    // Assign once — readonly is settable anywhere in the constructor
+    this.contextManager = resolvedContextManager
 
     // Restore session history if provided
     if (config.session && config.session.messageCount > 0) {

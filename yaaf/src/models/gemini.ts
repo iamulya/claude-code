@@ -43,6 +43,7 @@ import type {
 } from '../agents/runner.js'
 import { BaseLLMAdapter } from './base.js'
 import { YAAFError } from '../errors.js'
+import { resolveModelSpecs } from './specs.js'
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -272,8 +273,10 @@ export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatMode
     super(`gemini:${model}`)
     this.config = config
     this.model = model
-    this.contextWindowTokens = config.contextWindowTokens ?? 1_000_000
-    this.maxOutputTokens = config.maxOutputTokens ?? 8_192
+    // Auto-resolve from registry; explicit config always wins
+    const specs = resolveModelSpecs(model)
+    this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
+    this.maxOutputTokens = config.maxOutputTokens ?? specs.maxOutputTokens
   }
 
   // ── Client initialization ─────────────────────────────────────────────────

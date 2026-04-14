@@ -18,12 +18,14 @@ yaaf dev
 |---------|------|-------------|---------------|
 | Runtime deps | **0** | 50+ | 15+ |
 | CLI scaffold | `yaaf init` | ❌ | ❌ |
+| Built-in expert agent | `yaaf doctor` | ❌ | ❌ |
 | Ship as CLI product | `createCLI()` | ❌ | ❌ |
 | Ship as HTTP API | `createServer()` | ❌ | ❌ |
 | Ship to edge | `createWorker()` | ❌ | ✅ |
 | Premium terminal UI | `createInkCLI()` | ❌ | ❌ |
 | Memory strategies | 7 built-in | 3 | ❌ |
 | Context compaction | 7 strategies | ❌ | ❌ |
+| Model specs registry | 40+ models | ❌ | ❌ |
 | Multi-agent swarms | Mailbox IPC | ❌ | ❌ |
 | Permission system | Glob patterns | ❌ | ❌ |
 | OpenTelemetry | Built-in | Plugin | ❌ |
@@ -100,6 +102,7 @@ export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
 ├────────────────────┴───────────────────────────────────┴────────────┤
 │  Skills · Permissions · Hooks · Sandbox · Session · SecureStorage   │
 │  SystemPromptBuilder · ContextEngine · Vigil · Heartbeat · Gateway  │
+│  Doctor (built-in expert agent) · Model Specs Registry              │
 ├─────────────────────────────────────────────────────────────────────┤
 │                       OpenTelemetry                                 │
 │              Traces · Metrics · Logs · Cost tracking                │
@@ -143,6 +146,7 @@ The full documentation is split into focused chapters:
 | Doc | Description |
 |-----|-------------|
 | [Multi-Agent](docs/multi-agent.md) | Orchestrator, Mailbox IPC, AgentRouter, delegates |
+| [YAAF Doctor](docs/doctor.md) | Built-in expert agent, daemon mode, error diagnosis |
 | [Observability](docs/telemetry.md) | OpenTelemetry spans, metrics, logs, cost tracking |
 | [Plugins](docs/plugins.md) | Plugin architecture, MCP, Honcho, AgentFS, Camoufox |
 | [Security](docs/security.md) | Sandbox, SecureStorage, session persistence, approvals |
@@ -226,6 +230,42 @@ const router = new RouterChatModel({
   route: (ctx) => ctx.messages.length > 10 ? 'capable' : 'fast',
 });
 ```
+
+---
+
+## YAAF Doctor — Built-in Expert Agent
+
+Every YAAF project ships with a built-in diagnostic agent. No extra install needed.
+
+```bash
+# Interactive REPL — ask anything about your YAAF project
+npx yaaf doctor
+
+# Background daemon — watches for errors, suggests fixes
+npx yaaf doctor --daemon
+
+# Lightweight watcher — just tsc, no LLM, zero cost
+npx yaaf doctor --watch
+```
+
+Or embed it programmatically:
+
+```typescript
+import { Agent, YaafDoctor } from 'yaaf';
+
+// Run alongside your agent
+const doctor = new YaafDoctor();
+doctor.onIssue((issue) => console.log(`🩺 ${issue.summary}`));
+await doctor.startDaemon();
+
+// One-shot health check
+const issues = await doctor.healthCheck();
+
+// Ask a question
+const answer = await doctor.ask('Why is my context overflowing?');
+```
+
+The Doctor is built entirely with YAAF's own primitives — `Agent` for interactive Q&A, `Vigil` for the daemon loop, `buildTool()` for code intelligence. **[Full documentation →](docs/doctor.md)**
 
 ---
 
