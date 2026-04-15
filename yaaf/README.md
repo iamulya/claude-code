@@ -2,7 +2,7 @@
 
 > A production-grade, security-hardened, multi-provider autonomous agent framework for TypeScript.
 
-Zero runtime dependencies. Multi-provider (Gemini, OpenAI, Anthropic, Groq, Ollama). OWASP LLM Top 10 aligned (9.3/10). Ship agents as CLIs, web APIs, edge functions, or chat bots — all from one codebase.
+Zero runtime dependencies. Multi-provider (Gemini, OpenAI, Anthropic, Groq, Ollama). OWASP LLM Top 10 aligned (9.3/10). Ship agents as CLIs, web APIs, edge functions, or chat bots — all from one codebase. Compile your knowledge into a self-healing, LLM-readable wiki.
 
 ```bash
 npm install yaaf
@@ -35,6 +35,7 @@ yaaf dev
 | Multi-agent swarms | Mailbox IPC | ❌ | ❌ |
 | Permission system | Glob patterns | ❌ | ❌ |
 | OpenTelemetry | Built-in | Plugin | ❌ |
+| **Knowledge Base** | **Compile + self-heal** | ❌ | ❌ |
 | Type safety | Full | Partial | Full |
 
 ---
@@ -78,6 +79,117 @@ export GEMINI_API_KEY=...           # → auto-selects Gemini
 export OPENAI_API_KEY=sk-...        # → auto-selects GPT-4o
 export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
 ```
+
+---
+
+## Knowledge Base — Compile Your Knowledge
+
+YAAF implements a [Karpathy-style](https://docs.yaaf.dev/knowledge-base) "compile your knowledge" pipeline. Raw source material (research papers, web clips, documentation, code) is read from a `raw/` directory and compiled by an LLM into a structured, cross-linked wiki in `compiled/`. A self-healing linter then keeps the KB consistent.
+
+This is a fundamentally different alternative to RAG. Instead of embedding chunks and retrieving at query time, the LLM **authors** encyclopedia-style articles with explicit wikilinks. The compiled wiki is human-readable, diffable, and directly consumable as agent context.
+
+```typescript
+import { KBCompiler, makeGenerateFn } from 'yaaf/knowledge';
+import { GeminiChatModel } from 'yaaf';
+
+// Create the compiler — reads ontology.yaml from my-kb/
+const compiler = await KBCompiler.create({
+  kbDir: './my-kb',
+  extractionModel: makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-flash' })),
+  synthesisModel:  makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-pro' })),
+});
+
+// Compile raw/ → compiled/
+const result = await compiler.compile({
+  incrementalMode: true,  // skip sources older than their compiled article
+  autoLint: true,         // run the self-healing linter after synthesis
+  autoFix: true,          // auto-fix broken wikilinks and unlinked mentions
+  onProgress: (event) => {
+    if (event.stage === 'synthesize' && event.event.type === 'article:written') {
+      console.log(`✓ ${event.event.title} (${event.event.wordCount} words)`);
+    }
+  },
+});
+
+console.log(`Created:  ${result.synthesis.created} articles`);
+console.log(`Updated:  ${result.synthesis.updated} articles`);
+console.log(`Stubs:    ${result.synthesis.stubsCreated}`);
+console.log(`Errors:   ${result.lint?.summary.errors}`);
+console.log(`Fixed:    ${result.fixes?.fixedCount}`);
+```
+
+```
+raw/ (your source material)
+  research papers, web clips, docs, code, notes
+        │
+        ▼
+  Stage 1: Ingester — .md / .html / .txt / .json / code
+        │
+        ▼
+  Stage 2: Concept Extractor — fast LLM (extraction model)
+           vocabulary scan + entity classification → CompilationPlan
+        │
+        ▼
+  Stage 3: Knowledge Synthesizer — capable LLM (synthesis model)
+           authors encyclopedia-style articles → compiled/**/*.md
+        │
+        ▼
+  Stage 4: Linter — 13 static checks, no LLM
+           structural · linking · quality → auto-fix + LintReport
+        │
+        ▼
+compiled/ (structured, LLM-ready wiki)
+  concepts/ · tools/ · research-papers/ · ...
+```
+
+**What the compiled wiki looks like:**
+
+```markdown
+---
+title: "Attention Mechanism"
+entity_type: concept
+tags: [nlp, transformers, deep-learning]
+status: established
+compiled_at: "2024-01-15T10:30:00.000Z"
+compiled_from: [raw/papers/attention-paper.md, raw/web-clips/attention.md]
+confidence: 0.95
+stub: false
+---
+
+## Overview
+
+The **attention mechanism** is the core component of the [[Transformer]] architecture.
+It allows models to dynamically weight input positions...
+
+## How It Works
+
+First described in [[Attention Is All You Need]] (2017), the scaled dot-product
+attention is implemented in [[PyTorch]] as `nn.MultiheadAttention`.
+```
+
+**Clip web pages directly into your KB:**
+
+```typescript
+// Programmatic Obsidian Web Clipper — saves Markdown + local images
+const result = await compiler.clip('https://arxiv.org/abs/1706.03762');
+// → raw/web-clips/attention-is-all-you-need/index.md
+```
+
+**The self-healing loop:**
+
+```typescript
+// Find all issues (no LLM required — all static checks)
+const report = await compiler.lint();
+
+// Preview what auto-fix would change
+const preview = await compiler.fix(report, true /* dryRun */);
+console.log(`Would fix ${preview.fixedCount} issues`);
+
+// Apply fixes: rewrites [[alias]] → [[canonical]], adds [[wikilinks]] to mentions
+await compiler.fix(report);
+```
+
+**[Full Knowledge Base documentation →](docs/knowledge-base.md)**
 
 ---
 
@@ -212,6 +324,11 @@ const result = await agent.run('Show my invoices', {
 │  SystemPromptBuilder · ContextEngine · Vigil · Heartbeat · Gateway  │
 │  Doctor (built-in expert agent) · Model Specs Registry              │
 ├─────────────────────────────────────────────────────────────────────┤
+│                    Knowledge Base (yaaf/knowledge)                  │
+│  KBCompiler · ConceptExtractor · KnowledgeSynthesizer · KBLinter    │
+│  Ingester (md/html/txt/json/code) · KBClipper · OntologyLoader      │
+│  13 lint checks · auto-fix · wikilink graph · .kb-registry.json     │
+├─────────────────────────────────────────────────────────────────────┤
 │                      Security & IAM                                 │
 │  PromptGuard · OutputSanitizer · PiiRedactor · InputAnomalyDetector │
 │  TrustPolicy · GroundingValidator · PerUserRateLimiter              │
@@ -244,6 +361,7 @@ The full documentation is split into focused chapters:
 | [Context Compaction](docs/compaction.md) | 7 compaction strategies, production pipelines |
 | [Permissions & Hooks](docs/permissions.md) | `PermissionPolicy`, `Hooks`, `cliApproval()` |
 | [System Prompts](docs/prompts.md) | `SystemPromptBuilder`, `ContextEngine`, `Soul` |
+| [**Knowledge Base**](docs/knowledge-base.md) | **Compile raw sources into a self-healing LLM-ready wiki** |
 
 ### Security & IAM
 
@@ -266,6 +384,7 @@ The full documentation is split into focused chapters:
 | Doc | Description |
 |-----|-------------|
 | [Multi-Agent](docs/multi-agent.md) | Orchestrator, Mailbox IPC, AgentRouter, delegates |
+| [Human-in-the-Loop](docs/human-in-the-loop.md) | `agent.step()`, `agent.resume()`, `AgentThread`, durable pause/resume |
 | [YAAF Doctor](docs/doctor.md) | Built-in diagnostic agent, 16-event live watch, auto-attach, daemon mode |
 | [Observability](docs/telemetry.md) | OpenTelemetry spans, metrics, logs, cost tracking |
 | [Plugins](docs/plugins.md) | Plugin architecture, MCP, Honcho, AgentFS, Camoufox |
@@ -300,6 +419,13 @@ import {
 // IAM (zero dependencies — included in core)
 import { rbac, abac, TenantScopeStrategy } from 'yaaf';
 
+// AgentThread — stateless reducer / human-in-the-loop (zero deps)
+import {
+  createThread, forkThread, serializeThread, deserializeThread,
+  type AgentThread, type StepResult, type SuspendReason, type SuspendResolution,
+} from 'yaaf';
+// then: agent.step(thread), agent.resume(thread, resolution), agent.runThread(thread)
+
 // A2A — cross-framework agent interop (zero deps)
 import { A2AClient, A2AServer, serveA2A, a2aTool } from 'yaaf';
 
@@ -308,6 +434,13 @@ import { McpOAuthClient, FileTokenStore, oauthMcpServer } from 'yaaf';
 
 // OpenAPI — auto-generate tools from specs (zero deps)
 import { OpenAPIToolset } from 'yaaf';
+
+// Knowledge Base — Karpathy-style compile pipeline (optional: readability, jsdom, turndown for HTML)
+import {
+  KBCompiler, makeGenerateFn, KBClipper,
+  ConceptExtractor, KnowledgeSynthesizer, KBLinter,
+  OntologyLoader, ingestFile, canIngest,
+} from 'yaaf/knowledge';
 
 // Remote sessions — WebSocket/HTTP agent serving (zero deps)
 import { RemoteSessionServer, startRemoteServer } from 'yaaf/remote';
@@ -334,6 +467,8 @@ import { createWorker } from 'yaaf/worker';
 
 | Example | Features |
 |---------|----------|
+| [knowledge-base](examples/knowledge-base/) | `KBCompiler`, ontology authoring, web clipping, lint + auto-fix |
+| [human-in-the-loop](examples/human-in-the-loop/) | `agent.step()`, `agent.resume()`, `requiresApproval`, durable pause/resume |
 | [a2a-interop](examples/a2a-interop/) | A2A protocol, YAAF ↔ Vercel AI SDK cross-framework communication |
 | [remote-sessions](examples/remote-sessions/) | WebSocket server, HTTP chat, session persistence, management |
 | [mcp-oauth](examples/mcp-oauth/) | OAuth 2.0 (PKCE + Client Credentials), token persistence, mock server |
@@ -504,7 +639,7 @@ npx yaaf doctor --watch         # Lightweight tsc loop (no LLM)
 
 ## Design Principles
 
-1. **Zero Runtime Dependencies** — The core framework ships nothing but TypeScript. Optional features (Ink, OTel) are peer dependencies.
+1. **Zero Runtime Dependencies** — The core framework ships nothing but TypeScript. Optional features (Ink, OTel, HTML parsing) are peer dependencies.
 2. **Secure by Default** — `security: true` enables OWASP-aligned protection with one line. Permissions default to deny. Tools are write-capable and permission-gated by default.
 3. **Ship Anywhere** — One agent, multiple delivery targets: CLI, HTTP API, edge function, chat bot.
 4. **Streaming First** — Every runtime supports streaming with a unified `RuntimeStreamEvent` type.
@@ -514,6 +649,7 @@ npx yaaf doctor --watch         # Lightweight tsc loop (no LLM)
 8. **Defense in Depth** — 3 security layers (input → execution → output) with 11 composable modules, centralized audit logging, and per-user rate limiting.
 9. **Identity-Aware** — Built-in RBAC + ABAC authorization with data scoping ensures agents only access what users are permitted to see.
 10. **Plugin-First** — External capabilities are typed adapter interfaces. No vendor coupling. Plugin integrity verified via `TrustPolicy`.
+11. **Compiled Knowledge** — Instead of RAG, YAAF compiles raw sources into a structured, cross-linked, self-healing wiki. The knowledge base is human-readable, diffable, and directly consumable as agent context.
 
 ---
 

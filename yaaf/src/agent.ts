@@ -43,6 +43,15 @@ import {
   type ChatModel,
   type RunnerStreamEvent,
 } from './agents/runner.js'
+import {
+  type AgentThread,
+  type StepResult,
+  type SuspendResolution,
+  createThread,
+  forkThread,
+  serializeThread,
+  deserializeThread,
+} from './agents/thread.js'
 import type { Tool } from './tools/tool.js'
 import type { Plugin, ToolProvider } from './plugin/types.js'
 import type { MemoryStore } from './memory/memoryStore.js'
@@ -789,6 +798,84 @@ export class Agent {
 
     endAgentRunSpan({ responseLength: response.length })
     return response
+  }
+
+  /**
+   * Execute one step of the agent loop using the stateless reducer pattern.
+   *
+   * Returns an `AgentThread` — a serializable snapshot of the agent's current
+   * state. If the agent needs human input or approval to continue, it will be
+   * **suspended** rather than blocking.
+   *
+   * @example Basic multi-step loop
+   * ```ts
+   * import { createThread } from 'yaaf';
+   *
+   * let { thread } = await agent.step(createThread('Deploy v1.2.3 to prod'));
+   * while (!thread.done && !thread.suspended) {
+   *   ;({ thread } = await agent.step(thread));
+   * }
+   * console.log(thread.finalResponse);
+   * ```
+   *
+   * @example Human-in-the-loop
+   * ```ts
+   * const { thread, suspended } = await agent.step(createThread('deploy'));
+   * if (suspended?.type === 'awaiting_approval') {
+   *   await db.save(serializeThread(thread));       // save state
+   *   await slack.send(`Approve ${suspended.pendingToolCall.name}?`, thread.id);
+   *   // → user clicks approve → POST /resume/:threadId → agent.resume(thread, {type:'approved'})
+   * }
+   * ```
+   */
+  async step(thread: AgentThread, options?: RunOptions | AbortSignal): Promise<StepResult> {
+    const opts: RunOptions = options instanceof AbortSignal ? { signal: options } : options ?? {}
+    this.runner.setCurrentUser(opts.user)
+    return this.runner.step(thread, opts.signal)
+  }
+
+  /**
+   * Resume a suspended thread with a human resolution.
+   * Injects the resolution result and continues the agent loop for one step.
+   *
+   * @example Approve a high-stakes tool call
+   * ```ts
+   * const result = await agent.resume(thread, { type: 'approved' });
+   * ```
+   *
+   * @example Reject with reason
+   * ```ts
+   * const result = await agent.resume(thread, { type: 'rejected', reason: 'Try staging first' });
+   * ```
+   *
+   * @example Respond to a human_input request
+   * ```ts
+   * const result = await agent.resume(thread, {
+   *   type: 'human_input',
+   *   response: 'Yes, deploy backend before frontend',
+   * });
+   * ```
+   */
+  async resume(thread: AgentThread, resolution: SuspendResolution, options?: RunOptions | AbortSignal): Promise<StepResult> {
+    const opts: RunOptions = options instanceof AbortSignal ? { signal: options } : options ?? {}
+    this.runner.setCurrentUser(opts.user)
+    return this.runner.resume(thread, resolution, opts.signal)
+  }
+
+  /**
+   * Run a thread to completion using the step loop.
+   * Throws if the agent suspends — use `step()` + `resume()` for human-in-the-loop.
+   *
+   * @example
+   * ```ts
+   * const { thread, response } = await agent.runThread(createThread('summarize this doc'));
+   * console.log(response);
+   * ```
+   */
+  async runThread(thread: AgentThread, options?: RunOptions | AbortSignal): Promise<{ thread: AgentThread; response: string }> {
+    const opts: RunOptions = options instanceof AbortSignal ? { signal: options } : options ?? {}
+    this.runner.setCurrentUser(opts.user)
+    return this.runner.runToCompletion(thread, opts.signal)
   }
 
   /**

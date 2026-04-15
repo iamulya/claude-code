@@ -1,0 +1,15 @@
+{
+  "name": "yaaf-human-in-the-loop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "YAAF Human-in-the-Loop deployment agent — demonstrates agent.step() and agent.resume()",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "start:approve": "tsx src/index.ts \"Deploy v1.3.0 to production with extra safety checks\"",
+    "start:reject":  "tsx src/index.ts \"Deploy v1.2.3 to production immediately\""
+  },
+  "dependencies": {
+    "tsx": "^4.7.0"
+  }
+}

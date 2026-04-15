@@ -168,6 +168,18 @@ export {
   type RunnerStreamEvent,
 } from './agents/runner.js'
 
+// ── AgentThread (stateless reducer / durable pause-resume) ───────────────────
+export {
+  type AgentThread,
+  type StepResult,
+  type SuspendReason,
+  type SuspendResolution,
+  createThread,
+  forkThread,
+  serializeThread,
+  deserializeThread,
+} from './agents/thread.js'
+
 // ── Streaming Tool Executor (concurrent execution) ───────────────────────────
 export {
   StreamingToolExecutor,

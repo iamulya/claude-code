@@ -33,6 +33,16 @@
  */
 
 import { findToolByName, type Tool, type ToolContext } from '../tools/tool.js'
+import {
+  type AgentThread,
+  type StepResult,
+  type SuspendReason,
+  type SuspendResolution,
+  createThread,
+  forkThread,
+  serializeThread,
+  deserializeThread,
+} from './thread.js'
 import type { Hooks } from '../hooks.js'
 import type { PermissionPolicy } from '../permissions.js'
 import type { AccessPolicy, UserContext } from '../iam/types.js'
@@ -973,6 +983,306 @@ export class AgentRunner {
     }
 
     yield { type: 'final_response', content: '[Agent reached maximum iterations without producing a final response]' }
+  }
+
+  // ── Stateless Reducer API (12 Factor Agents — Factors 5, 6, 7, 12) ─────────
+
+  /**
+   * Execute one complete step of the agent loop.
+   *
+   * This is the **stateless reducer** primitive — the agent:
+   * 1. Makes one LLM call
+   * 2. Executes any tool calls that don't require suspension
+   * 3. Returns the updated thread + a `done` or `suspended` signal
+   *
+   * The caller decides what to do next:
+   * - If `done` → show the final response
+   * - If `suspended` → serialize the thread, notify the human, wait
+   * - Otherwise → call `step()` again to continue
+   *
+   * @example Basic step loop
+   * ```ts
+   * let { thread } = await runner.step(createThread('Deploy v1.2.3 to prod'));
+   * while (!thread.done && !thread.suspended) {
+   *   ;({ thread } = await runner.step(thread));
+   * }
+   * ```
+   *
+   * @example Human-in-the-loop
+   * ```ts
+   * const { thread, suspended } = await runner.step(thread);
+   * if (suspended?.type === 'awaiting_approval') {
+   *   await db.save(serializeThread(thread));
+   *   await slack.send(`Approve ${suspended.pendingToolCall.name}?`);
+   *   // → webhook calls runner.resume(thread, { type: 'approved' })
+   * }
+   * ```
+   */
+  async step(thread: AgentThread, signal?: AbortSignal): Promise<StepResult> {
+    // Load thread messages into runner state
+    this.messages = [...thread.messages]
+
+    // Apply tool result budget before building message list
+    const budgeted = this.config.toolResultBudget
+      ? applyToolResultBudget(this.messages, this.config.toolResultBudget)
+      : { messages: this.messages, cleared: 0, charsFreed: 0 }
+
+    // Build full message list with system prompt
+    let allMessages: ChatMessage[] = [
+      { role: 'system', content: this.buildSystemPrompt() },
+      ...budgeted.messages,
+    ]
+
+    // beforeLLM hook
+    allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages, this.hookCallbacks)
+
+    // LLM call
+    const result = await withRetry(
+      () => this.config.model.complete({
+        messages: allMessages,
+        tools: this.toolSchemas.length > 0 ? this.toolSchemas : undefined,
+        temperature: this.config.temperature,
+        maxTokens: this.config.maxTokens,
+        signal,
+      }),
+      { ...this.config.retry, signal },
+    )
+
+    // afterLLM hook
+    const afterLlm = await dispatchAfterLLM(this.config.hooks, result, thread.step + 1, this.hookCallbacks)
+    const finalContent = afterLlm.action === 'override' ? afterLlm.content : result.content
+
+    const updatedThread: AgentThread = {
+      ...thread,
+      step: thread.step + 1,
+      updatedAt: new Date().toISOString(),
+      messages: [...thread.messages],
+    }
+
+    // ── Tool calls ────────────────────────────────────────────────────────
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      updatedThread.messages.push({
+        role: 'assistant',
+        content: finalContent,
+        toolCalls: result.toolCalls,
+      })
+
+      // Check each tool call for suspension triggers
+      for (const call of result.toolCalls) {
+        let parsedArgs: Record<string, unknown>
+        try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
+
+        // Check if tool requires approval
+        const tool = findToolByName(this.config.tools, call.name)
+        const requiresApproval = tool && 'requiresApproval' in tool &&
+          (tool as unknown as { requiresApproval?: boolean | ((args: Record<string, unknown>) => boolean) }).requiresApproval
+
+        const needsApproval = typeof requiresApproval === 'function'
+          ? requiresApproval(parsedArgs)
+          : requiresApproval === true
+
+        if (needsApproval) {
+          const suspended: SuspendReason = {
+            type: 'awaiting_approval',
+            pendingToolCall: call,
+            args: parsedArgs,
+            message: `Tool "${call.name}" requires human approval before execution.`,
+          }
+          updatedThread.suspended = suspended
+          this.messages = updatedThread.messages
+          return { thread: updatedThread, done: false, suspended }
+        }
+
+        // Check for human_input tool pattern
+        if (call.name === 'request_human_input' || call.name === 'ask_human') {
+          const question = parsedArgs.question as string ?? parsedArgs.message as string ?? 'Agent needs input'
+          const urgency = parsedArgs.urgency as 'low' | 'medium' | 'high' | undefined
+          const suspended: SuspendReason = { type: 'awaiting_human_input', question, urgency }
+          updatedThread.suspended = suspended
+          this.messages = updatedThread.messages
+          return { thread: updatedThread, done: false, suspended }
+        }
+      }
+
+      // No suspension needed — execute tools
+      const executor = new StreamingToolExecutor(
+        this.config.tools,
+        { ...this.toolContext, signal: signal ?? new AbortController().signal },
+        {
+          permissions: this.config.permissions,
+          accessPolicy: this.config.accessPolicy,
+          user: this._currentUser,
+          hooks: this.config.hooks,
+          sandbox: this.config.sandbox,
+          messages: updatedThread.messages,
+          signal,
+          hookCallbacks: this.hookCallbacks,
+          toolResultBoundaries: this.config.toolResultBoundaries,
+        },
+      )
+
+      for (const call of result.toolCalls) {
+        executor.addTool(call)
+      }
+
+      for await (const toolResult of executor.getAllResults()) {
+        updatedThread.messages.push({
+          role: 'tool',
+          toolCallId: toolResult.toolCallId,
+          name: toolResult.name,
+          content: toolResult.content,
+        })
+      }
+
+      this.messages = updatedThread.messages
+      return { thread: updatedThread, done: false }
+    }
+
+    // ── Final response ────────────────────────────────────────────────────
+    const response = finalContent ?? ''
+    updatedThread.messages.push({ role: 'assistant', content: response })
+    updatedThread.done = true
+    updatedThread.finalResponse = response
+    this.messages = updatedThread.messages
+
+    return { thread: updatedThread, done: true, response }
+  }
+
+  /**
+   * Resume a suspended thread with a resolution (approval, human input, async result).
+   *
+   * Injects the resolution as a tool result message and returns the updated thread
+   * ready for the next `step()` call.
+   *
+   * @example Approve a tool call
+   * ```ts
+   * const resumed = await runner.resume(thread, { type: 'approved', result: 'Deployment started' });
+   * ```
+   *
+   * @example Inject human response
+   * ```ts
+   * const resumed = await runner.resume(thread, { type: 'human_input', response: 'Yes, proceed with v1.2.3' });
+   * ```
+   */
+  async resume(thread: AgentThread, resolution: SuspendResolution, signal?: AbortSignal): Promise<StepResult> {
+    if (!thread.suspended) {
+      throw new Error('Cannot resume a thread that is not suspended')
+    }
+
+    const updatedThread: AgentThread = {
+      ...thread,
+      suspended: undefined,
+      updatedAt: new Date().toISOString(),
+      messages: [...thread.messages],
+    }
+
+    // Inject resolution as tool result or user message based on suspension type
+    if (thread.suspended.type === 'awaiting_approval') {
+      const pendingCall = thread.suspended.pendingToolCall
+
+      if (resolution.type === 'approved') {
+        // Execute the tool now and append the result
+        const tool = findToolByName(this.config.tools, pendingCall.name)
+        let content: string
+        if (tool) {
+          try {
+            let parsedArgs: Record<string, unknown>
+            try { parsedArgs = JSON.parse(pendingCall.arguments) } catch { parsedArgs = {} }
+            const toolResult = await tool.call(
+              parsedArgs,
+              {
+                ...this.toolContext,
+                signal: signal ?? new AbortController().signal,
+                messages: updatedThread.messages as unknown as typeof this.toolContext.messages,
+              },
+            )
+            content = typeof toolResult === 'string'
+              ? toolResult
+              : JSON.stringify(toolResult)
+          } catch (err) {
+            content = JSON.stringify({ error: String(err) })
+          }
+        } else {
+          content = resolution.result ?? JSON.stringify({ status: 'approved' })
+        }
+
+        updatedThread.messages.push({
+          role: 'tool',
+          toolCallId: pendingCall.id,
+          name: pendingCall.name,
+          content,
+        })
+      } else if (resolution.type === 'rejected') {
+        updatedThread.messages.push({
+          role: 'tool',
+          toolCallId: pendingCall.id,
+          name: pendingCall.name,
+          content: JSON.stringify({
+            error: 'APPROVAL_REJECTED',
+            reason: resolution.reason ?? 'Human rejected this action.',
+          }),
+        })
+      } else {
+        throw new Error(`Invalid resolution type "${resolution.type}" for awaiting_approval suspension`)
+      }
+    }
+
+    else if (thread.suspended.type === 'awaiting_human_input') {
+      if (resolution.type !== 'human_input') {
+        throw new Error('Expected resolution type "human_input" for awaiting_human_input suspension')
+      }
+      // Inject as user message
+      updatedThread.messages.push({ role: 'user', content: resolution.response })
+    }
+
+    else if (thread.suspended.type === 'awaiting_async_result') {
+      if (resolution.type !== 'async_result') {
+        throw new Error('Expected resolution type "async_result" for awaiting_async_result suspension')
+      }
+      const pendingCall = thread.suspended
+      updatedThread.messages.push({
+        role: 'tool',
+        toolCallId: `async_${pendingCall.jobId}`,
+        name: pendingCall.toolName,
+        content: resolution.error
+          ? JSON.stringify({ error: resolution.error })
+          : JSON.stringify(resolution.result),
+      })
+    }
+
+    // Continue stepping from the updated thread
+    return this.step(updatedThread, signal)
+  }
+
+  /**
+   * Run the full agent to completion using the step() loop.
+   * Equivalent to run() but operates on an AgentThread.
+   * Throws if the agent suspends (requires human interaction).
+   */
+  async runToCompletion(
+    thread: AgentThread,
+    signal?: AbortSignal,
+  ): Promise<{ thread: AgentThread; response: string }> {
+    let current = thread
+    let iterations = 0
+
+    while (!current.done && iterations < this.config.maxIterations) {
+      iterations++
+      const result = await this.step(current, signal)
+      current = result.thread
+
+      if (result.suspended) {
+        throw new Error(
+          `Agent suspended after ${iterations} steps: ${result.suspended.type}. ` +
+          `Use agent.resume() to continue.`,
+        )
+      }
+    }
+
+    return {
+      thread: current,
+      response: current.finalResponse ?? '[No final response]',
+    }
   }
 
   /**

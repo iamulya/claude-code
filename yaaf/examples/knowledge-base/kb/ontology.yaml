@@ -1,0 +1,242 @@
+# YAAF Knowledge Base Ontology
+# Domain: Machine Learning & AI Research
+# This ontology defines the schema for a KB covering core ML concepts,
+# research papers, and tools. It is used by the compiler at every stage:
+# extraction, synthesis, and linting.
+
+domain: "Machine Learning & AI Research"
+
+# ── Entity Types ────────────────────────────────────────────────────────────────
+
+entity_types:
+
+  concept:
+    description: "A core idea, technique, or algorithm in machine learning"
+    frontmatter:
+      fields:
+        title:
+          description: "Full canonical name"
+          type: string
+          required: true
+        entity_type:
+          description: "Always 'concept'"
+          type: string
+          required: true
+        tags:
+          description: "Topical tags"
+          type: string[]
+          required: false
+        status:
+          description: "Adoption maturity"
+          type: enum
+          required: false
+          enum: [established, emerging, deprecated, speculative]
+    article_structure:
+      - heading: "Overview"
+        description: "What is this concept? Define it clearly and concisely."
+        required: true
+      - heading: "How It Works"
+        description: "Mechanism, intuition, or algorithm — as appropriate."
+        required: false
+      - heading: "Key Properties"
+        description: "Important characteristics, trade-offs, and edge cases."
+        required: false
+      - heading: "Applications"
+        description: "Where and how this concept is used in practice."
+        required: false
+      - heading: "Related Concepts"
+        description: "Connections to other KB entities."
+        required: false
+    linkable_to:
+      - concept
+      - research_paper
+      - tool
+    indexable: true
+
+  research_paper:
+    description: "An academic paper, preprint, or technical report"
+    frontmatter:
+      fields:
+        title:
+          description: "Full paper title"
+          type: string
+          required: true
+        entity_type:
+          description: "Always 'research_paper'"
+          type: string
+          required: true
+        authors:
+          description: "Author list"
+          type: string[]
+          required: false
+        year:
+          description: "Publication year"
+          type: number
+          required: false
+        venue:
+          description: "Conference, journal, or preprint server"
+          type: string
+          required: false
+        url:
+          description: "Link to the paper"
+          type: url
+          required: false
+    article_structure:
+      - heading: "Summary"
+        description: "What this paper does and why it matters."
+        required: true
+      - heading: "Key Contributions"
+        description: "Novel contributions compared to prior work."
+        required: true
+      - heading: "Architecture / Methods"
+        description: "Technical details of the approach."
+        required: false
+      - heading: "Results"
+        description: "Quantitative results on key benchmarks."
+        required: false
+    linkable_to:
+      - concept
+      - tool
+    indexable: true
+
+  tool:
+    description: "A software library, framework, or research tool"
+    frontmatter:
+      fields:
+        title:
+          description: "Tool name"
+          type: string
+          required: true
+        entity_type:
+          description: "Always 'tool'"
+          type: string
+          required: true
+        homepage:
+          description: "Project homepage"
+          type: url
+          required: false
+        language:
+          description: "Primary programming language"
+          type: string
+          required: false
+        license:
+          description: "License"
+          type: string
+          required: false
+    article_structure:
+      - heading: "Overview"
+        description: "What this tool does and what problem it solves."
+        required: true
+      - heading: "Key Features"
+        description: "Notable capabilities."
+        required: false
+      - heading: "Usage Example"
+        description: "A concise, working code example."
+        required: false
+      - heading: "Related Concepts"
+        description: "Concepts this tool implements."
+        required: false
+    linkable_to:
+      - concept
+      - research_paper
+    indexable: true
+
+# ── Relationship Types ──────────────────────────────────────────────────────────
+
+relationship_types:
+  - name: IMPLEMENTS
+    from: tool
+    to: concept
+    description: "A tool that implements a concept"
+    reciprocal: IMPLEMENTED_BY
+
+  - name: INTRODUCED_BY
+    from: concept
+    to: research_paper
+    description: "A concept first introduced in a paper"
+    reciprocal: INTRODUCES
+
+  - name: USED_IN
+    from: concept
+    to: tool
+    description: "A concept used or demonstrated by a tool"
+
+# ── Vocabulary ──────────────────────────────────────────────────────────────────
+# Known terms and aliases — drive both static analysis and the auto-fixer.
+
+vocabulary:
+  "transformer":
+    aliases:
+      - transformer model
+      - transformer architecture
+      - transformers
+    entity_type: concept
+    doc_id: concepts/transformer
+
+  "attention mechanism":
+    aliases:
+      - attention
+      - self-attention
+      - scaled dot-product attention
+      - multi-head attention
+    entity_type: concept
+    doc_id: concepts/attention-mechanism
+
+  "large language model":
+    aliases:
+      - llm
+      - llms
+      - language model
+      - large language models
+    entity_type: concept
+    doc_id: concepts/large-language-model
+
+  "reinforcement learning from human feedback":
+    aliases:
+      - rlhf
+      - reinforcement learning from human feedback
+    entity_type: concept
+    doc_id: concepts/rlhf
+
+  "retrieval-augmented generation":
+    aliases:
+      - rag
+      - retrieval augmented generation
+    entity_type: concept
+    doc_id: concepts/rag
+
+  "pytorch":
+    aliases:
+      - torch
+      - PyTorch
+    entity_type: tool
+    doc_id: tools/pytorch
+
+  "hugging face transformers":
+    aliases:
+      - huggingface
+      - hugging face
+      - transformers library
+      - hf transformers
+    entity_type: tool
+    doc_id: tools/hugging-face-transformers
+
+  "attention is all you need":
+    aliases:
+      - vaswani 2017
+      - attention paper
+    entity_type: research_paper
+    doc_id: research-papers/attention-is-all-you-need
+
+# ── Token Budget ────────────────────────────────────────────────────────────────
+
+budget:
+  text_document_tokens: 6000
+  image_tokens: 1200
+  max_images_per_fetch: 2
+
+# ── Compiler Config ─────────────────────────────────────────────────────────────
+
+compiler:
+  extraction_model: gemini-2.5-flash
+  synthesis_model: gemini-2.5-pro

@@ -36,6 +36,10 @@
     "./remote": {
       "import": "./dist/remote.js",
       "types": "./dist/remote.d.ts"
+    },
+    "./knowledge": {
+      "import": "./dist/knowledge/index.js",
+      "types": "./dist/knowledge/index.d.ts"
     }
   },
   "scripts": {
@@ -67,7 +71,10 @@
     "ink": "^5.0.0",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
-    "react": "^18.0.0"
+    "react": "^18.0.0",
+    "@mozilla/readability": "^0.5.0",
+    "jsdom": "^25.0.0",
+    "turndown": "^7.2.0"
   },
   "peerDependenciesMeta": {
     "@google/genai": {
@@ -104,6 +111,15 @@
       "optional": true
     },
     "ink-spinner": {
+      "optional": true
+    },
+    "@mozilla/readability": {
+      "optional": true
+    },
+    "jsdom": {
+      "optional": true
+    },
+    "turndown": {
       "optional": true
     }
   },
