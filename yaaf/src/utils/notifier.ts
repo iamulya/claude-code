@@ -184,3 +184,54 @@ export class BufferNotifier implements NotificationChannel {
     this._buffer.length = 0
   }
 }
+
+// ── GAP 7 FIX: Bridge NotificationChannel ↔ NotificationAdapter ──────────────
+//
+// Two parallel notification systems existed:
+//   1. `NotificationChannel` / `CompositeNotifier` — this file (standalone utility)
+//   2. `NotificationAdapter` — plugin system in plugin/types.ts
+//
+// This factory wraps any `NotificationChannel` as a `NotificationAdapter` plugin,
+// so users can register their existing CompositeNotifier/WebhookNotifier/etc.
+// with a PluginHost and receive ALL notifications from Vigil, AgentOrchestrator,
+// SecurityAuditLog, and the CostTracker in one place.
+//
+// @example
+// ```ts
+// const slackNotifier = new WebhookNotifier('https://hooks.slack.com/...')
+// const agent = await Agent.create({
+//   model: 'gpt-4o',
+//   plugins: [notificationAdapterFromChannel('slack-notifier', slackNotifier)],
+// })
+// // Now Vigil.brief(), orchestrator failures, and audit critical events → Slack
+// ```
+
+/**
+ * Wrap any `NotificationChannel` as a `NotificationAdapter` plugin that can
+ * be registered with an agent's `PluginHost`.
+ *
+ * This bridges the `utils/notifier.ts` utility system and the plugin system,
+ * so `Vigil.brief()`, `AgentOrchestrator` lifecycle events, and
+ * `SecurityAuditLog` critical alerts all flow to the same channel.
+ */
+export function notificationAdapterFromChannel(
+  name: string,
+  channel: NotificationChannel,
+): import('../plugin/types.js').NotificationAdapter {
+  return {
+    name,
+    version: '1.0.0',
+    capabilities: ['notification'] as const,
+    async initialize() {},
+    async destroy() { await channel.destroy?.() },
+    async notify(notification) {
+      await channel.notify({
+        type: (notification.type as import('./notifier.js').NotificationType) ?? 'info',
+        title: notification.title,
+        message: notification.message,
+        metadata: notification.metadata as Record<string, unknown> | undefined,
+        timestamp: notification.timestamp,
+      })
+    },
+  }
+}

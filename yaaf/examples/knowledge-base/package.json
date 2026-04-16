@@ -4,10 +4,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "compile": "npx tsx src/compile.ts",
-    "chat": "npx tsx src/chat.ts",
-    "demo": "npx tsx src/chat.ts --demo",
-    "start": "npx tsx src/compile.ts && npx tsx src/chat.ts"
+    "compile":  "npx tsx src/compile.ts",
+    "compile:incremental": "npx tsx src/compile.ts --incremental",
+    "lint":     "npx tsx src/compile.ts --lint-only",
+    "lint:fix": "npx tsx src/compile.ts --lint-only --fix",
+    "chat":     "npx tsx src/chat.ts",
+    "demo":     "npx tsx src/chat.ts --demo",
+    "start":    "npm run compile && npm run chat"
   },
   "dependencies": {
     "yaaf": "file:../../"

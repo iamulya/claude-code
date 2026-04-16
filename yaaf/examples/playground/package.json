@@ -1,0 +1,18 @@
+{
+  "name": "yaaf-playground-example",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "YAAF Developer Playground — an agent with real tools served via the Dev UI",
+  "scripts": {
+    "start": "npx tsx src/index.ts",
+    "dev":   "npx tsx --watch src/index.ts"
+  },
+  "dependencies": {
+    "yaaf": "file:../../"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.0"
+  }
+}

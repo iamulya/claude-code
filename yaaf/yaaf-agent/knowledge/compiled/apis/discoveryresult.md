@@ -1,0 +1,16 @@
+---
+title: "DiscoveryResult"
+entity_type: api
+stub: true
+compiled_at: "2026-04-16T14:41:06.219Z"
+compiled_from: []
+confidence: 0.5
+---
+
+# DiscoveryResult
+> **Stub article** — This article was auto-generated from mentions in source material.
+> Expand it by adding source documents that cover this topic.
+## Overview
+The comprehensive result of a discovery run containing suggestions and imbalances
+## Related
+- [[discoverGaps]]

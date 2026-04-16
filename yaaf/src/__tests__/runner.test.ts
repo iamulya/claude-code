@@ -137,8 +137,8 @@ describe('AgentRunner', () => {
         systemPrompt: 'Test',
         maxIterations: 3,
       })
-      const result = await runner.run('Loop test')
-      expect(result).toContain('maximum iterations')
+      // W-2: runner.run() now throws MaxIterationsError instead of returning a string
+      await expect(runner.run('Loop test')).rejects.toThrow('maximum iterations')
     })
 
     it('preserves message history across calls', async () => {
@@ -363,4 +363,106 @@ describe('AgentRunner', () => {
       expect(runner.messageCount).toBe(0)
     })
   })
+
+  // ── buildTool return contract regression tests ──────────────────────────────
+  //
+  // These tests were added after a production crash: tools that returned plain
+  // strings (not { data: T }) caused "Cannot read properties of undefined
+  // (reading 'slice')" deep in streamingExecutor.ts. We test the full
+  // runner pipeline here to catch any future regression at the integration level.
+
+  describe('buildTool return shape (regression: plain string crash)', () => {
+    it('runner.run() completes when tool returns a plain string', async () => {
+      const plainStringTool = buildTool({
+        name: 'plain_string',
+        inputSchema: { type: 'object', properties: {} },
+        describe: () => 'returns plain string',
+        async call(): Promise<{ data: string }> {
+          // Plain string return — violates API contract but must not crash
+          return 'raw string result' as unknown as { data: string }
+        },
+      })
+
+      const model = createMockModel([
+        {
+          content: '',
+          toolCalls: [{ id: 'tc1', name: 'plain_string', arguments: '{}' }],
+          finishReason: 'tool_calls',
+        },
+        { content: 'Got the result.', finishReason: 'stop' },
+      ])
+      const runner = new AgentRunner({ model, tools: [plainStringTool], systemPrompt: 'Test' })
+
+      // Must not throw
+      const result = await runner.run('test')
+      expect(result).toBe('Got the result.')
+
+      // The tool result must have made it into the conversation history
+      const history = runner.getHistory()
+      const toolMsg = history.find(m => m.role === 'tool')
+      expect(toolMsg?.content).toBe('raw string result')
+    })
+
+    it('runner.runStream() emits tool_call_result when tool returns a plain string', async () => {
+      const plainStringTool = buildTool({
+        name: 'plain_string_stream',
+        inputSchema: { type: 'object', properties: {} },
+        describe: () => 'returns plain string',
+        async call(): Promise<{ data: string }> {
+          return 'streamed plain string' as unknown as { data: string }
+        },
+      })
+
+      const model = createStreamingMockModel([
+        {
+          content: '',
+          toolCalls: [{ id: 'tc1', name: 'plain_string_stream', arguments: '{}' }],
+          finishReason: 'tool_calls',
+        },
+        { content: 'Done.', finishReason: 'stop' },
+      ])
+
+      const runner = new AgentRunner({ model, tools: [plainStringTool], systemPrompt: 'Test' })
+      const events: RunnerStreamEvent[] = []
+      for await (const e of runner.runStream('stream test')) {
+        events.push(e)
+      }
+
+      // Must emit a tool_call_result event with the string content
+      const tcResult = events.find(e => e.type === 'tool_call_result')
+      expect(tcResult).toBeDefined()
+      expect((tcResult as Extract<RunnerStreamEvent, { type: 'tool_call_result' }>).result)
+        .toBe('streamed plain string')
+    })
+
+    it('runner.run() completes when tool returns { data: object }', async () => {
+      const objectTool = buildTool({
+        name: 'object_result',
+        inputSchema: { type: 'object', properties: {} },
+        describe: () => 'returns object',
+        async call() {
+          return { data: { status: 'ok', value: 99 } }
+        },
+      })
+
+      const model = createMockModel([
+        {
+          content: '',
+          toolCalls: [{ id: 'tc1', name: 'object_result', arguments: '{}' }],
+          finishReason: 'tool_calls',
+        },
+        { content: 'Processed.', finishReason: 'stop' },
+      ])
+      const runner = new AgentRunner({ model, tools: [objectTool], systemPrompt: 'Test' })
+      const result = await runner.run('test')
+      expect(result).toBe('Processed.')
+
+      const history = runner.getHistory()
+      const toolMsg = history.find(m => m.role === 'tool')
+      // Object must be JSON-stringified in the conversation
+      const parsed = JSON.parse(toolMsg?.content ?? '{}')
+      expect(parsed).toEqual({ status: 'ok', value: 99 })
+    })
+  })
 })
+

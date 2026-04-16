@@ -33,6 +33,7 @@
  */
 
 import { findToolByName, type Tool, type ToolContext } from '../tools/tool.js'
+import * as crypto from 'crypto'
 import {
   type AgentThread,
   type StepResult,
@@ -66,6 +67,14 @@ import {
 import { StreamingToolExecutor, type ToolExecutionResult } from './streamingExecutor.js'
 import { applyToolResultBudget, type ToolResultBudgetConfig } from '../utils/toolResultBudget.js'
 import type { ContextManager } from '../context/contextManager.js'
+import { MaxIterationsError } from '../errors.js'
+
+/**
+ * A module-level AbortController whose signal is never aborted.
+ * Used as a placeholder when no external signal is provided, to avoid
+ * allocating a new controller (and leaking it) on every tool execution.
+ */
+const NEVER_ABORT = new AbortController()
 
 // ── Chat Types (OpenAI-compatible, industry standard) ────────────────────────
 
@@ -184,8 +193,8 @@ export type RunnerStreamEvent =
   | { type: 'tool_call_start'; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_call_result'; name: string; result: string; durationMs: number; error?: boolean }
   | { type: 'tool_blocked'; name: string; reason: string }
-  | { type: 'llm_request'; messageCount: number; toolCount: number }
-  | { type: 'llm_response'; hasToolCalls: boolean; contentLength: number; usage?: TokenUsage; durationMs: number }
+  | { type: 'llm_request'; messageCount: number; toolCount: number; messages?: Array<{role: string; content: string}> }
+  | { type: 'llm_response'; hasToolCalls: boolean; contentLength: number; usage?: TokenUsage; durationMs: number; content?: string; toolCalls?: Array<{name: string; arguments: Record<string, unknown>}> }
   | { type: 'iteration'; count: number; maxIterations: number }
   | { type: 'usage'; usage: SessionUsage }
   | { type: 'final_response'; content: string }
@@ -360,10 +369,12 @@ export class AgentRunner {
     //   2. model.maxOutputTokens (from model specs registry — set on our built-in models)
     //   3. Hard fallback 4_096 (for bring-your-own ChatModel that exposes no property)
     const modelMaxOutputTokens =
-      (config.model as unknown as Record<string, unknown>).maxOutputTokens
+      'maxOutputTokens' in config.model && typeof config.model.maxOutputTokens === 'number'
+        ? config.model.maxOutputTokens
+        : undefined
     const resolvedMaxTokens =
       config.maxTokens ??
-      (typeof modelMaxOutputTokens === 'number' ? modelMaxOutputTokens : undefined) ??
+      modelMaxOutputTokens ??
       4_096
 
     this.config = {
@@ -441,13 +452,36 @@ export class AgentRunner {
     }
   }
 
+  /**
+   * CRITIQUE #20 FIX: Async-safe event dispatch with timeout/backpressure.
+   * Handlers that throw are caught and logged (never stall the loop).
+   * Handlers that block for more than 5 seconds are warned about.
+   */
   private emit<K extends keyof RunnerEvents>(
     event: K,
     data: RunnerEvents[K],
   ): void {
     const handlers = this.eventHandlers.get(event)
-    if (handlers) {
-      for (const handler of handlers) handler(data)
+    if (!handlers) return
+    for (const handler of handlers) {
+      try {
+        const result: unknown = handler(data)
+        // If handler returns a promise (async), handle it with timeout
+        if (result && typeof (result as Promise<void>)?.then === 'function') {
+          const HANDLER_TIMEOUT_MS = 5_000
+          const timeout = new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error(`Event handler for "${String(event)}" timed out after ${HANDLER_TIMEOUT_MS}ms`)), HANDLER_TIMEOUT_MS),
+          )
+          Promise.race([result as Promise<void>, timeout]).catch(err => {
+            const msg = err instanceof Error ? err.message : String(err)
+            console.warn(`[yaaf/runner] Event handler warning (${String(event)}): ${msg}`)
+          })
+        }
+      } catch (err) {
+        // Synchronous handler threw — log and continue, never stall the loop
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`[yaaf/runner] Event handler error (${String(event)}): ${msg}`)
+      }
     }
   }
 
@@ -460,7 +494,11 @@ export class AgentRunner {
     event: 'context:compaction-triggered' | 'context:overflow-recovery',
     data: RunnerEvents['context:compaction-triggered'] | RunnerEvents['context:overflow-recovery'],
   ): void {
-    this.emit(event as any, data as any)
+    if (event === 'context:compaction-triggered') {
+      this.emit('context:compaction-triggered', data as RunnerEvents['context:compaction-triggered'])
+    } else {
+      this.emit('context:overflow-recovery', data as RunnerEvents['context:overflow-recovery'])
+    }
   }
 
   /** Shared callbacks for hook dispatchers to emit runner events */
@@ -507,10 +545,16 @@ export class AgentRunner {
    * Run one conversation turn (batch mode — blocks until complete).
    * Sends the user message, loops through tool calls, returns the final response.
    */
-  async run(userMessage: string, signal?: AbortSignal): Promise<string> {
+  async run(userMessage: string, signal?: AbortSignal, user?: UserContext): Promise<string> {
+    // CRITIQUE #5 FIX: Use ONLY the explicitly-passed user parameter.
+    // Never fall back to this._currentUser — that's mutable instance state
+    // from a previous call and will cause TOCTOU cross-user auth bypass
+    // under concurrent server usage.
+    const runUser = user
     this.messages.push({ role: 'user', content: userMessage })
 
     let iterations = 0
+    let emptyResponseRetried = false
 
     while (iterations < this.config.maxIterations) {
       iterations++
@@ -597,10 +641,21 @@ export class AgentRunner {
       const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations, this.hookCallbacks)
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
+      // Security guard returned 'stop' — terminate the run immediately
+      if (afterLlm.action === 'stop') {
+        const blocked = `[Blocked by security policy: ${afterLlm.reason}]`
+        this.messages.push({ role: 'assistant', content: blocked })
+        return blocked
+      }
 
-      // ── Empty response detection ─────────────────────────────────────
+      // ── Empty response detection (W-3 fix: retry once) ──────────────
       if (!result.toolCalls?.length && !(finalContent ?? '').trim()) {
         this.emit('llm:empty-response', { iteration: iterations })
+        // Retry once for empty responses (rate limit glitch, content policy, etc.)
+        if (!emptyResponseRetried) {
+          emptyResponseRetried = true
+          continue
+        }
       }
 
       // If the LLM wants to call tools — use concurrent execution (Gap #2)
@@ -615,11 +670,11 @@ export class AgentRunner {
         // Execute tools via StreamingToolExecutor (concurrent when safe)
         const executor = new StreamingToolExecutor(
           this.config.tools,
-          { ...this.toolContext, signal: signal ?? new AbortController().signal },
+          { ...this.toolContext, signal: signal ?? NEVER_ABORT.signal },
           {
             permissions: this.config.permissions,
             accessPolicy: this.config.accessPolicy,
-            user: this._currentUser,
+            user: runUser,
             hooks: this.config.hooks,
             sandbox: this.config.sandbox,
             messages: this.messages,
@@ -631,8 +686,14 @@ export class AgentRunner {
 
         for (const call of result.toolCalls) {
           let parsedArgs: Record<string, unknown>
-          try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
-          delete parsedArgs.__yaaf_sig__
+          try {
+            parsedArgs = JSON.parse(call.arguments)
+          } catch {
+            // W-7 fix: surface the malformed args error instead of silently converting to {}
+            parsedArgs = { __parse_error__: `Malformed JSON arguments from LLM: ${call.arguments.slice(0, 200)}` }
+          }
+          // C3: Thought signatures are now stored in a module-level map in gemini.ts
+          // — no cleanup needed here.
           this.emit('tool:call', { name: call.name, arguments: parsedArgs })
           executor.addTool(call)
         }
@@ -667,7 +728,8 @@ export class AgentRunner {
       return response
     }
 
-    return '[Agent reached maximum iterations without producing a final response]'
+    // W-2 fix: throw a typed error so callers can distinguish budget exhaustion
+    throw new MaxIterationsError(this.config.maxIterations)
   }
 
   // ── Streaming Loop (Gap #1) ─────────────────────────────────────────────
@@ -680,7 +742,10 @@ export class AgentRunner {
   async *runStream(
     userMessage: string,
     signal?: AbortSignal,
+    user?: UserContext,
   ): AsyncGenerator<RunnerStreamEvent, void, undefined> {
+    // CRITIQUE #5 FIX: Use ONLY the explicitly-passed user parameter.
+    const runUser = user
     this.messages.push({ role: 'user', content: userMessage })
 
     // Check if model supports streaming
@@ -688,6 +753,10 @@ export class AgentRunner {
       typeof (this.config.model as StreamingChatModel).stream === 'function'
 
     let iterations = 0
+    /** W-4 fix: cap consecutive output continuations to prevent infinite loops */
+    const MAX_CONTINUATIONS = 3
+    let consecutiveContinuations = 0
+    let emptyResponseRetried = false
 
     while (iterations < this.config.maxIterations) {
       iterations++
@@ -707,6 +776,7 @@ export class AgentRunner {
         type: 'llm_request',
         messageCount: allMessages.length,
         toolCount: this.toolSchemas.length,
+        messages: allMessages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) })),
       }
 
       allMessages = await dispatchBeforeLLM(this.config.hooks, allMessages, this.hookCallbacks)
@@ -772,7 +842,7 @@ export class AgentRunner {
             const tc = delta.toolCallDelta
             if (!assembledToolCalls.has(tc.index)) {
               assembledToolCalls.set(tc.index, {
-                id: tc.id ?? `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                id: tc.id ?? `call_${crypto.randomUUID()}`,
                 name: tc.name ?? '',
                 arguments: '',
               })
@@ -871,6 +941,13 @@ export class AgentRunner {
         contentLength: result.content?.length ?? 0,
         usage: result.usage,
         durationMs: llmDurationMs,
+        content: result.content ?? undefined,
+        toolCalls: result.toolCalls?.map(tc => ({
+          name: tc.name,
+          arguments: typeof tc.arguments === 'string'
+            ? (() => { try { return JSON.parse(tc.arguments) } catch { return { raw: tc.arguments } } })()
+            : (tc.arguments ?? {}),
+        })),
       }
       yield { type: 'usage', usage: { ...this._sessionUsage } }
 
@@ -887,13 +964,28 @@ export class AgentRunner {
       const afterLlm = await dispatchAfterLLM(this.config.hooks, result, iterations, this.hookCallbacks)
       let finalContent = result.content
       if (afterLlm.action === 'override') finalContent = afterLlm.content
+      // Security guard returned 'stop' — terminate the stream immediately
+      if (afterLlm.action === 'stop') {
+        const blocked = `[Blocked by security policy: ${afterLlm.reason}]`
+        this.messages.push({ role: 'assistant', content: blocked })
+        yield { type: 'final_response', content: blocked }
+        return
+      }
 
-      // ── Max Output Tokens Recovery ───────────────────────────────────
+      // ── Max Output Tokens Recovery (W-4 fix: cap at MAX_CONTINUATIONS) ──
       if (result.finishReason === 'length') {
+        consecutiveContinuations++
         this.emit('context:output-continuation', {
           iteration: iterations,
           contentLength: (finalContent ?? '').length,
         })
+        if (consecutiveContinuations > MAX_CONTINUATIONS) {
+          // Treat the partial content as the final response to break the loop
+          const response = finalContent ?? ''
+          this.messages.push({ role: 'assistant', content: response })
+          yield { type: 'final_response', content: response }
+          return
+        }
         this.messages.push({
           role: 'assistant',
           content: finalContent ?? '',
@@ -905,6 +997,9 @@ export class AgentRunner {
         })
         iterations--
         continue
+      } else {
+        // Reset the counter when the LLM finishes normally
+        consecutiveContinuations = 0
       }
 
       // ── Empty response detection ─────────────────────────────────────
@@ -922,11 +1017,11 @@ export class AgentRunner {
 
         const executor = new StreamingToolExecutor(
           this.config.tools,
-          { ...this.toolContext, signal: signal ?? new AbortController().signal },
+          { ...this.toolContext, signal: signal ?? NEVER_ABORT.signal },
           {
             permissions: this.config.permissions,
             accessPolicy: this.config.accessPolicy,
-            user: this._currentUser,
+            user: runUser,
             hooks: this.config.hooks,
             sandbox: this.config.sandbox,
             messages: this.messages,
@@ -939,7 +1034,8 @@ export class AgentRunner {
         for (const call of result.toolCalls) {
           let parsedArgs: Record<string, unknown>
           try { parsedArgs = JSON.parse(call.arguments) } catch { parsedArgs = {} }
-          delete parsedArgs.__yaaf_sig__
+          // C3: Thought signatures are now stored in a module-level map in gemini.ts
+          // — no cleanup needed here.
           this.emit('tool:call', { name: call.name, arguments: parsedArgs })
           yield { type: 'tool_call_start', name: call.name, arguments: parsedArgs }
           executor.addTool(call)
@@ -1018,7 +1114,10 @@ export class AgentRunner {
    * }
    * ```
    */
-  async step(thread: AgentThread, signal?: AbortSignal): Promise<StepResult> {
+  async step(thread: AgentThread, signal?: AbortSignal, user?: UserContext): Promise<StepResult> {
+    // CRITIQUE #5 FIX: Use ONLY the explicitly-passed user parameter.
+    const runUser = user
+
     // Load thread messages into runner state
     this.messages = [...thread.messages]
 
@@ -1050,6 +1149,21 @@ export class AgentRunner {
 
     // afterLLM hook
     const afterLlm = await dispatchAfterLLM(this.config.hooks, result, thread.step + 1, this.hookCallbacks)
+    // Security guard returned 'stop' — mark thread done with a blocked marker
+    if (afterLlm.action === 'stop') {
+      const blocked = `[Blocked by security policy: ${afterLlm.reason}]`
+      return {
+        thread: {
+          ...thread,
+          step: thread.step + 1,
+          updatedAt: new Date().toISOString(),
+          done: true,
+          finalResponse: blocked,
+        },
+        done: true,
+        response: blocked,
+      }
+    }
     const finalContent = afterLlm.action === 'override' ? afterLlm.content : result.content
 
     const updatedThread: AgentThread = {
@@ -1074,8 +1188,9 @@ export class AgentRunner {
 
         // Check if tool requires approval
         const tool = findToolByName(this.config.tools, call.name)
-        const requiresApproval = tool && 'requiresApproval' in tool &&
-          (tool as unknown as { requiresApproval?: boolean | ((args: Record<string, unknown>) => boolean) }).requiresApproval
+        const requiresApproval = tool && 'requiresApproval' in tool
+          ? (tool as Record<string, unknown>).requiresApproval as boolean | ((args: Record<string, unknown>) => boolean) | undefined
+          : undefined
 
         const needsApproval = typeof requiresApproval === 'function'
           ? requiresApproval(parsedArgs)
@@ -1107,11 +1222,11 @@ export class AgentRunner {
       // No suspension needed — execute tools
       const executor = new StreamingToolExecutor(
         this.config.tools,
-        { ...this.toolContext, signal: signal ?? new AbortController().signal },
+        { ...this.toolContext, signal: signal ?? NEVER_ABORT.signal },
         {
           permissions: this.config.permissions,
           accessPolicy: this.config.accessPolicy,
-          user: this._currentUser,
+          user: runUser,
           hooks: this.config.hooks,
           sandbox: this.config.sandbox,
           messages: updatedThread.messages,
@@ -1164,10 +1279,13 @@ export class AgentRunner {
    * const resumed = await runner.resume(thread, { type: 'human_input', response: 'Yes, proceed with v1.2.3' });
    * ```
    */
-  async resume(thread: AgentThread, resolution: SuspendResolution, signal?: AbortSignal): Promise<StepResult> {
+  async resume(thread: AgentThread, resolution: SuspendResolution, signal?: AbortSignal, user?: UserContext): Promise<StepResult> {
     if (!thread.suspended) {
       throw new Error('Cannot resume a thread that is not suspended')
     }
+
+    // CRITIQUE #5 FIX: Use ONLY the explicitly-passed user parameter.
+    const runUser = user
 
     const updatedThread: AgentThread = {
       ...thread,
@@ -1192,7 +1310,7 @@ export class AgentRunner {
               parsedArgs,
               {
                 ...this.toolContext,
-                signal: signal ?? new AbortController().signal,
+                signal: signal ?? NEVER_ABORT.signal,
                 messages: updatedThread.messages as unknown as typeof this.toolContext.messages,
               },
             )
@@ -1251,7 +1369,7 @@ export class AgentRunner {
     }
 
     // Continue stepping from the updated thread
-    return this.step(updatedThread, signal)
+    return this.step(updatedThread, signal, runUser)
   }
 
   /**
@@ -1262,13 +1380,15 @@ export class AgentRunner {
   async runToCompletion(
     thread: AgentThread,
     signal?: AbortSignal,
+    user?: UserContext,
   ): Promise<{ thread: AgentThread; response: string }> {
     let current = thread
     let iterations = 0
 
     while (!current.done && iterations < this.config.maxIterations) {
       iterations++
-      const result = await this.step(current, signal)
+      // CRITIQUE #5 FIX: Forward user through to step() for per-call scoping
+      const result = await this.step(current, signal, user)
       current = result.thread
 
       if (result.suspended) {
@@ -1303,6 +1423,17 @@ export class AgentRunner {
   /** Get the number of messages in history */
   get messageCount(): number {
     return this.messages.length
+  }
+
+  /**
+   * CRITIQUE #8 FIX: Estimate tokens consumed by tool schemas.
+   * Called by the agent to inform the ContextManager of this overhead.
+   */
+  getToolSchemaTokenEstimate(): number {
+    if (this.toolSchemas.length === 0) return 0
+    // Rough estimate: serialize schemas to JSON and count chars/4
+    const json = JSON.stringify(this.toolSchemas)
+    return Math.ceil(json.length / 4)
   }
 
   /** Clear conversation history */

@@ -7,6 +7,7 @@
  */
 
 import type { ArticleAction } from '../extractor/index.js'
+import type { ConceptRegistryEntry } from '../../ontology/index.js'
 
 // ── Progress events ───────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ export type SynthesisProgressEvent =
   | { type: 'article:started';  docId: string; action: ArticleAction; title: string }
   | { type: 'article:written';  docId: string; action: ArticleAction; title: string; wordCount: number }
   | { type: 'article:failed';   docId: string; title: string; error: Error }
+  | { type: 'article:warning';  docId: string; title: string; message: string }
   | { type: 'stub:created';     docId: string; title: string; entityType: string }
   | { type: 'run:complete';     stats: SynthesisResult }
 
@@ -36,6 +38,10 @@ export type ArticleSynthesisResult = {
   outputPath?: string
   /** Error if action = 'failed' */
   error?: Error
+  /** Phase 1C: Registry entry for batch application after concurrent synthesis */
+  registryEntry?: ConceptRegistryEntry
+  /** Phase 5C: Grounding validation score (0-1) */
+  groundingScore?: number
 }
 
 // ── Run-level result ──────────────────────────────────────────────────────────
@@ -49,6 +55,8 @@ export type SynthesisResult = {
   stubsCreated: number
   /** Articles that failed to synthesize */
   failed: number
+  /** Articles skipped by the differential engine (sources unchanged) */
+  skipped: number
   /** Per-article results */
   articles: ArticleSynthesisResult[]
   /** Total wall-clock time for the synthesis run */
@@ -86,6 +94,13 @@ export type SynthesisOptions = {
    * the current compiled article (based on mtime). Default: false.
    */
   incrementalMode?: boolean
+
+  /**
+   * Set of article docIds to skip entirely (no LLM call, no disk write).
+   * Used by the differential compiler to bypass clean (unchanged) articles.
+   * Articles in this set are counted as `skipped` in SynthesisResult.
+   */
+  skipDocIds?: Set<string>
 }
 
 // ── Frontmatter validation result ─────────────────────────────────────────────

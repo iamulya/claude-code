@@ -10,10 +10,20 @@
  * - **System prompt extraction** — "repeat your system prompt", "what are your instructions"
  * - **Payload injection** — embedded `<script>`, `javascript:`, SQL injection markers
  * - **Canary token detection** — verifies a hidden canary wasn't extracted
+ * - **Homoglyph normalization** — H4 FIX: normalizes visually-similar unicode characters
+ * - **Multi-language detection** — H4 FIX: detects injection patterns in non-English text
  *
  * Operates in two modes:
  * - **detect** — flags suspicious messages, logs warning, continues execution
  * - **block** — flags suspicious messages, replaces them with sanitized versions
+ *
+ * **H4 CAVEAT:** This is a regex-based defense layer. While it provides
+ * defense-in-depth, determined attackers with access to the source code can
+ * craft inputs that bypass static pattern matching. For high-security
+ * applications, layer PromptGuard with:
+ * - LLM-based injection classifiers (e.g., a secondary model)
+ * - Input/output monitoring and anomaly detection
+ * - Strict tool permissions via AccessPolicy
  *
  * @example
  * ```ts
@@ -234,6 +244,121 @@ const PAYLOAD_PATTERNS: PromptGuardPattern[] = [
   },
 ]
 
+// H4 FIX: Multi-language injection patterns to prevent language-switching bypasses
+// CRITIQUE #13 FIX: Extended from 5 to 11 languages for broader coverage.
+// Still not exhaustive — for maximum coverage, layer with an LLM-based classifier.
+const MULTILANG_PATTERNS: PromptGuardPattern[] = [
+  {
+    name: 'multilang-chinese-override',
+    // 忽略=ignore 指令=instructions 系统=system 提示=prompt 角色=role
+    pattern: /(?:忽略|不要遵循|无视).{0,20}(?:指令|提示|规则|系统)/,
+    severity: 'high',
+    description: 'Chinese-language instruction override attempt',
+  },
+  {
+    name: 'multilang-spanish-override',
+    pattern: /\b(?:ignora|olvida|descarta)\b.{0,30}\b(?:instrucciones|reglas|sistema|prompt)\b/i,
+    severity: 'high',
+    description: 'Spanish-language instruction override attempt',
+  },
+  {
+    name: 'multilang-german-override',
+    pattern: /\b(?:ignoriere|vergiss|\u00fcberschreibe)\b.{0,30}\b(?:anweisungen|regeln|system|prompt)\b/i,
+    severity: 'high',
+    description: 'German-language instruction override attempt',
+  },
+  {
+    name: 'multilang-french-override',
+    pattern: /\b(?:ignore[rz]?|oublie[rz]?)\b.{0,30}\b(?:instructions|r\u00e8gles|syst\u00e8me|prompt)\b/i,
+    severity: 'high',
+    description: 'French-language instruction override attempt',
+  },
+  {
+    name: 'multilang-arabic-override',
+    // تجاهل=ignore تعليمات=instructions النظام=system
+    pattern: /(?:تجاهل|انس|تخط).{0,30}(?:تعليمات|الأوامر|النظام)/,
+    severity: 'high',
+    description: 'Arabic-language instruction override attempt',
+  },
+  // CRITIQUE #13 FIX: Additional language coverage
+  {
+    name: 'multilang-japanese-override',
+    // 無視=ignore 指示=instructions システム=system プロンプト=prompt
+    pattern: /(?:無視|忘れ|従わな).{0,20}(?:指示|命令|システム|プロンプト|ルール)/,
+    severity: 'high',
+    description: 'Japanese-language instruction override attempt',
+  },
+  {
+    name: 'multilang-korean-override',
+    // 무시=ignore 지시=instructions 시스템=system 명령=command
+    pattern: /(?:무시|잊어|따르지).{0,20}(?:지시|명령|시스템|프롬프트|규칙)/,
+    severity: 'high',
+    description: 'Korean-language instruction override attempt',
+  },
+  {
+    name: 'multilang-russian-override',
+    // игнорируй=ignore инструкции=instructions система=system
+    pattern: /\b(?:игнорируй|забудь|отбрось)\b.{0,30}\b(?:инструкции|правила|систем|промпт)\b/i,
+    severity: 'high',
+    description: 'Russian-language instruction override attempt',
+  },
+  {
+    name: 'multilang-hindi-override',
+    // अनदेखा=ignore निर्देश=instructions सिस्टम=system नियम=rules
+    pattern: /(?:अनदेखा|भूल|नज़रअंदाज़).{0,30}(?:निर्देश|नियम|सिस्टम|प्रॉम्प्ट)/,
+    severity: 'high',
+    description: 'Hindi-language instruction override attempt',
+  },
+  {
+    name: 'multilang-portuguese-override',
+    pattern: /\b(?:ignore|esque[cç]a|descarte)\b.{0,30}\b(?:instru[cç][oõ]es|regras|sistema|prompt)\b/i,
+    severity: 'high',
+    description: 'Portuguese-language instruction override attempt',
+  },
+  {
+    name: 'multilang-turkish-override',
+    pattern: /\b(?:yok\s*say|unut|g[oö]rmezden\s*gel)\b.{0,30}\b(?:talimat|kural|sistem|prompt)\b/i,
+    severity: 'high',
+    description: 'Turkish-language instruction override attempt',
+  },
+]
+
+// H4 FIX: Homoglyph normalization map for common confusable characters
+// Maps visually-similar unicode characters to their ASCII equivalents
+const HOMOGLYPH_MAP: Record<string, string> = {
+  // Latin lookalikes (Cyrillic, etc.)
+  '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c',
+  '\u0443': 'y', '\u0456': 'i', '\u0445': 'x', '\u0455': 's', '\u04bb': 'h',
+  // Full-width Latin
+  '\uff41': 'a', '\uff42': 'b', '\uff43': 'c', '\uff44': 'd', '\uff45': 'e',
+  '\uff46': 'f', '\uff47': 'g', '\uff48': 'h', '\uff49': 'i', '\uff4a': 'j',
+  // Leet-speak digits
+  '\u0031': '1', '\u0033': '3', '\u0030': '0',
+  // Mathematical italic
+  '\ud835\udc4e': 'a', '\ud835\udc4f': 'b', '\ud835\udc50': 'c',
+}
+
+/**
+ * H4 FIX: Normalize text to defeat homoglyph and whitespace obfuscation.
+ * Applies unicode NFKC normalization, strips zero-width chars, and maps
+ * known confusable characters to their ASCII equivalents.
+ */
+function normalizeText(text: string): string {
+  // NFKC normalization (decomposes + composes compatibility forms)
+  let normalized = text.normalize('NFKC')
+
+  // Strip zero-width characters (U+200B through U+200F, FEFF, etc.)
+  normalized = normalized.replace(/[\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]/g, '')
+
+  // Map known homoglyphs
+  normalized = normalized.replace(/./g, char => HOMOGLYPH_MAP[char] ?? char)
+
+  // Collapse excessive whitespace
+  normalized = normalized.replace(/\s{3,}/g, '  ')
+
+  return normalized
+}
+
 // ── PromptGuard ──────────────────────────────────────────────────────────────
 
 export class PromptGuard {
@@ -277,8 +402,14 @@ export class PromptGuard {
         ? msg.content
         : JSON.stringify(msg.content)
 
-      // Check canary token
-      if (this.canaryToken && content.includes(this.canaryToken)) {
+      // H4 FIX: Normalize content before pattern matching to defeat
+      // homoglyph substitution, zero-width chars, and whitespace obfuscation.
+      // We scan both the original AND normalized forms — original catches
+      // exact patterns, normalized catches obfuscated variants.
+      const normalizedContent = this.normalizeForScan(content)
+
+      // Check canary token (on both original and normalized)
+      if (this.canaryToken && (content.includes(this.canaryToken) || normalizedContent.includes(this.canaryToken))) {
         events.push({
           patternName: 'canary-extraction',
           severity: 'high',
@@ -290,9 +421,9 @@ export class PromptGuard {
         })
       }
 
-      // Check all patterns
+      // Check all patterns (against both original and normalized text)
       for (const pattern of this.patterns) {
-        if (pattern.pattern.test(content)) {
+        if (pattern.pattern.test(content) || pattern.pattern.test(normalizedContent)) {
           const match = content.match(pattern.pattern)
           events.push({
             patternName: pattern.name,
@@ -387,12 +518,22 @@ export class PromptGuard {
     if (this.sensitivity === 'high') {
       patterns.push(...ROLE_HIJACK_PATTERNS)
       patterns.push(...EXTRACTION_PATTERNS)
+      // H4 FIX: Include multi-language patterns at high sensitivity
+      patterns.push(...MULTILANG_PATTERNS)
     }
 
     // Always include custom patterns
     patterns.push(...custom)
 
     return patterns
+  }
+
+  /**
+   * H4 FIX: Normalize text before pattern matching to defeat
+   * homoglyph substitution and whitespace obfuscation.
+   */
+  private normalizeForScan(text: string): string {
+    return normalizeText(text)
   }
 }
 

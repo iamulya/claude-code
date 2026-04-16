@@ -42,6 +42,8 @@ type TrackedTool = {
   isConcurrencySafe: boolean
   promise?: Promise<void>
   result?: ToolExecutionResult
+  /** C12 FIX: Cached parsed args to avoid redundant JSON.parse */
+  parsedArgs: Record<string, unknown>
 }
 
 export type ToolExecutionResult = {
@@ -100,10 +102,9 @@ export class StreamingToolExecutor {
     try {
       parsedArgs = JSON.parse(call.arguments)
     } catch {
-      parsedArgs = {}
+      // W-7 fix: surface the malformed args error instead of silently converting to {}
+      parsedArgs = { __parse_error__: `Malformed JSON arguments from LLM: ${call.arguments.slice(0, 200)}` }
     }
-    // Strip internal Gemini thought_signature passthrough key
-    delete parsedArgs.__yaaf_sig__
 
     const isConcurrencySafe = tool
       ? (() => { try { return tool.isConcurrencySafe(parsedArgs) } catch { return false } })()
@@ -114,6 +115,8 @@ export class StreamingToolExecutor {
       call,
       status: 'queued',
       isConcurrencySafe,
+      // C12 FIX: Cache parsed args to avoid redundant JSON.parse in collectResult
+      parsedArgs,
     })
 
     void this.processQueue()
@@ -168,14 +171,8 @@ export class StreamingToolExecutor {
         return
       }
 
-      let parsedArgs: Record<string, unknown>
-      try {
-        parsedArgs = JSON.parse(tracked.call.arguments)
-      } catch {
-        parsedArgs = {}
-      }
-      // Strip internal Gemini thought_signature passthrough key
-      delete parsedArgs.__yaaf_sig__
+      // C12 FIX: Reuse parsed args from addTool instead of repeated JSON.parse
+      const parsedArgs = { ...tracked.parsedArgs }
 
       // ── Permission check ──────────────────────────────────────────────
       const toolSpan = startToolCallSpan({ toolName: tracked.call.name, args: parsedArgs })
@@ -196,8 +193,24 @@ export class StreamingToolExecutor {
         }
       }
 
-      // ── IAM authorization check (identity-aware) ───────────────────────
-      if (this.config.accessPolicy?.authorization && this.config.user) {
+      // ── IAM authorization check (identity-aware) ──────────────────────
+      // C2 FIX: Fail closed — when an accessPolicy is configured but no user
+      // context is available, deny the call. Previously this was silently skipped,
+      // meaning a misconfigured endpoint would expose all tools without auth.
+      if (this.config.accessPolicy?.authorization) {
+        if (!this.config.user) {
+          endToolCallSpan({ blocked: true, blockReason: 'No user context provided', durationMs: 0 })
+          tracked.result = {
+            toolCallId: tracked.call.id,
+            name: tracked.call.name,
+            content: JSON.stringify({ error: 'Access denied: No user context provided. IAM policy requires authenticated user.' }),
+            error: true,
+            durationMs: 0,
+          }
+          tracked.status = 'completed'
+          return
+        }
+
         const startMs = Date.now()
         const decision = await this.config.accessPolicy.authorization.evaluate({
           user: this.config.user,
@@ -337,10 +350,26 @@ export class StreamingToolExecutor {
             }
           }
 
-          const res = rawResult as { data: unknown }
-          toolResultStr = typeof res.data === 'string'
-            ? res.data
-            : JSON.stringify(res.data, null, 2)
+          // Handle both ToolResult<T> = { data: T } shape and plain string/object returns.
+          // Tools should return { data: value } per the API contract, but we gracefully
+          // handle plain strings and other shapes to avoid confusing runtime crashes.
+          let rawData: unknown
+          if (typeof rawResult === 'string') {
+            rawData = rawResult
+          } else if (
+            rawResult !== null &&
+            typeof rawResult === 'object' &&
+            'data' in rawResult
+          ) {
+            rawData = (rawResult as { data: unknown }).data
+          } else {
+            rawData = rawResult
+          }
+          toolResultStr = typeof rawData === 'string'
+            ? rawData
+            : rawData === undefined || rawData === null
+              ? ''
+              : (JSON.stringify(rawData, null, 2) ?? String(rawData))
 
           // Truncate if needed
           if (tool.maxResultChars > 0 && toolResultStr.length > tool.maxResultChars) {
@@ -373,9 +402,17 @@ export class StreamingToolExecutor {
         const durationMs = Date.now() - startTime
         endToolCallSpan({ error: errorMsg })
 
-        // Sibling abort: cancel other executing tools
-        this.hasErrored = true
-        this.siblingAbort.abort('sibling_error')
+        // W-5 fix: only abort siblings for non-read-only tool errors.
+        // Read-only tool failures (ENOENT, grep no-match) should not cancel
+        // concurrent siblings since their results are still valuable.
+        const failedTool = findToolByName(this.tools, tracked.call.name)
+        const isReadOnly = failedTool
+          ? (() => { try { return failedTool.isReadOnly(parsedArgs) } catch { return false } })()
+          : false
+        if (!isReadOnly) {
+          this.hasErrored = true
+          this.siblingAbort.abort('sibling_error')
+        }
 
         await dispatchAfterToolCall(
           this.config.hooks,

@@ -79,6 +79,13 @@ export class AutoMemoryExtractor {
 
     if (this.turnsSinceExtraction < this.config.turnInterval) return
 
+    // Clamp cursor: if ContextManager compacted (truncated) the message history,
+    // cursorIndex may point past the new array end. Reset to 0 so we don't
+    // silently skip all new messages and never extract again.
+    if (this.cursorIndex > messages.length) {
+      this.cursorIndex = 0
+    }
+
     const newMessages = messages.slice(this.cursorIndex)
     const modelVisible = newMessages.filter(m => m.role === 'user' || m.role === 'assistant')
 

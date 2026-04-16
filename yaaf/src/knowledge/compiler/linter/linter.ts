@@ -40,7 +40,10 @@ import {
   checkBrokenSourceRefs,
   checkStubWithSources,
   checkDuplicateCandidates,
+  checkContradictoryClaims,
 } from './checks.js'
+
+import type { PluginHost, LinterRuleAdapter } from '../../../plugin/types.js'
 
 export class KBLinter {
   private readonly aliasIndex: ReturnType<typeof buildAliasIndex>
@@ -50,6 +53,7 @@ export class KBLinter {
     private readonly registry: ConceptRegistry,
     private readonly compiledDir: string,
     private readonly rawDir?: string,
+    private readonly pluginHost?: PluginHost,
   ) {
     this.aliasIndex = buildAliasIndex(ontology)
   }
@@ -125,6 +129,34 @@ export class KBLinter {
     // ── Cross-article checks ────────────────────────────────────────────────────
 
     allIssues.push(...checkDuplicateCandidates(filteredArticles, dupThreshold))
+
+    // Phase 5D: Cross-article semantic consistency check
+    allIssues.push(...checkContradictoryClaims(filteredArticles, this.registry))
+
+    // ── Plugin lint rules ────────────────────────────────────────────────────────
+    // Discovered via PluginHost.getLinterRules() — run per-article, best-effort.
+
+    const pluginRules: LinterRuleAdapter[] = this.pluginHost?.getLinterRules() ?? []
+    if (pluginRules.length > 0) {
+      for (const article of filteredArticles) {
+        if (skipDocIds.has(article.docId)) continue
+        for (const rule of pluginRules) {
+          try {
+            const ruleIssues = await rule.check(article.docId, article.body)
+            for (const ri of ruleIssues) {
+              allIssues.push({
+                code: `PLUGIN_${rule.ruleId}`,
+                severity: rule.severity ?? 'warning',
+                docId: article.docId,
+                message: ri.message,
+                suggestion: ri.fix,
+                autoFixable: false,
+              })
+            }
+          } catch { /* skip failing plugin rules */ }
+        }
+      }
+    }
 
     // ── Compile report ──────────────────────────────────────────────────────────
 

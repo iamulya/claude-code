@@ -224,36 +224,83 @@ export class PermissionPolicy {
       return { action: 'deny', reason: 'Permission mode is plan (read-only)' }
     }
 
-    // Check remembered rules first (highest priority)
+    // Check remembered rules (highest priority for deny; allow is gated below)
     const remembered = this.rememberedRules.get(toolName)
-    if (remembered === 'allow') return { action: 'allow' }
     if (remembered === 'deny') return { action: 'deny', reason: `Previously denied (remembered rule for "${toolName}")` }
+
+    // C7 FIX: Even for "always allow" remembered rules, run content-aware
+    // deny rules with `when` predicates. This ensures safety checks like
+    // isDangerousCommand() cannot be bypassed by "always allow".
+    if (remembered === 'allow') {
+      const argsStr = JSON.stringify(args)
+      for (const rule of this.rules) {
+        if (rule.action !== 'deny') continue
+        if (!rule.when) continue  // Only content-aware deny rules override remembered-allow
+        if (!rule.toolGlob.test(toolName)) continue
+        if (rule.argsPattern && !rule.argsPattern.test(argsStr)) continue
+        const matches = await rule.when(toolName, args)
+        if (matches) {
+          return { action: 'deny', reason: rule.reason }
+        }
+      }
+      return { action: 'allow' }
+    }
 
     const argsStr = JSON.stringify(args)
 
+    // CRITIQUE #9 FIX: Deny-before-allow evaluation order.
+    // Deny rules are always evaluated first, regardless of insertion order.
+    // This prevents the security footgun where `allow('*').deny('delete_*')`
+    // silently makes the deny rule unreachable.
+    //
+    // Evaluation order:
+    //   1. All deny rules (first match denies)
+    //   2. All escalate rules (first match escalates)
+    //   3. All allow rules (first match allows)
+    //   4. Default action
+
+    // Phase 1: Check deny rules first (most restrictive wins)
     for (const rule of this.rules) {
+      if (rule.action !== 'deny') continue
       if (!rule.toolGlob.test(toolName)) continue
       if (rule.argsPattern && !rule.argsPattern.test(argsStr)) continue
-
-      // Content-aware predicate check
       if (rule.when) {
         const matches = await rule.when(toolName, args)
         if (!matches) continue
       }
+      return { action: 'deny', reason: rule.reason }
+    }
 
-      if (rule.action === 'allow') return { action: 'allow' }
-      if (rule.action === 'deny') return { action: 'deny', reason: rule.reason }
-
-      // Escalate: in auto mode, deny instead of prompting
+    // Phase 2: Check escalate rules
+    for (const rule of this.rules) {
+      if (rule.action !== 'escalate') continue
+      if (!rule.toolGlob.test(toolName)) continue
+      if (rule.argsPattern && !rule.argsPattern.test(argsStr)) continue
+      if (rule.when) {
+        const matches = await rule.when(toolName, args)
+        if (!matches) continue
+      }
+      // In auto mode, deny instead of prompting
       if (this._mode === 'auto') {
         return { action: 'deny', reason: `Auto mode denied: ${rule.reason}` }
       }
-
       // Interactive: ask the handler
       const approved = await this.handler(toolName, args, rule.reason)
       return approved
         ? { action: 'allow' }
         : { action: 'deny', reason: `User denied: ${rule.reason}` }
+    }
+
+    // Phase 3: Check allow rules
+    for (const rule of this.rules) {
+      if (rule.action !== 'allow') continue
+      if (!rule.toolGlob.test(toolName)) continue
+      if (rule.argsPattern && !rule.argsPattern.test(argsStr)) continue
+      if (rule.when) {
+        const matches = await rule.when(toolName, args)
+        if (!matches) continue
+      }
+      return { action: 'allow' }
     }
 
     // No rule matched
@@ -277,8 +324,12 @@ export function denyAll(): PermissionPolicy {
 /**
  * Interactive CLI approval — prompts the user in the terminal for every
  * escalated tool call. Suitable for development and direct CLI usage.
+ *
+ * W-14 fix: when a policy is provided, "a" (always allow) and "d" (always deny)
+ * responses are automatically remembered, removing the need for callers to
+ * manually call `policy.remember()`.
  */
-export function cliApproval(): ApprovalHandler {
+export function cliApproval(policy?: PermissionPolicy): ApprovalHandler {
   return async (toolName, args, reason) => {
     const readline = await import('readline')
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
@@ -289,11 +340,11 @@ export function cliApproval(): ApprovalHandler {
           rl.close()
           const a = answer.trim().toLowerCase()
           if (a === 'a' || a === 'always') {
+            policy?.remember(toolName, 'allow')
             resolve(true)
-            // Note: caller should call policy.remember(toolName, 'allow')
           } else if (a === 'd') {
+            policy?.remember(toolName, 'deny')
             resolve(false)
-            // Note: caller should call policy.remember(toolName, 'deny')
           } else {
             resolve(a === 'y')
           }

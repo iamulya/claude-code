@@ -153,6 +153,7 @@ export {
 
 import type { ChatMessage, ChatResult } from '../agents/runner.js'
 import type { LLMHookResult, Hooks } from '../hooks.js'
+import type { PluginHost } from '../plugin/types.js'
 import { PromptGuard, type PromptGuardConfig } from './promptGuard.js'
 import { OutputSanitizer, type OutputSanitizerConfig } from './outputSanitizer.js'
 import { PiiRedactor, type PiiRedactorConfig } from './piiRedactor.js'
@@ -164,6 +165,19 @@ export type SecurityHooksConfig = {
   outputSanitizer?: OutputSanitizerConfig | false
   /** PiiRedactor config. Set to false to disable. */
   piiRedactor?: PiiRedactorConfig | false
+  /**
+   * GAP 4 FIX: When provided, all security detection events (PII found,
+   * prompt injection detected, output sanitized) are forwarded to
+   * `ObservabilityAdapter` plugins via `pluginHost.emitLog()` and
+   * `pluginHost.emitMetric()`.
+   *
+   * Passed automatically by `composeSecurityHooks()` in agent.ts when the
+   * agent has an observability plugin registered. Manual wiring:
+   * ```ts
+   * const hooks = securityHooks({ piiRedactor: true }, pluginHost)
+   * ```
+   */
+  _pluginHost?: PluginHost
 }
 
 /**
@@ -194,16 +208,61 @@ export type SecurityHooksConfig = {
  * ```
  */
 export function securityHooks(config: SecurityHooksConfig = {}): Hooks {
-  const guard = config.promptGuard !== false
-    ? new PromptGuard(config.promptGuard ?? {})
-    : null
+  const ph = config._pluginHost
+  const hasObs = ph?.hasCapability('observability') ?? false
+
+  // ── GAP 4 FIX: build onDetection callbacks that forward to ObsAdapter ────
+  const guardConfig: PromptGuardConfig = config.promptGuard !== false
+    ? {
+      ...(config.promptGuard ?? {}),
+      onDetection: (event) => {
+        // Merge with any user-provided onDetection
+        ;(config.promptGuard as PromptGuardConfig | undefined)?.onDetection?.(event)
+        if (!hasObs) return
+        ph!.emitMetric('security.prompt_injection.detected', 1, {
+          pattern: event.patternName,
+          severity: event.severity,
+          action: event.action,
+        })
+        ph!.emitLog({
+          level: 'warn',
+          namespace: 'security.PromptGuard',
+          message: `Prompt injection detected: ${event.patternName} (${event.action})`,
+          data: event as unknown as Record<string, unknown>,
+          timestamp: new Date().toISOString(),
+        })
+      },
+    }
+    : {}
+
+  const guard = config.promptGuard !== false ? new PromptGuard(guardConfig) : null
+
+  const redactorConfig: PiiRedactorConfig = config.piiRedactor !== false
+    ? {
+      ...(config.piiRedactor ?? {}),
+      onDetection: (event) => {
+        ;(config.piiRedactor as PiiRedactorConfig | undefined)?.onDetection?.(event)
+        if (!hasObs) return
+        ph!.emitMetric('security.pii.detected', event.count, {
+          category: event.category,
+          direction: event.direction,
+          action: event.action,
+        })
+        ph!.emitLog({
+          level: event.action === 'redacted' ? 'warn' : 'info',
+          namespace: 'security.PiiRedactor',
+          message: `PII ${event.action}: ${event.count}x ${event.category} (${event.direction})`,
+          data: event as unknown as Record<string, unknown>,
+          timestamp: new Date().toISOString(),
+        })
+      },
+    }
+    : {}
+
+  const redactor = config.piiRedactor !== false ? new PiiRedactor(redactorConfig) : null
 
   const sanitizer = config.outputSanitizer !== false
     ? new OutputSanitizer(config.outputSanitizer ?? {})
-    : null
-
-  const redactor = config.piiRedactor !== false
-    ? new PiiRedactor(config.piiRedactor ?? {})
     : null
 
   const hooks: Hooks = {}
@@ -238,6 +297,16 @@ export function securityHooks(config: SecurityHooksConfig = {}): Hooks {
       if (sanitizer && response.content) {
         const sanitized = sanitizer.hook()(response, iteration)
         if (sanitized?.action === 'override') {
+          // GAP 4: Forward sanitization event to observability adapter
+          if (hasObs) {
+            ph!.emitMetric('security.output.sanitized', 1, {})
+            ph!.emitLog({
+              level: 'info',
+              namespace: 'security.OutputSanitizer',
+              message: 'LLM output sanitized',
+              timestamp: new Date().toISOString(),
+            })
+          }
           // Create a modified response for the next stage
           const modifiedResponse = { ...response, content: sanitized.content }
 

@@ -29,6 +29,8 @@ export {
   checkLowArticleQuality,
   checkBrokenSourceRefs,
   checkDuplicateCandidates,
+  checkStubWithSources,
+  checkContradictoryClaims,
 } from './checks.js'
 
 export {

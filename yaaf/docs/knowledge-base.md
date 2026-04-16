@@ -64,6 +64,78 @@ my-kb/
 
 The `ontology.yaml` file is the schema for your knowledge base. It defines what kinds of entities exist, what their frontmatter fields are, how articles should be structured, and the vocabulary of known terms. **The compiler will refuse to run without a valid ontology.**
 
+### Generating your ontology with `kb:init`
+
+YAAF includes an LLM-powered ontology generator that scans your project and drafts a complete `ontology.yaml`. This is the recommended way to bootstrap a new KB.
+
+#### Interactive mode
+
+```bash
+npm run kb:init
+```
+
+```
+🧠  YAAF KB — Ontology Generator
+
+Step 1 of 3 — Describe your knowledge domain
+  > FastAPI — a Python web framework for building REST APIs quickly.
+    Covers routing, validation, dependency injection, and deployment.
+
+Step 2 of 3 — Source directories to scan
+  > ./src, ./docs
+
+Step 3 of 3 — Entity type hints (optional)
+  > endpoint, decorator, middleware, guide
+
+Generating ontology.yaml...
+  Model:  gemini-2.5-flash
+  Scanning: ./src, ./docs
+
+✓  ontology.yaml written to: ./knowledge/ontology.yaml
+```
+
+#### Non-interactive mode (for CI or scripting)
+
+```bash
+npx tsx knowledge/scripts/init-ontology.ts \
+  --domain "My SDK — a TypeScript library for X" \
+  --src ./src --src ./docs \
+  --entity-types "class,function,guide" \
+  --model gemini-2.5-flash
+```
+
+#### Programmatic usage
+
+```typescript
+import { OntologyGenerator, makeGenerateFn } from 'yaaf/knowledge'
+import { GeminiChatModel } from 'yaaf'
+
+const generator = new OntologyGenerator({
+  generateFn: makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-flash' })),
+  outputPath: './knowledge/ontology.yaml',
+})
+
+const result = await generator.generate({
+  domain: 'Acme SDK — a TypeScript library for building widgets.',
+  srcDirs: ['./src'],
+  entityTypeHints: ['class', 'hook', 'guide'],
+})
+
+console.log(`Written to: ${result.outputPath}`)
+if (result.warnings.length > 0) {
+  console.log('Warnings:', result.warnings)
+}
+```
+
+The generator:
+1. Scans the file tree (depth 3, skipping `node_modules`/`dist`/`.git`)
+2. Reads `README.md` + `package.json` for domain context
+3. Sends all context + your domain description to an LLM with the YAAF ontology as a format reference
+4. Writes and validates the result with `OntologyLoader.load()`
+5. Reports any validation warnings before you run `kb:build`
+
+> **Tip:** Always review and edit the generated ontology before your first `kb:build`. The LLM does 90% of the work, but your domain expertise should refine entity types, article structures, and vocabulary terms.
+
 ### Full ontology.yaml reference
 
 ```yaml
@@ -922,7 +994,98 @@ Wikilinks that don't resolve to any registry entry are flagged as `BROKEN_WIKILI
 
 ---
 
+## Runtime — KBStore, Tools & Federation
+
+Once your KB is compiled, the runtime layer provides search and retrieval for agents.
+
+### KBStore — Load and query a compiled KB
+
+```typescript
+import { KBStore, createKBTools } from 'yaaf/knowledge'
+
+const store = new KBStore('./knowledge')
+await store.load()
+
+console.log(`Loaded ${store.getAllDocuments().length} articles`)
+
+// Full-text search
+const results = store.search('context compaction', { maxResults: 5 })
+for (const r of results) {
+  console.log(`${r.docId} (score: ${r.score.toFixed(2)}): ${r.title}`)
+}
+
+// Read a specific article
+const doc = store.getDocument('concepts/context-compaction')
+console.log(doc?.frontmatter.title, doc?.body.slice(0, 200))
+```
+
+### createKBTools — Give an agent KB access
+
+One-liner to give any YAAF agent full KB access:
+
+```typescript
+import { Agent, KBStore, createKBTools } from 'yaaf'
+
+const store = new KBStore('./knowledge')
+await store.load()
+
+const kbTools = createKBTools(store, {
+  maxDocumentChars: 20_000,
+  maxSearchResults: 8,
+  maxExcerptChars: 1_200,
+})
+
+const agent = new Agent({
+  systemPrompt: 'You are an expert on my project.',
+  tools: [...kbTools],  // search_kb, read_kb, list_kb_index
+})
+```
+
+This creates three tools:
+
+| Tool | Description |
+|------|-------------|
+| `search_kb` | Full-text search, returns top N results with excerpts |
+| `read_kb` | Fetch a single article by docId (full content) |
+| `list_kb_index` | Browse all articles, optionally filtered by entity type |
+
+### FederatedKnowledgeBase — Multiple KBs
+
+Combine multiple KBs into a unified, namespace-aware knowledge layer:
+
+```typescript
+import { KBStore, FederatedKnowledgeBase } from 'yaaf/knowledge'
+
+const yaafKB = new KBStore('./yaaf-kb')
+const teamKB = new KBStore('./team-kb')
+await Promise.all([yaafKB.load(), teamKB.load()])
+
+const federated = new FederatedKnowledgeBase([
+  { name: 'yaaf', store: yaafKB },
+  { name: 'team', store: teamKB },
+])
+
+// Cross-KB search
+const results = federated.search('memory strategy')
+// → results from both KBs, with namespace prefixes
+```
+
+---
+
 ## CI Integration
+
+### GitHub Actions — Automated KB Builds
+
+YAAF includes a ready-to-use GitHub Actions workflow (`.github/workflows/kb-build.yml`) that:
+
+1. Triggers on pushes to `main` when `knowledge/src/**` or `ontology.yaml` changes
+2. Runs `kb:incremental` to recompile only changed articles
+3. Commits the updated `compiled/` directory back to the branch with `[skip ci]`
+4. Supports manual full-rebuild via `workflow_dispatch`
+
+**Required secret:** `GEMINI_API_KEY` — add it in GitHub → Settings → Secrets.
+
+### Lint gate in CI
 
 Use `.kb-lint-report.json` for CI gates:
 
@@ -937,7 +1100,7 @@ node -e "
 "
 ```
 
-Or run lint programmatically in a CI script:
+Or run lint programmatically:
 
 ```typescript
 import { KBCompiler } from 'yaaf/knowledge'
@@ -1098,6 +1261,7 @@ import {
 
   // Ontology tools
   OntologyLoader,
+  OntologyGenerator,       // ← NEW: LLM-powered ontology drafting
   validateOntology,
   buildConceptRegistry,
   buildAliasIndex,
@@ -1105,6 +1269,12 @@ import {
   serializeRegistry,
   deserializeRegistry,
   upsertRegistryEntry,
+
+  // Runtime — load + query compiled KBs
+  KnowledgeBase,
+  KBStore,
+  createKBTools,            // ← NEW: one-liner agent KB tools
+  FederatedKnowledgeBase,   // ← NEW: multi-KB federation
 
   // Ingestion utilities
   ingestFile,

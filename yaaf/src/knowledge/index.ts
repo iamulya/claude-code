@@ -26,6 +26,11 @@ export {
   KBCompiler,
   // Model helpers
   makeGenerateFn,
+  // PDF extraction
+  makeGeminiPdfExtractor,
+  makeClaudePdfExtractor,
+  makeOpenAIPdfExtractor,
+  autoDetectPdfExtractor,
   // Web clipper (programmatic Obsidian Web Clipper equivalent)
   KBClipper,
 } from './compiler/index.js'
@@ -37,6 +42,11 @@ export type {
   CompileProgressEvent,
   ModelLike,
   GenerateFn,
+  PdfExtractFn,
+  PdfIngesterOptions,
+  GeminiPdfExtractorOptions,
+  ClaudePdfExtractorOptions,
+  OpenAIPdfExtractorOptions,
 } from './compiler/index.js'
 
 // ── Ontology types ─────────────────────────────────────────────────────────────
@@ -70,6 +80,14 @@ export {
   findByWikilink,
   findByEntityType,
   ONTOLOGY_FILENAME,
+  // LLM-powered ontology generator
+  OntologyGenerator,
+} from './ontology/index.js'
+
+export type {
+  OntologyGeneratorOptions,
+  GenerateOntologyOptions,
+  GenerateOntologyResult,
 } from './ontology/index.js'
 
 // ── Ingester types and utilities ───────────────────────────────────────────────
@@ -118,3 +136,31 @@ export type {
 } from './compiler/index.js'
 
 export { KBLinter, extractWikilinks, buildLinkGraph } from './compiler/index.js'
+
+// ── Runtime (Store + Tools + KnowledgeBase) ────────────────────────────────────
+
+export { KnowledgeBase, KBStore, createKBTools } from './store/index.js'
+
+export type {
+  KnowledgeBaseOptions,
+  CompiledDocument,
+  KBIndex,
+  KBIndexEntry,
+  SearchResult,
+  KBToolOptions,
+} from './store/index.js'
+
+// ── Federation ────────────────────────────────────────────────────────────────
+
+export { FederatedKnowledgeBase } from './store/index.js'
+
+export type {
+  FederatedKBConfig,
+  FederatedKBEntry,
+  FederatedKBOptions,
+  FederatedIndex,
+  NamespacedDocument,
+  NamespacedSearchResult,
+  NamespacedIndexEntry,
+} from './store/index.js'
+

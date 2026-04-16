@@ -1,0 +1,17 @@
+{
+  "name": "identity-sessions-yaaf-example",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx tsx src/server.ts",
+    "test": "npx tsx src/test-e2e.ts"
+  },
+  "dependencies": {
+    "yaaf": "file:../../"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.0"
+  }
+}

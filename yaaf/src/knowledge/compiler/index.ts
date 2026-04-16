@@ -14,6 +14,19 @@ export type {
   ModelLike,
 } from './compiler.js'
 
+// ── Pipeline utilities ────────────────────────────────────────────────────────
+
+export { writeWithVersioning, listVersions, rollbackToVersion } from './versioning.js'
+export type { ArticleVersion, WriteResult } from './versioning.js'
+
+export { withRetry } from './retry.js'
+export type { RetryOptions } from './retry.js'
+
+export { pluralizeEntityType, generateDocId } from './utils.js'
+
+export { validateGrounding } from './validator.js'
+export type { GroundingResult } from './validator.js'
+
 // ── Ingester ──────────────────────────────────────────────────────────────────
 
 export {
@@ -26,6 +39,11 @@ export {
   plainTextIngester,
   jsonIngester,
   codeIngester,
+  pdfIngester,
+  makeGeminiPdfExtractor,
+  makeClaudePdfExtractor,
+  makeOpenAIPdfExtractor,
+  autoDetectPdfExtractor,
   KBClipper,
   detectMimeType,
   isImageMimeType,
@@ -39,6 +57,11 @@ export type {
   IngestedContent,
   ImageRef,
   IngesterOptions,
+  PdfExtractFn,
+  PdfIngesterOptions,
+  GeminiPdfExtractorOptions,
+  ClaudePdfExtractorOptions,
+  OpenAIPdfExtractorOptions,
 } from './ingester/index.js'
 
 // ── Extractor ─────────────────────────────────────────────────────────────────
@@ -82,6 +105,7 @@ export { KBLinter, applyFixes } from './linter/index.js'
 export {
   extractWikilinks,
   buildLinkGraph,
+  checkContradictoryClaims,
 } from './linter/index.js'
 
 export type {
@@ -94,3 +118,48 @@ export type {
   AutoFixResult,
   FixedIssue,
 } from './linter/index.js'
+
+// ── Post-processing ───────────────────────────────────────────────────────────
+
+export {
+  resolveWikilinks,
+  segmentOversizedArticles,
+  postProcessCompiledArticles,
+  DEFAULT_ARTICLE_TOKEN_BUDGET,
+} from './postprocess.js'
+
+export type {
+  PostProcessOptions,
+  PostProcessResult,
+} from './postprocess.js'
+
+// ── LLM Client (shared by Phase C features) ───────────────────────────────────
+
+export { makeKBLLMClient, makeKBVisionClient, autoDetectKBClients } from './llmClient.js'
+export type { LLMCallFn, VisionCallFn, LLMClientOptions } from './llmClient.js'
+
+// ── Heal Mode (C1) ────────────────────────────────────────────────────────────
+
+export { healLintIssues } from './heal.js'
+export type { HealOptions, HealResult, HealDetail, HealProgressEvent } from './heal.js'
+
+// ── Discovery Mode (C2) ───────────────────────────────────────────────────────
+
+export { discoverGaps } from './discovery.js'
+export type {
+  DiscoveryOptions,
+  DiscoveryResult,
+  DiscoverySuggestion,
+  DiscoveryConnection,
+  DepthImbalance,
+  DiscoveryProgressEvent,
+} from './discovery.js'
+
+// ── Vision Pass (C3) ──────────────────────────────────────────────────────────
+
+export { runVisionPass } from './vision.js'
+export type { VisionPassOptions, VisionPassResult, VisionDetail, VisionProgressEvent } from './vision.js'
+// ── Differential Compilation Engine ──────────────────────────────────────────
+
+export { DifferentialEngine } from './differential.js'
+export type { SourceHashManifest, DifferentialPlan } from './differential.js'

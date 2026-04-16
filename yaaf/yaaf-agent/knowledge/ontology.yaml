@@ -1,0 +1,553 @@
+domain: "YAAF (Yet Another Agent Framework) — a TypeScript-first, provider-agnostic, production-grade agent framework for building LLM-powered agents. Covers architecture, API surfaces, configuration, plugins, security, runtimes, and advanced patterns."
+
+# ── Entity types ───────────────────────────────────────────────────────────────
+
+entity_types:
+
+  concept:
+    description: "A core abstraction, pattern, or design principle in YAAF. Concepts are framework-level ideas that cut across multiple subsystems (e.g. context window, token budget, plugin capability). Not a specific class or API."
+    linkable_to:
+      - concept
+      - guide
+      - api
+      - subsystem
+    frontmatter:
+      fields:
+        title:
+          description: "Article title — the concept name"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type identifier"
+          type: enum
+          required: true
+          enum:
+            - concept
+            - api
+            - subsystem
+            - guide
+            - plugin
+        summary:
+          description: "One-sentence description of the concept"
+          type: string
+          required: true
+        related_subsystems:
+          description: "Which YAAF subsystems this concept is central to"
+          type: string[]
+          required: false
+        see_also:
+          description: "Related concepts, guides, or API articles"
+          type: entity_ref[]
+          required: false
+          target_entity_type: concept
+    article_structure:
+      - heading: "What It Is"
+        description: "Define the concept clearly. What problem does it solve? Why does YAAF need it?"
+        required: true
+      - heading: "How It Works in YAAF"
+        description: "Explain the mechanism. Reference the actual implementation classes and methods."
+        required: true
+      - heading: "Configuration"
+        description: "Show how a developer configures or overrides this concept. Use code examples."
+        required: false
+      - heading: "See Also"
+        description: "Link to related concepts, guides, and API articles using wikilinks."
+        required: false
+
+  api:
+    description: "A specific exported class, function, hook, type, or factory in the YAAF public API surface (src/index.ts). The definitive reference for a concrete API entity."
+    linkable_to:
+      - api
+      - concept
+      - guide
+      - subsystem
+      - plugin
+    frontmatter:
+      fields:
+        title:
+          description: "Article title — the export name"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type identifier"
+          type: enum
+          required: true
+          enum:
+            - concept
+            - api
+            - subsystem
+            - guide
+            - plugin
+        summary:
+          description: "One-sentence description of what this API entity does"
+          type: string
+          required: true
+        export_name:
+          description: "The exact name as exported from the yaaf package"
+          type: string
+          required: true
+        source_file:
+          description: "Relative path to the source file, e.g. src/agent.ts"
+          type: string
+          required: true
+        category:
+          description: "Kind of TypeScript entity"
+          type: enum
+          required: true
+          enum:
+            - class
+            - function
+            - type
+            - interface
+            - constant
+        deprecated:
+          description: "Whether this API is deprecated"
+          type: boolean
+          required: false
+    article_structure:
+      - heading: "Overview"
+        description: "What this API entity does. When and why you would use it."
+        required: true
+      - heading: "Signature / Constructor"
+        description: "Show the TypeScript signature, constructor parameters, and config types."
+        required: true
+      - heading: "Methods & Properties"
+        description: "Document all public methods and properties with signatures and descriptions."
+        required: false
+      - heading: "Events"
+        description: "If the entity emits events, list them with their payload types."
+        required: false
+      - heading: "Examples"
+        description: "Minimal, realistic code examples showing the most common usage patterns."
+        required: true
+      - heading: "See Also"
+        description: "Link to related API articles, guides, and concepts."
+        required: false
+
+  subsystem:
+    description: "A logical subsystem of the YAAF framework — a cohesive cluster of source files that serves a unified architectural purpose (e.g. Memory System, Context Management, Plugin Host)."
+    linkable_to:
+      - api
+      - concept
+      - guide
+      - subsystem
+      - plugin
+    frontmatter:
+      fields:
+        title:
+          description: "Article title — the subsystem name"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type identifier"
+          type: enum
+          required: true
+          enum:
+            - concept
+            - api
+            - subsystem
+            - guide
+            - plugin
+        summary:
+          description: "One-sentence description of what this subsystem provides"
+          type: string
+          required: true
+        primary_files:
+          description: "Key source files in this subsystem (relative paths)"
+          type: string[]
+          required: true
+        exports:
+          description: "Key classes/functions exported by this subsystem"
+          type: string[]
+          required: false
+    article_structure:
+      - heading: "Purpose"
+        description: "What problem does this subsystem solve? What are its boundaries?"
+        required: true
+      - heading: "Architecture"
+        description: "How is it structured internally? Key classes and their roles."
+        required: true
+      - heading: "Integration Points"
+        description: "How do other subsystems interact with this one?"
+        required: false
+      - heading: "Key APIs"
+        description: "The most important public APIs in this subsystem. Link to api/ articles."
+        required: true
+      - heading: "Configuration"
+        description: "How developers configure this subsystem via AgentConfig or plugin registration."
+        required: false
+      - heading: "Extension Points"
+        description: "How developers extend or override behaviour (plugins, strategies, hooks)."
+        required: false
+
+  guide:
+    description: "A task-oriented how-to article that walks a developer through accomplishing a specific goal with YAAF. Written in the imperative (How to build X, Setting up Y)."
+    linkable_to:
+      - api
+      - concept
+      - subsystem
+      - guide
+      - plugin
+    frontmatter:
+      fields:
+        title:
+          description: "Article title — the guide topic"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type identifier"
+          type: enum
+          required: true
+          enum:
+            - concept
+            - api
+            - subsystem
+            - guide
+            - plugin
+        summary:
+          description: "One-sentence description of what this guide achieves"
+          type: string
+          required: true
+        difficulty:
+          description: "Approximate difficulty level for a TypeScript developer"
+          type: enum
+          required: false
+          enum:
+            - beginner
+            - intermediate
+            - advanced
+    article_structure:
+      - heading: "Overview"
+        description: "What the reader will build or achieve. Set clear expectations."
+        required: true
+      - heading: "Prerequisites"
+        description: "What they need installed, configured, or understood first."
+        required: false
+      - heading: "Step-by-Step"
+        description: "The actual implementation steps with full working code."
+        required: true
+      - heading: "Configuration Reference"
+        description: "All relevant config options with types and defaults."
+        required: false
+      - heading: "Common Mistakes"
+        description: "The top 3-5 things that go wrong and how to fix them."
+        required: false
+      - heading: "Next Steps"
+        description: "What to read or build next. Link to related guides and API articles."
+        required: false
+
+  plugin:
+    description: "A YAAF plugin — a class implementing one or more PluginCapability adapter interfaces (memory, browser, session, observability, etc.) that extends the framework via the plugin system."
+    linkable_to:
+      - api
+      - concept
+      - subsystem
+      - guide
+    frontmatter:
+      fields:
+        title:
+          description: "Article title — the plugin name"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type identifier"
+          type: enum
+          required: true
+          enum:
+            - concept
+            - api
+            - subsystem
+            - guide
+            - plugin
+        summary:
+          description: "One-sentence description of what this plugin provides"
+          type: string
+          required: true
+        capabilities:
+          description: "Plugin capability types it implements (memory, browser, session, etc.)"
+          type: string[]
+          required: true
+        built_in:
+          description: "Whether this plugin ships with the yaaf package"
+          type: boolean
+          required: false
+    article_structure:
+      - heading: "Overview"
+        description: "What this plugin does and what capability types it implements."
+        required: true
+      - heading: "Installation"
+        description: "How to install and import it. Show peer dependency requirements."
+        required: true
+      - heading: "Configuration"
+        description: "Constructor parameters and config types. Show a complete working example."
+        required: true
+      - heading: "Capabilities"
+        description: "For each capability it implements, explain what it provides."
+        required: true
+      - heading: "Limitations"
+        description: "Known constraints, unsupported features, or environmental requirements."
+        required: false
+
+# ── Relationship types ─────────────────────────────────────────────────────────
+
+relationship_types:
+  - name: IMPLEMENTS
+    from: plugin
+    to: concept
+    description: "A plugin that provides a concrete implementation of an adapter concept"
+    reciprocal: IMPLEMENTED_BY
+  - name: IMPLEMENTED_BY
+    from: concept
+    to: plugin
+    description: "A concept that is implemented by a plugin"
+    reciprocal: IMPLEMENTS
+  - name: EXTENDS
+    from: api
+    to: api
+    description: "A class or type that extends another"
+    reciprocal: EXTENDED_BY
+  - name: EXTENDED_BY
+    from: api
+    to: api
+    description: "A class or type that is extended by another"
+    reciprocal: EXTENDS
+  - name: BELONGS_TO
+    from: api
+    to: subsystem
+    description: "An API entity that is part of a subsystem"
+    reciprocal: CONTAINS
+  - name: CONTAINS
+    from: subsystem
+    to: api
+    description: "A subsystem that contains an API entity"
+    reciprocal: BELONGS_TO
+  - name: DEPENDS_ON
+    from: subsystem
+    to: subsystem
+    description: "A subsystem that depends on another"
+    reciprocal: DEPENDED_ON_BY
+  - name: DEPENDED_ON_BY
+    from: subsystem
+    to: subsystem
+    description: "A subsystem that is depended on by another"
+    reciprocal: DEPENDS_ON
+  - name: ILLUSTRATES
+    from: guide
+    to: concept
+    description: "A guide that demonstrates or applies a concept"
+    reciprocal: ILLUSTRATED_BY
+  - name: ILLUSTRATED_BY
+    from: concept
+    to: guide
+    description: "A concept that is demonstrated by a guide"
+    reciprocal: ILLUSTRATES
+  - name: CONFIGURES
+    from: guide
+    to: api
+    description: "A guide that explains how to configure a specific API entity"
+    reciprocal: CONFIGURED_BY
+  - name: CONFIGURED_BY
+    from: api
+    to: guide
+    description: "An API entity that is explained by a guide"
+    reciprocal: CONFIGURES
+  - name: WRAPS
+    from: api
+    to: api
+    description: "A higher-level API that wraps or composes a lower-level one"
+    reciprocal: WRAPPED_BY
+  - name: WRAPPED_BY
+    from: api
+    to: api
+    description: "A lower-level API that is wrapped by a higher-level one"
+    reciprocal: WRAPS
+
+# ── Vocabulary ────────────────────────────────────────────────────────────────
+
+vocabulary:
+
+  "agent":
+    entity_type: api
+    aliases:
+      - "YAAF agent"
+      - "Agent class"
+      - "agent instance"
+
+  "agent runner":
+    entity_type: api
+    aliases:
+      - "AgentRunner"
+      - "runner"
+      - "LLM loop"
+      - "execution loop"
+
+  "plugin host":
+    entity_type: api
+    aliases:
+      - "PluginHost"
+      - "plugin registry"
+      - "adapter registry"
+
+  "context manager":
+    entity_type: api
+    aliases:
+      - "ContextManager"
+      - "context window management"
+      - "token budget management"
+
+  "compaction":
+    entity_type: concept
+    aliases:
+      - "context compaction"
+      - "compaction strategy"
+      - "auto-compaction"
+      - "history compaction"
+
+  "memory strategy":
+    entity_type: concept
+    aliases:
+      - "MemoryStrategy"
+      - "memory extraction"
+      - "memory retrieval"
+
+  "tool":
+    entity_type: concept
+    aliases:
+      - "YAAF tool"
+      - "tool definition"
+      - "buildTool"
+      - "tool call"
+
+  "plugin":
+    entity_type: concept
+    aliases:
+      - "YAAF plugin"
+      - "adapter plugin"
+      - "capability plugin"
+
+  "plugin capability":
+    entity_type: concept
+    aliases:
+      - "PluginCapability"
+      - "adapter capability"
+      - "capability type"
+
+  "vigil":
+    entity_type: api
+    aliases:
+      - "Vigil"
+      - "autonomous mode"
+      - "scheduled agent"
+      - "daemon mode"
+
+  "permission policy":
+    entity_type: api
+    aliases:
+      - "PermissionPolicy"
+      - "tool permission"
+      - "permission system"
+
+  "security hooks":
+    entity_type: concept
+    aliases:
+      - "securityHooks"
+      - "prompt guard"
+      - "PII redactor"
+      - "output sanitizer"
+
+  "knowledge base":
+    entity_type: subsystem
+    aliases:
+      - "KnowledgeBase"
+      - "KB"
+      - "compiled knowledge"
+      - "KBCompiler"
+      - "KBStore"
+
+  "session":
+    entity_type: api
+    aliases:
+      - "Session"
+      - "session persistence"
+      - "conversation history"
+      - "JSONL session"
+
+  "orchestrator":
+    entity_type: api
+    aliases:
+      - "AgentOrchestrator"
+      - "multi-agent orchestrator"
+      - "agent swarm"
+
+  "system prompt":
+    entity_type: api
+    aliases:
+      - "SystemPromptBuilder"
+      - "system prompt builder"
+      - "system context"
+
+  "cost tracker":
+    entity_type: api
+    aliases:
+      - "CostTracker"
+      - "token cost"
+      - "usage tracking"
+
+  "guardrails":
+    entity_type: api
+    aliases:
+      - "Guardrails"
+      - "budget guardrail"
+      - "resource limit"
+
+  "telemetry":
+    entity_type: subsystem
+    aliases:
+      - "OpenTelemetry"
+      - "OTel"
+      - "YAAF telemetry"
+      - "tracing"
+
+  "context overflow":
+    entity_type: concept
+    aliases:
+      - "context window overflow"
+      - "ContextOverflowError"
+      - "token limit exceeded"
+
+  "gateway":
+    entity_type: api
+    aliases:
+      - "Gateway"
+      - "channel adapter"
+      - "messaging transport"
+
+  "hook":
+    entity_type: concept
+    aliases:
+      - "lifecycle hook"
+      - "beforeLLM hook"
+      - "afterLLM hook"
+      - "agent hook"
+
+  "mcp":
+    entity_type: concept
+    aliases:
+      - "Model Context Protocol"
+      - "McpPlugin"
+      - "MCP server"
+      - "MCP tool"
+
+# ── Token budget config ───────────────────────────────────────────────────────
+
+budget:
+  text_document_tokens: 6000
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+# ── Compiler model config ─────────────────────────────────────────────────────
+
+compiler:
+  extraction_model: gemini-3-flash-preview
+  synthesis_model: gemini-3-flash-preview
+  analysis_model: gemini-3-flash-preview

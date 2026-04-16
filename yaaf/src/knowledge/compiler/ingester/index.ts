@@ -25,12 +25,14 @@ import { detectMimeType } from './types.js'
 import { markdownIngester } from './markdown.js'
 import { htmlIngester, KBClipper } from './html.js'
 import { plainTextIngester, jsonIngester, codeIngester } from './text.js'
+import { pdfIngester } from './pdf.js'
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const INGESTERS: Ingester[] = [
   markdownIngester,
   htmlIngester,
+  pdfIngester,
   plainTextIngester,
   jsonIngester,
   codeIngester,
@@ -123,6 +125,14 @@ export type { Ingester, IngestedContent, ImageRef, IngesterOptions } from './typ
 export { markdownIngester } from './markdown.js'
 export { htmlIngester, KBClipper } from './html.js'
 export { plainTextIngester, jsonIngester, codeIngester } from './text.js'
+export { pdfIngester, makeGeminiPdfExtractor, makeClaudePdfExtractor, makeOpenAIPdfExtractor, autoDetectPdfExtractor } from './pdf.js'
+export type {
+  PdfExtractFn,
+  PdfIngesterOptions,
+  GeminiPdfExtractorOptions,
+  ClaudePdfExtractorOptions,
+  OpenAIPdfExtractorOptions,
+} from './pdf.js'
 export { detectMimeType, isImageMimeType } from './types.js'
 export {
   extractMarkdownImageRefs,

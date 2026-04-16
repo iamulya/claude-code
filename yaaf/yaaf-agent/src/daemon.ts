@@ -137,11 +137,15 @@ export class YaafDaemon extends Vigil {
   }
 
   /**
-   * Proactive health check — called on each Vigil tick.
+   * Proactive code-quality check — called on each Vigil tick.
    * Runs tsc, optionally runs tests, diffs against last known state,
    * and only surfaces NEW issues.
+   *
+   * Named `runHealthCheck` (not `healthCheck`) to avoid overriding
+   * Agent.healthCheck(), which serves the /health HTTP endpoint and
+   * returns plugin-health as `Record<string, boolean>`.
    */
-  async healthCheck(): Promise<DaemonIssue[]> {
+  async runHealthCheck(): Promise<DaemonIssue[]> {
     const issues: DaemonIssue[] = []
     const now = new Date()
 

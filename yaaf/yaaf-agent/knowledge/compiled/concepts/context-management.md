@@ -1,0 +1,16 @@
+---
+title: "Context Management"
+entity_type: concept
+stub: true
+compiled_at: "2026-04-16T14:41:06.191Z"
+compiled_from: []
+confidence: 0.5
+---
+
+# Context Management
+> **Stub article** — This article was auto-generated from mentions in source material.
+> Expand it by adding source documents that cover this topic.
+## Overview
+CLI tools for inspecting and managing agent execution contexts and history.
+## Related
+- [[CLI Tooling]]

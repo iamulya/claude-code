@@ -12,6 +12,9 @@
 import { readdir, readFile, stat } from 'fs/promises'
 import { join, extname, relative } from 'path'
 
+/** Rough average tokens per English word (GPT tokeniser baseline). */
+const TOKENS_PER_WORD = 1.35
+
 export type KBArticle = {
   docId: string
   title: string
@@ -50,8 +53,8 @@ export async function loadCompiledKB(compiledDir: string): Promise<KBLoadResult>
     return a.title.localeCompare(b.title)
   })
 
-  const totalWords = articles.reduce((sum, a) => sum + a.wordCount, 0)
-  const totalTokensEstimate = Math.round(totalWords * 1.35) // rough tokens/word ratio
+  const totalWords          = articles.reduce((sum, a) => sum + a.wordCount, 0)
+  const totalTokensEstimate = Math.round(totalWords * TOKENS_PER_WORD)
 
   return { articles, totalWords, totalTokensEstimate }
 }
@@ -145,9 +148,10 @@ function parseArticle(relativePath: string, raw: string): KBArticle | null {
   const fm = fmMatch[1]!
   const body = fmMatch[2]?.trim() ?? ''
 
-  const titleMatch = fm.match(/^title:\s*['""]?(.+?)['""]?\s*$/m)
-  const typeMatch = fm.match(/^entity_type:\s*(.+?)\s*$/m)
-  const stubMatch = fm.match(/^stub:\s*true/m)
+  // YAML title values may be unquoted, single-quoted, or double-quoted.
+  const titleMatch = fm.match(/^title:\s*['"]?(.+?)['"]?\s*$/m)
+  const typeMatch  = fm.match(/^entity_type:\s*(.+?)\s*$/m)
+  const stubMatch  = fm.match(/^stub:\s*true/m)
 
   const title = titleMatch?.[1] ?? docId.split('/').pop() ?? docId
   const entityType = typeMatch?.[1]?.trim() ?? 'unknown'

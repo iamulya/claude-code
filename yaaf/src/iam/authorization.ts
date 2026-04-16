@@ -21,6 +21,17 @@ import type {
 
 // ── Glob → RegExp helper ─────────────────────────────────────────────────────
 
+/**
+ * Convert a glob pattern to a RegExp for tool name matching.
+ *
+ * M6 FIX: Documentation clarifies wildcard semantics:
+ * - `*` matches zero or more of ANY character (equivalent to `.*` in regex).
+ *   This means `admin_*` matches `admin_`, `admin_users`, AND `admin_deep_nested_thing`.
+ *   There is no single-segment wildcard distinction.
+ * - `?` matches exactly one character.
+ *
+ * The result is anchored: `^pattern$` (full-match only).
+ */
 function globToRegex(pattern: string): RegExp {
   const escaped = pattern
     .replace(/[.+^${}|[\]\\]/g, '\\$&')
@@ -172,6 +183,14 @@ export type AttributeRule = {
 
   /** Reason for denial (used when action is 'deny') */
   reason?: string
+
+  /**
+   * M7 FIX: Priority for rule evaluation order.
+   * Higher numbers are evaluated first.
+   * When omitted, defaults to 0.
+   * Rules with the same priority preserve their insertion order.
+   */
+  priority?: number
 }
 
 /**
@@ -231,10 +250,14 @@ export class AttributeStrategy implements AuthorizationStrategy {
 
   constructor(config: AttributeStrategyConfig) {
     this.defaultAction = config.defaultAction ?? 'abstain'
-    this.rules = config.rules.map(rule => ({
-      ...rule,
-      compiledTools: rule.tools?.map(globToRegex),
-    }))
+    // M7 FIX: Sort rules by priority (highest first) for deterministic evaluation.
+    // Rules with the same priority preserve their insertion order (stable sort).
+    this.rules = [...config.rules]
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+      .map(rule => ({
+        ...rule,
+        compiledTools: rule.tools?.map(globToRegex),
+      }))
   }
 
   async evaluate(ctx: AuthorizationContext): Promise<AuthorizationDecision> {
@@ -251,11 +274,11 @@ export class AttributeStrategy implements AuthorizationStrategy {
 
       // Rule matched
       if (rule.action === 'allow') {
-        return { action: 'allow', reason: `ABAC rule "${rule.name}" allows` }
+        return { action: 'allow', reason: `ABAC rule "${rule.name}" allows (priority=${rule.priority ?? 0})` }
       }
       return {
         action: 'deny',
-        reason: rule.reason ?? `ABAC rule "${rule.name}" denies`,
+        reason: rule.reason ?? `ABAC rule "${rule.name}" denies (priority=${rule.priority ?? 0})`,
       }
     }
 
@@ -348,13 +371,18 @@ export class CompositeStrategy implements AuthorizationStrategy {
   }
 
   private async evaluateAllOf(ctx: AuthorizationContext): Promise<AuthorizationDecision> {
+    let anyExplicitAllow = false
+
     for (const strategy of this.strategies) {
       const decision = await strategy.evaluate(ctx)
       if (decision.action === 'deny') return decision
-      if (decision.action === 'abstain') continue
-      // 'allow' — keep checking rest
+      if (decision.action === 'allow') anyExplicitAllow = true
+      // 'abstain' — continue to next
     }
-    // All strategies either allowed or abstained
+
+    // X-31 fix: if ALL strategies abstained (none explicitly allowed),
+    // return the fallback rather than treating silence as consent.
+    if (!anyExplicitAllow) return this.fallback
     return { action: 'allow' }
   }
 

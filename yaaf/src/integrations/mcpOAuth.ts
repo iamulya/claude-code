@@ -276,8 +276,11 @@ export class McpOAuthClient {
    * Exchange an authorization code for tokens.
    */
   async exchangeCode(code: string, state: string): Promise<OAuthTokens> {
-    // Validate state
-    if (this.pendingState && state !== this.pendingState) {
+    // X-21 fix: always validate state — reject if no pending auth flow exists
+    if (!this.pendingState) {
+      throw new Error('No pending OAuth flow — call getAuthorizationUrl() before exchangeCode()')
+    }
+    if (state !== this.pendingState) {
       throw new Error(`OAuth state mismatch: expected ${this.pendingState}, got ${state}`)
     }
 
@@ -430,8 +433,10 @@ export class McpOAuthClient {
           const error = url.searchParams.get('error')
 
           if (error) {
+            // X-24 fix: HTML-escape the error to prevent reflected XSS
+            const safeError = error.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
             res.writeHead(400, { 'Content-Type': 'text/html' })
-            res.end(`<h1>OAuth Error</h1><p>${error}</p><p>You can close this window.</p>`)
+            res.end(`<h1>OAuth Error</h1><p>${safeError}</p><p>You can close this window.</p>`)
             clearTimeout(timer)
             server.close()
             reject(new Error(`OAuth error: ${error}`))

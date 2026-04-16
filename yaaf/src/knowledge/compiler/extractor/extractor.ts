@@ -29,6 +29,8 @@
  */
 
 import { join, dirname, relative, basename } from 'path'
+import { generateDocId } from '../utils.js'
+import { withRetry } from '../retry.js'
 import type { KBOntology, ConceptRegistry } from '../../ontology/index.js'
 import { buildAliasIndex, scanForEntityMentions } from '../../ontology/index.js'
 import type { IngestedContent } from '../ingester/index.js'
@@ -99,32 +101,7 @@ const DIRECTORY_HINTS: Record<string, string> = {
 export type GenerateFn = (systemPrompt: string, userPrompt: string) => Promise<string>
 
 // ── DocId generation ──────────────────────────────────────────────────────────
-
-/**
- * Generate a deterministic docId from a canonical title and entity type.
- * The docId is the relative path within compiled/ (without .md extension).
- *
- * Format: {entityType}s/{hyphenated-slug}
- * Example: "Attention Mechanism" + "concept" → "concepts/attention-mechanism"
- */
-function generateDocId(canonicalTitle: string, entityType: string): string {
-  const slug = canonicalTitle
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60)
-
-  // Pluralize entity type directory (simple rules)
-  const typeDir = entityType.endsWith('y')
-    ? entityType.slice(0, -1) + 'ies'      // category → categories
-    : entityType.endsWith('s')
-      ? entityType                            // apis → apis
-      : entityType + 's'                      // concept → concepts
-
-  return `${typeDir}/${slug}`
-}
+// Delegated to ../utils.ts for proper pluralization (Phase 4B)
 
 // ── JSON extraction helper ────────────────────────────────────────────────────
 
@@ -151,11 +128,37 @@ function extractJsonFromLlmResponse(raw: string): string {
     return text
   }
 
-  // 3. Walk forward counting braces to find the matching '}'
+  // 3. Walk forward counting braces, tracking string context (Phase 1B fix)
+  //    Previous version didn't account for braces inside JSON string values
+  //    e.g., {"code": "function foo() { return {} }"} would break
   let depth = 0
+  let inString = false
+  let escape = false
   let end = -1
+
   for (let i = start; i < text.length; i++) {
-    const ch = text[i]
+    const ch = text[i]!
+
+    // Handle escape sequences inside strings
+    if (escape) {
+      escape = false
+      continue
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true
+      continue
+    }
+
+    // Toggle string context on unescaped quotes
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
+
+    // Only count braces outside of strings
+    if (inString) continue
+
     if (ch === '{') depth++
     else if (ch === '}') {
       depth--
@@ -418,7 +421,11 @@ export class ConceptExtractor {
       this.ontology,
     )
 
-    const rawResponse = await this.generateFn(this.systemPrompt, userPrompt)
+    // Phase 2A: Wrap LLM call in retry logic for transient failures
+    const rawResponse = await withRetry(
+      () => this.generateFn(this.systemPrompt, userPrompt),
+      { maxRetries: 3 },
+    )
 
     // Pass 3: Parse + validate + post-process
     const plans = parseExtractionResponse(

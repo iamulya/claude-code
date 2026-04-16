@@ -32,6 +32,8 @@ import type { KBOntology, ConceptRegistry } from '../../ontology/index.js'
 import { buildAliasIndex, scanForEntityMentions } from '../../ontology/index.js'
 import type { LintIssue, LinkGraph, LintOptions } from './types.js'
 import type { ParsedCompiledArticle } from './reader.js'
+import { readdir, readFile } from 'fs/promises'
+import { join } from 'path'
 
 // ── Wikilink extraction ───────────────────────────────────────────────────────
 
@@ -176,10 +178,12 @@ export function checkMissingRequiredFields(
           ? `Add "${fieldName}: ${fieldSchema.default}" to the frontmatter`
           : `Add "${fieldName}" to the frontmatter. Type: ${fieldSchema.type}. ${fieldSchema.description}`,
         autoFixable: hasDefault,
+        // Phase 1D: Use frontmatter-aware fix that inserts before the closing ---
+        // instead of targeting the opening --- (which could match body horizontal rules)
         fix: hasDefault ? {
-          findText: '---',
-          replaceWith: `---\n${fieldName}: ${fieldSchema.default}`,
-          firstOccurrenceOnly: true,
+          findText: '\n---',
+          replaceWith: `\n${fieldName}: ${fieldSchema.default}\n---`,
+          firstOccurrenceOnly: false,  // Target closing delimiter
         } : undefined,
       })
     }
@@ -526,18 +530,43 @@ export async function checkStubWithSources(
   const title = String(article.frontmatter['title'] ?? '').toLowerCase()
   if (!title) return null
 
-  // Check if any files in raw/ mention this concept by title
-  // (Simplified: in a full implementation we'd scan raw/ for mentions)
-  // For now, just flag all stubs as potentially expandable
   const entry = registry.get(article.docId)
   if (!entry) return null
+
+  // Phase 4A: Actually scan raw/ for files that mention this concept
+  const titleWords = title.split(/\s+/).filter(w => w.length > 3)
+  if (titleWords.length === 0) return null
+
+  try {
+    const rawFiles = await scanDirectoryRecursive(rawDir)
+    const filesToCheck = rawFiles.slice(0, 200)  // Cap at 200 to bound runtime
+    let hasSource = false
+
+    for (const file of filesToCheck) {
+      try {
+        const content = await readFile(file, 'utf-8')
+        const lower = content.toLowerCase()
+        // Require at least 2 title words (or all if fewer than 2) to appear in the file
+        const threshold = Math.min(2, titleWords.length)
+        const matches = titleWords.filter(w => lower.includes(w))
+        if (matches.length >= threshold) {
+          hasSource = true
+          break
+        }
+      } catch { /* unreadable file */ }
+    }
+
+    if (!hasSource) return null  // No evidence of source material
+  } catch {
+    return null  // rawDir doesn't exist or isn't readable
+  }
 
   return {
     code: 'STUB_WITH_SOURCES',
     severity: 'info',
-    message: `Stub article "${entry.canonicalTitle}" may have expandable source material in raw/`,
+    message: `Stub article "${entry.canonicalTitle}" has source material in raw/ that could expand it`,
     docId: article.docId,
-    suggestion: `Run "kb compile" to check if new sources cover "${entry.canonicalTitle}". If so, a full article will be synthesized.`,
+    suggestion: `Run "kb compile" to synthesize a full article from available sources.`,
     autoFixable: false,
   }
 }
@@ -590,14 +619,120 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Simple title similarity using character-level Jaccard similarity.
- * Returns 0 (completely different) to 1 (identical).
+ * Phase 3A: Word n-gram based title similarity.
+ * Much more accurate than character-level Jaccard:
+ * - "React" vs "React Native" → low similarity (different word sets)
+ * - "PyTorch" vs "TorchPy" → low similarity (different words)
+ *
+ * For short titles (< 4 words): uses word-level Jaccard
+ * For longer titles: uses word 2-gram Jaccard
  */
 function titleSimilarity(a: string, b: string): number {
   if (a === b) return 1
-  const setA = new Set(a.split(''))
-  const setB = new Set(b.split(''))
-  const intersection = new Set([...setA].filter(c => setB.has(c)))
-  const union = new Set([...setA, ...setB])
-  return intersection.size / union.size
+
+  const aWords = a.toLowerCase().split(/\s+/).filter(w => w.length > 1).map(stemWord)
+  const bWords = b.toLowerCase().split(/\s+/).filter(w => w.length > 1).map(stemWord)
+
+  // For short titles, use word-level Jaccard
+  if (aWords.length < 4 || bWords.length < 4) {
+    const setA = new Set(aWords)
+    const setB = new Set(bWords)
+    const intersection = new Set([...setA].filter(w => setB.has(w)))
+    const union = new Set([...setA, ...setB])
+    return union.size > 0 ? intersection.size / union.size : 0
+  }
+
+  // For longer titles, use 2-gram Jaccard
+  const ngramsA = wordNgrams(aWords, 2)
+  const ngramsB = wordNgrams(bWords, 2)
+  const intersection = new Set([...ngramsA].filter(ng => ngramsB.has(ng)))
+  const union = new Set([...ngramsA, ...ngramsB])
+  return union.size > 0 ? intersection.size / union.size : 0
+}
+
+/** Basic plural stemming — strips trailing 's', 'es', 'ies' for Jaccard comparison */
+function stemWord(word: string): string {
+  if (word.length <= 3) return word
+  if (word.endsWith('ies')) return word.slice(0, -3) + 'y'
+  if (word.endsWith('es') && !word.endsWith('ses')) return word.slice(0, -2)
+  if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1)
+  return word
+}
+
+function wordNgrams(words: string[], n: number): Set<string> {
+  const ngrams = new Set<string>()
+  for (let i = 0; i <= words.length - n; i++) {
+    ngrams.add(words.slice(i, i + n).join(' '))
+  }
+  return ngrams
+}
+
+// Phase 4A: Recursive directory scanner for stub source checking
+async function scanDirectoryRecursive(dir: string): Promise<string[]> {
+  const files: string[] = []
+  try {
+    const entries = await readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name)
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        files.push(...(await scanDirectoryRecursive(fullPath)))
+      } else if (entry.isFile()) {
+        files.push(fullPath)
+      }
+    }
+  } catch { /* unreadable dir */ }
+  return files
+}
+
+// ── Check 14: CONTRADICTORY_CLAIMS (Phase 5D) ────────────────────────────────
+
+/**
+ * Detect when two articles make contradictory factual statements about
+ * the same subject. Uses pattern matching for "X is/has/uses N" claims
+ * and flags when different articles disagree on numeric values.
+ */
+export function checkContradictoryClaims(
+  articles: ParsedCompiledArticle[],
+  _registry: ConceptRegistry,
+): LintIssue[] {
+  // Extract factual claims in "subject is/has/uses value" patterns
+  const factPattern = /\b([\w][\w\s]{2,30})\b\s+(?:is|are|has|have|uses?|contains?|requires?)\s+(\d[\d,.]*\s*\w*)/gi
+
+  const factsByEntity = new Map<string, Array<{ docId: string; claim: string; value: string }>>()
+
+  for (const article of articles) {
+    let match: RegExpExecArray | null
+    const re = new RegExp(factPattern.source, 'gi')
+    while ((match = re.exec(article.body))) {
+      const entity = match[1]!.trim().toLowerCase()
+      if (entity.length < 3) continue  // Skip very short matches
+      const value = match[2]!.trim()
+      const list = factsByEntity.get(entity) ?? []
+      list.push({ docId: article.docId, claim: match[0], value })
+      factsByEntity.set(entity, list)
+    }
+  }
+
+  const issues: LintIssue[] = []
+  for (const [entity, facts] of factsByEntity) {
+    if (facts.length < 2) continue
+    // Check if different articles state different numeric values for the same entity
+    const uniqueValues = new Set(facts.map(f => f.value.replace(/[,\s]/g, '')))
+    if (uniqueValues.size > 1) {
+      const docIds = [...new Set(facts.map(f => f.docId))]
+      if (docIds.length > 1) {
+        issues.push({
+          code: 'CONTRADICTORY_CLAIMS',
+          severity: 'warning',
+          message: `Potential contradiction about "${entity}": ${facts.slice(0, 3).map(f => `"${f.claim.slice(0, 80)}" (${f.docId})`).join(' vs ')}`,
+          docId: docIds[0]!,
+          relatedTarget: docIds[1],
+          suggestion: `Review these articles and reconcile the discrepancy.`,
+          autoFixable: false,
+        })
+      }
+    }
+  }
+
+  return issues
 }

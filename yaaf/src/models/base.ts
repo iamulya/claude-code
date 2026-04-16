@@ -44,6 +44,72 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
     super(name, ['llm'])
   }
 
+  // ── H3 FIX: Retry with exponential backoff ─────────────────────────────────
+
+  /**
+   * Retry transient API errors with exponential backoff + jitter.
+   *
+   * Retries on:
+   * - HTTP 429 (rate limit)
+   * - HTTP 500 (server error)
+   * - HTTP 503 (service unavailable)
+   * - Network errors (ECONNRESET, ETIMEDOUT, fetch failures)
+   *
+   * @param fn — async function to retry
+   * @param maxRetries — maximum retry attempts (default: 3)
+   * @param baseDelayMs — initial delay in ms (default: 1000)
+   */
+  protected async withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries = 3,
+    baseDelayMs = 1_000,
+  ): Promise<T> {
+    let lastError: Error | undefined
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn()
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
+
+        if (attempt >= maxRetries || !this.isRetryableError(lastError)) {
+          throw lastError
+        }
+
+        // Exponential backoff with jitter: delay = baseDelay * 2^attempt + random jitter
+        const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * baseDelayMs * 0.5
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+
+    throw lastError!
+  }
+
+  /**
+   * Determine if an error is retryable (transient API error).
+   * Override in subclasses for provider-specific error handling.
+   */
+  protected isRetryableError(err: Error): boolean {
+    const msg = err.message.toLowerCase()
+
+    // HTTP status code checks
+    if (msg.includes('429') || msg.includes('rate limit')) return true
+    if (msg.includes('500') || msg.includes('internal server error')) return true
+    if (msg.includes('503') || msg.includes('service unavailable')) return true
+    if (msg.includes('502') || msg.includes('bad gateway')) return true
+
+    // Network errors
+    if (msg.includes('econnreset') || msg.includes('etimedout')) return true
+    if (msg.includes('econnrefused') || msg.includes('epipe')) return true
+    if (msg.includes('network') || msg.includes('fetch failed')) return true
+    if (msg.includes('socket hang up')) return true
+
+    // Provider-specific transient errors
+    if (msg.includes('overloaded') || msg.includes('capacity')) return true
+
+    return false
+  }
+
   // ── Streaming — default fallback wraps complete() ─────────────────────────
 
   /**
@@ -73,54 +139,60 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
   /**
    * Simple text query — no tool schemas, no history management.
    * Wraps `complete()` with a single-user-message conversation.
+   * H3 FIX: Wrapped in withRetry() for transient error resilience.
    */
   async query(params: LLMQueryParams): Promise<LLMResponse> {
-    const chatMessages: ChatMessage[] = []
-    if (params.system) {
-      chatMessages.push({ role: 'system', content: params.system })
-    }
-    for (const m of params.messages) {
-      chatMessages.push({ role: m.role, content: m.content })
-    }
+    return this.withRetry(async () => {
+      const chatMessages: ChatMessage[] = []
+      if (params.system) {
+        chatMessages.push({ role: 'system', content: params.system })
+      }
+      for (const m of params.messages) {
+        chatMessages.push({ role: m.role, content: m.content })
+      }
 
-    const result = await this.complete({
-      messages: chatMessages,
-      temperature: params.temperature,
-      maxTokens: params.maxTokens,
-      signal: params.signal,
+      const result = await this.complete({
+        messages: chatMessages,
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+        signal: params.signal,
+      })
+
+      return {
+        content: result.content ?? '',
+        tokensUsed: {
+          input: result.usage?.promptTokens ?? 0,
+          output: result.usage?.completionTokens ?? 0,
+        },
+        model: this.model,
+        stopReason: result.finishReason,
+      }
     })
-
-    return {
-      content: result.content ?? '',
-      tokensUsed: {
-        input: result.usage?.promptTokens ?? 0,
-        output: result.usage?.completionTokens ?? 0,
-      },
-      model: this.model,
-      stopReason: result.finishReason,
-    }
   }
 
   /**
    * Summarize a conversation into a compact string.
    * Used by ContextManager for context compaction.
+   * H3 FIX: Wrapped in withRetry() for transient error resilience.
    */
   async summarize(messages: LLMMessage[], instructions?: string): Promise<string> {
-    const systemParts = [
-      'You are a conversation summarizer. Compress the provided conversation into a compact, information-dense summary that preserves all key facts, decisions, and context. Focus on what was done, what was learned, and what state was established.',
-    ]
-    if (instructions) systemParts.push(instructions)
+    return this.withRetry(async () => {
+      const systemParts = [
+        'You are a conversation summarizer. Compress the provided conversation into a compact, information-dense summary that preserves all key facts, decisions, and context. Focus on what was done, what was learned, and what state was established.',
+      ]
+      if (instructions) systemParts.push(instructions)
 
-    const formatted = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
-    const result = await this.complete({
-      messages: [
-        { role: 'system', content: systemParts.join('\n\n') },
-        { role: 'user', content: `Summarize this conversation:\n\n${formatted}` },
-      ],
-      temperature: 0.1,
-      maxTokens: 1024,
+      const formatted = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
+      const result = await this.complete({
+        messages: [
+          { role: 'system', content: systemParts.join('\n\n') },
+          { role: 'user', content: `Summarize this conversation:\n\n${formatted}` },
+        ],
+        temperature: 0.1,
+        maxTokens: 1024,
+      })
+      return result.content ?? ''
     })
-    return result.content ?? ''
   }
 
   /** Rough token estimate — no network call. */

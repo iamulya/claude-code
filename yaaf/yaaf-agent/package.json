@@ -1,19 +1,50 @@
 {
-  "name": "@yaaf/agent",
+  "name": "yaaf-agent",
   "version": "0.1.0",
-  "description": "YAAF Expert Agent — built with YAAF, for YAAF developers",
+  "description": "YAAF Expert Agent — an AI assistant for YAAF developers, built with YAAF",
   "type": "module",
-  "private": true,
+  "bin": {
+    "yaaf-agent": "./dist/main.js"
+  },
+  "files": [
+    "dist/",
+    "knowledge/compiled/",
+    "knowledge/.kb-registry.json",
+    "knowledge/ontology.yaml"
+  ],
   "scripts": {
-    "start": "tsx src/main.ts",
-    "daemon": "tsx src/main.ts --daemon",
-    "build": "tsc"
+    "start": "npx tsx src/main.ts",
+    "dev": "npx tsx src/main.ts --dev",
+    "build": "tsc",
+    "kb:extract": "npx tsx knowledge/scripts/extract-source.ts",
+    "kb:compile": "npx tsx knowledge/scripts/build-kb.ts",
+    "kb:build": "npm run kb:extract && npm run kb:compile",
+    "kb:incremental": "npm run kb:extract && npx tsx knowledge/scripts/build-kb.ts --incremental",
+    "kb:lint": "npx tsx knowledge/scripts/build-kb.ts --lint-only",
+    "kb:init": "npx tsx knowledge/scripts/init-ontology.ts"
   },
   "dependencies": {
     "yaaf": "file:.."
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/yaaf",
+    "directory": "yaaf-agent"
+  },
+  "keywords": [
+    "yaaf",
+    "agent",
+    "ai-assistant",
+    "llm",
+    "developer-tools"
+  ],
+  "license": "MIT"
 }

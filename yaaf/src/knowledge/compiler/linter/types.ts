@@ -30,6 +30,10 @@ export type LintCode =
   | 'LOW_ARTICLE_QUALITY'      // Article body is very short and not marked as stub
   | 'BROKEN_SOURCE_REF'        // compiled_from path doesn't exist on disk
   | 'DUPLICATE_CANDIDATE'      // Two articles have very similar titles
+  | 'CONTRADICTORY_CLAIMS'     // Articles make contradictory claims about the same entity
+  // ── Plugin-defined rules ────────────────────────────────────────────
+  // Plugin rules use the pattern `PLUGIN_<RuleId>` so they can be filtered separately.
+  | `PLUGIN_${string}`
 
 // ── Severity ──────────────────────────────────────────────────────────────────
 
@@ -147,6 +151,14 @@ export type LintOptions = {
    * DocIds to skip (e.g., canonical list of known-good articles).
    */
   skipDocIds?: string[]
+
+  /**
+   * Phase 4C: How many mentions to wikilink per article.
+   * 'first' = only the first occurrence (wiki convention)
+   * 'all' = all occurrences
+   * Default: 'first'
+   */
+  unlinkedMentionStrategy?: 'first' | 'all'
 }
 
 // ── Auto-fix result ───────────────────────────────────────────────────────────

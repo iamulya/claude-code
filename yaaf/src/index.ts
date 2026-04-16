@@ -314,6 +314,24 @@ export {
   type HierarchyScopeConfig,
   type ResolverScopeConfig,
   type SystemAwareScopeConfig,
+  // Identity providers
+  JwtIdentityProvider,
+  ApiKeyIdentityProvider,
+  OidcIdentityProvider,
+  CompositeIdentityProvider,
+  AnonymousIdentityProvider,
+  type JwtIdentityConfig,
+  type ApiKeyIdentityConfig,
+  type OidcIdentityConfig,
+  type CompositeIdentityConfig,
+  // JWT utilities
+  verifyJwt,
+  verifyJwtWithJwks,
+  decodeJwt,
+  JwtError,
+  type JwtPayload,
+  type JwtHeader,
+  type JwtVerifyOptions,
 } from './iam/index.js'
 
 // ── Security Middleware (OWASP LLM Top 10) ────────────────────────────────────
@@ -474,6 +492,7 @@ export {
   ToolExecutionError,
   AbortError,
   RetryExhaustedError,
+  MaxIterationsError,
   classifyAPIError,
   parseRetryAfterHeader,
   type ErrorCode,
@@ -485,7 +504,7 @@ export { PluginBase } from './plugin/base.js'
 // BaseLLMAdapter — shared base class for LLM model implementations
 export { BaseLLMAdapter } from './models/base.js'
 // resolveModel — construct a ChatModel from AgentConfig provider settings
-export { resolveModel, KNOWN_BASE_URLS, type ResolverConfig } from './models/resolver.js'
+export { resolveModel, type ResolverConfig } from './models/resolver.js'
 // Model specs registry — look up or extend per-model context/output token limits
 export { resolveModelSpecs, registerModelSpecs, type ModelSpecs } from './models/specs.js'
 export {
@@ -498,6 +517,33 @@ export {
   type ToolProvider,
   type ContextProvider,
   type LLMAdapter,
+  type LLMPricing,
+  // Phase 2: Security Adapter
+  type SecurityAdapter,
+  type SecurityHookResult,
+  // Phase 3: Observability Adapter
+  type ObservabilityAdapter,
+  type LogEntry,
+  type SpanData,
+  // Phase 3: Notification Adapter
+  type NotificationAdapter,
+  type PluginNotification,
+  // Phase 4: Ingester Adapter
+  type IngesterAdapter,
+  type IngesterAdapterOptions,
+  type IngesterAdapterResult,
+  // Phase 5: Compaction Adapter
+  type CompactionAdapter,
+  // Phase 5: Skill Provider Adapter
+  type SkillProviderAdapter,
+  // Phase 5: Session Adapter
+  type SessionAdapter,
+  // Phase 5: Identity Adapter
+  type IdentityAdapter,
+  // Phase 5: Linter Rule Adapter
+  type LinterRuleAdapter,
+  type LinterRuleIssue,
+  // Existing types
   type MemoryEntry,
   type MemoryEntryWithContent,
   type MemoryEntryMeta,
@@ -627,6 +673,8 @@ export {
   CallbackNotifier,
   CompositeNotifier,
   BufferNotifier,
+  // GAP 7 FIX: bridge factory — wrap any NotificationChannel as a NotificationAdapter plugin
+  notificationAdapterFromChannel,
   type NotificationChannel,
   type Notification,
   type NotificationType,
@@ -804,3 +852,18 @@ export {
 // NOT exported from the main barrel by design (like Gateway).
 // Import explicitly via:  import { RemoteSessionServer } from 'yaaf/remote'
 // See src/remote.ts for the opt-in entry point.
+
+// ── Knowledge Base Store (runtime read API) ───────────────────────────────────
+// Compile-time tools (KBCompiler, KBLinter, etc.) are in 'yaaf/knowledge'.
+export {
+  KBStore,
+  createKBTools,
+  KnowledgeBase,
+  FederatedKnowledgeBase,
+  type CompiledDocument,
+  type KBIndex,
+  type KBIndexEntry,
+  type SearchResult,
+  type KBToolOptions,
+  type KnowledgeBaseOptions,
+} from './knowledge/store/index.js'

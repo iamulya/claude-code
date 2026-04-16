@@ -514,6 +514,10 @@ export class A2AServer {
   private readonly agent: A2AAgent
   private readonly config: Required<Omit<A2AServerConfig, 'onTask' | 'acceptedTokens'>> & Pick<A2AServerConfig, 'onTask' | 'acceptedTokens'>
   private readonly tasks = new Map<string, A2ATask>()
+  /** X-12 fix: cap stored tasks to prevent OOM via unbounded map growth */
+  private static readonly MAX_TASKS = 10_000
+  /** X-13 fix: max request body size (10 MB) */
+  private static readonly MAX_BODY_BYTES = 10 * 1024 * 1024
   private server: ReturnType<typeof createHttpServer> | null = null
 
   constructor(agent: A2AAgent, config: A2AServerConfig) {
@@ -686,7 +690,11 @@ export class A2AServer {
       .map((p) => p.text)
       .join('\n')
 
-    // Create task record
+    // Create task record (X-12 fix: evict oldest if at capacity)
+    if (this.tasks.size >= A2AServer.MAX_TASKS) {
+      const oldestKey = this.tasks.keys().next().value
+      if (oldestKey) this.tasks.delete(oldestKey)
+    }
     const task: A2ATask = {
       id: taskId,
       status: { state: 'working', timestamp: new Date().toISOString() },
@@ -716,11 +724,15 @@ export class A2AServer {
 
       this.sendJsonRpcResult(res, rpcId, task)
     } catch (err) {
+      // X-14 fix: sanitize error message — never expose internal details to remote agents
+      const safeMessage = err instanceof Error
+        ? err.message.replace(/\/[^\s]+/g, '[path]').slice(0, 200)
+        : 'Internal agent error'
       task.status = {
         state: 'failed',
         message: {
           role: 'agent',
-          parts: [{ text: err instanceof Error ? err.message : String(err) }],
+          parts: [{ text: safeMessage }],
         },
         timestamp: new Date().toISOString(),
       }
@@ -829,7 +841,17 @@ export class A2AServer {
   private readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
-      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      let totalBytes = 0
+      req.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length
+        // X-13 fix: reject oversized request bodies before OOM
+        if (totalBytes > A2AServer.MAX_BODY_BYTES) {
+          req.destroy()
+          reject(new Error(`Request body exceeds ${A2AServer.MAX_BODY_BYTES} byte limit`))
+          return
+        }
+        chunks.push(chunk)
+      })
       req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
       req.on('error', reject)
     })

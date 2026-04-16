@@ -35,6 +35,7 @@ export type ErrorCode =
   | 'PERMISSION_DENIED'
   | 'ABORT'
   | 'RETRY_EXHAUSTED'
+  | 'MAX_ITERATIONS'
   | 'COMPACTION_ERROR'
   | 'UNKNOWN'
 
@@ -276,6 +277,23 @@ export class RetryExhaustedError extends YAAFError {
     this.name = 'RetryExhaustedError'
     this.attempts = attempts
     this.lastError = lastError
+  }
+}
+
+/** Agent loop hit maxIterations without producing a final response */
+export class MaxIterationsError extends YAAFError {
+  readonly iterations: number
+
+  constructor(
+    iterations: number,
+    opts: { provider?: string } = {},
+  ) {
+    super(
+      `Agent reached maximum iterations (${iterations}) without producing a final response`,
+      { code: 'MAX_ITERATIONS', retryable: false, provider: opts.provider },
+    )
+    this.name = 'MaxIterationsError'
+    this.iterations = iterations
   }
 }
 

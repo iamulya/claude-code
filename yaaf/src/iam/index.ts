@@ -105,3 +105,27 @@ export {
   type ResolverScopeConfig,
   type SystemAwareScopeConfig,
 } from './scoping.js'
+
+// ── Identity Providers ───────────────────────────────────────────────────────
+export {
+  JwtIdentityProvider,
+  ApiKeyIdentityProvider,
+  OidcIdentityProvider,
+  CompositeIdentityProvider,
+  AnonymousIdentityProvider,
+  type JwtIdentityConfig,
+  type ApiKeyIdentityConfig,
+  type OidcIdentityConfig,
+  type CompositeIdentityConfig,
+} from './providers.js'
+
+// ── JWT (internal, but exposed for advanced use) ─────────────────────────────
+export {
+  verifyJwt,
+  verifyJwtWithJwks,
+  decodeJwt,
+  JwtError,
+  type JwtPayload,
+  type JwtHeader,
+  type JwtVerifyOptions,
+} from './jwt.js'

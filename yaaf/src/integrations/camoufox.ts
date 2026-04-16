@@ -22,6 +22,8 @@ import type {
   PluginCapability,
   BrowserAdapter,
   ToolProvider,
+  ContextProvider,
+  ContextSection,
   NavigateOptions,
   PageContent,
   ScreenshotOptions,
@@ -99,8 +101,8 @@ async function rpcCall(
  * - Implements ToolProvider to expose web_browse/web_click/etc. tools
  * - Exposes Camoufox-specific APIs (cookies, evaluate JS, query elements)
  */
-export class CamoufoxPlugin extends PluginBase implements BrowserAdapter, ToolProvider {
-  override readonly capabilities: readonly PluginCapability[] = ['browser', 'tool_provider']
+export class CamoufoxPlugin extends PluginBase implements BrowserAdapter, ToolProvider, ContextProvider {
+  override readonly capabilities: readonly PluginCapability[] = ['browser', 'tool_provider', 'context_provider']
 
   private process: ChildProcess | null = null
   private isRunning = false
@@ -241,6 +243,34 @@ export class CamoufoxPlugin extends PluginBase implements BrowserAdapter, ToolPr
   getTools(): Tool[] {
     if (!this.cachedTools) this.cachedTools = this.buildTools(this.toolPrefix)
     return this.cachedTools
+  }
+
+  // ── ContextProvider Implementation ──────────────────────────────────────
+
+  /**
+   * Contributes current page title, URL, and text content as agent context.
+   * Only active when the browser is running. Allows the agent to passively
+   * "see" the current page without an explicit tool call.
+   */
+  async getContextSections(_query: string): Promise<ContextSection[]> {
+    if (!this.isRunning) return []
+    try {
+      const [url, title, text] = await Promise.all([
+        this.getUrl().catch(() => ''),
+        this.getTitle().catch(() => ''),
+        this.getTextContent().catch(() => ''),
+      ])
+      if (!url) return []
+      const truncated = text.length > 8_000 ? text.slice(0, 8_000) + '\n[truncated]' : text
+      return [{
+        key: 'browser_context',
+        content: `## Current Browser Page\n**URL:** ${url}\n**Title:** ${title}\n\n${truncated}`,
+        priority: 30,
+        placement: 'system' as const,
+      }]
+    } catch {
+      return []
+    }
   }
 
   private buildTools(prefix: string): Tool[] {

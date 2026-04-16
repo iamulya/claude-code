@@ -54,3 +54,11 @@ export {
   serializeRegistry,
   deserializeRegistry,
 } from './registry.js'
+
+export { OntologyGenerator } from './generator.js'
+
+export type {
+  OntologyGeneratorOptions,
+  GenerateOntologyOptions,
+  GenerateOntologyResult,
+} from './generator.js'

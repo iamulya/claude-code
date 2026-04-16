@@ -13,6 +13,7 @@ export {
   createServer,
   type ServerAgent,
   type ServerConfig,
+  type SessionsConfig,
   type ServerStreamEvent,
   type ServerHandle,
   type RouteHandler,

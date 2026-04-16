@@ -17,6 +17,7 @@
  */
 
 import type { ChatMessage, ToolCall } from './runner.js'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 // ── Thread Types ──────────────────────────────────────────────────────────────
 
@@ -127,7 +128,8 @@ export function forkThread(thread: AgentThread, metadata?: Record<string, unknow
     createdAt: now,
     updatedAt: now,
     step: thread.step,
-    messages: [...thread.messages],
+    // W-25 fix: deep-copy messages so mutations in the fork don't affect the original
+    messages: thread.messages.map(m => ({ ...m })),
     done: false,
     suspended: undefined,
     metadata: { ...thread.metadata, ...metadata, forkedFrom: thread.id },
@@ -136,16 +138,98 @@ export function forkThread(thread: AgentThread, metadata?: Record<string, unknow
 
 /**
  * Serialize a thread to JSON string (for storage).
+ *
+ * @param hmacSecret — If provided, appends an HMAC-SHA256 signature to the
+ *   serialized output for integrity verification on deserialization.
  */
-export function serializeThread(thread: AgentThread): string {
-  return JSON.stringify(thread)
+export function serializeThread(thread: AgentThread, hmacSecret?: string): string {
+  const json = JSON.stringify(thread)
+  if (hmacSecret) {
+    const sig = createHmac('sha256', hmacSecret).update(json).digest('hex')
+    return JSON.stringify({ __signed: true, payload: json, sig })
+  }
+  return json
 }
+
+/** CRITIQUE #16 FIX: Maximum serialized thread size (50 MB) to prevent DoS */
+const MAX_THREAD_SIZE = 50 * 1024 * 1024
 
 /**
  * Deserialize a thread from JSON string.
+ *
+ * W-24 fix: validates the thread structure to prevent injection attacks
+ * via tampered thread blobs (e.g., spoofed system messages, forged tool calls).
+ *
+ * CRITIQUE #16 FIX:
+ * - Enforces 50MB max size to prevent deserialization DoS.
+ * - Strips `system` role messages from deserialized threads to prevent
+ *   system prompt injection via tampered thread blobs. System prompts
+ *   are injected by the runner at execution time — they should never
+ *   come from an external thread source.
+ * - Supports optional HMAC verification when an `hmacSecret` is provided.
+ *
+ * @param hmacSecret — If provided, verifies the HMAC-SHA256 signature before
+ *   deserializing. Tampered threads are rejected with an error.
  */
-export function deserializeThread(json: string): AgentThread {
-  return JSON.parse(json) as AgentThread
+export function deserializeThread(json: string, hmacSecret?: string): AgentThread {
+  // CRITIQUE #16 FIX: Size limit to prevent DoS
+  if (json.length > MAX_THREAD_SIZE) {
+    throw new Error(`Invalid thread: exceeds maximum size (${MAX_THREAD_SIZE} bytes)`)
+  }
+
+  // CRITIQUE #16 FIX: HMAC verification
+  let rawJson = json
+  if (hmacSecret) {
+    const wrapper = JSON.parse(json)
+    if (!wrapper?.__signed || !wrapper.payload || !wrapper.sig) {
+      throw new Error('Invalid thread: expected HMAC-signed thread but got unsigned data')
+    }
+    const expectedSig = createHmac('sha256', hmacSecret).update(wrapper.payload).digest('hex')
+    // Constant-time comparison to prevent timing attacks
+    const sigA = Buffer.from(wrapper.sig, 'hex')
+    const sigB = Buffer.from(expectedSig, 'hex')
+    if (sigA.length !== sigB.length || !timingSafeEqual(sigA, sigB)) {
+      throw new Error('Invalid thread: HMAC signature mismatch — thread may have been tampered with')
+    }
+    rawJson = wrapper.payload
+  }
+
+  const parsed = JSON.parse(rawJson)
+
+  // Structural validation — fail fast on malformed/tampered threads
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid thread: expected an object')
+  }
+  if (typeof parsed.id !== 'string' || !parsed.id) {
+    throw new Error('Invalid thread: missing or empty "id"')
+  }
+  if (typeof parsed.step !== 'number' || parsed.step < 0) {
+    throw new Error('Invalid thread: "step" must be a non-negative number')
+  }
+  if (!Array.isArray(parsed.messages)) {
+    throw new Error('Invalid thread: "messages" must be an array')
+  }
+  if (typeof parsed.done !== 'boolean') {
+    throw new Error('Invalid thread: "done" must be a boolean')
+  }
+
+  // Validate message roles
+  const ALLOWED_ROLES = new Set(['user', 'assistant', 'system', 'tool'])
+  for (let i = 0; i < parsed.messages.length; i++) {
+    const msg = parsed.messages[i]
+    if (!msg || typeof msg !== 'object' || !ALLOWED_ROLES.has(msg.role)) {
+      throw new Error(`Invalid thread: message[${i}] has invalid role "${msg?.role}"`)
+    }
+  }
+
+  // CRITIQUE #16 FIX: Strip system-role messages from deserialized threads.
+  // System prompts are injected by the runner at execution time — incoming
+  // threads should never carry their own system prompts (injection vector).
+  parsed.messages = parsed.messages.filter(
+    (msg: { role: string }) => msg.role !== 'system',
+  )
+
+  return parsed as AgentThread
 }
 
 // ── Step Result ───────────────────────────────────────────────────────────────

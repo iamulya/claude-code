@@ -35,13 +35,37 @@ function runCmd(
       maxBuffer: 2 * 1024 * 1024,
     })
     return { stdout, stderr: '', exitCode: 0 }
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; message?: string; status?: number }
     return {
-      stdout: err.stdout ?? '',
-      stderr: err.stderr ?? err.message ?? '',
-      exitCode: err.status ?? 1,
+      stdout: e.stdout ?? '',
+      stderr: e.stderr ?? e.message ?? '',
+      exitCode: e.status ?? 1,
     }
   }
+}
+
+// ── Input types for each tool ─────────────────────────────────────────────────
+
+type ReadFileInput = {
+  path: string
+  start_line?: number
+  end_line?: number
+}
+
+type GrepSearchInput = {
+  query: string
+  path?: string
+  includes?: string
+  case_insensitive?: boolean
+}
+
+type ListDirInput = {
+  path?: string
+}
+
+type RunTestsInput = {
+  filter?: string
 }
 
 // ── Tool Factory ─────────────────────────────────────────────────────────────
@@ -51,7 +75,7 @@ function runCmd(
 //
 
 export function createDoctorTools(projectRoot: string): Tool[] {
-  const readFileTool = buildTool({
+  const readFileTool = buildTool<ReadFileInput>({
     name: 'read_file',
     inputSchema: {
       type: 'object' as const,
@@ -63,17 +87,16 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       required: ['path'],
     },
     maxResultChars: 100_000,
-    describe: (input) => `Read ${(input as any).path}`,
-    async call(input) {
-      const args = input as Record<string, unknown>
-      const filePath = safePath(projectRoot, args.path as string)
+    describe: ({ path: p }) => `Read ${p}`,
+    async call({ path: p, start_line, end_line }) {
+      const filePath = safePath(projectRoot, p)
       const content = await fs.readFile(filePath, 'utf8')
       const lines = content.split('\n')
-      const startLine = (args.start_line as number | undefined) ?? 1
-      const endLine = (args.end_line as number | undefined) ?? lines.length
+      const startLine = start_line ?? 1
+      const endLine = end_line ?? lines.length
       const slice = lines.slice(startLine - 1, endLine)
       const numbered = slice.map((l, i) => `${startLine + i}: ${l}`).join('\n')
-      return { data: `File: ${args.path} (${lines.length} lines)\n${numbered}` }
+      return { data: `File: ${p} (${lines.length} lines)\n${numbered}` }
     },
     isReadOnly: () => true,
     isConcurrencySafe: () => true,
@@ -81,7 +104,7 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       'Read the contents of a file in the project. Supports optional line ranges.',
   })
 
-  const grepSearchTool = buildTool({
+  const grepSearchTool = buildTool<GrepSearchInput>({
     name: 'grep_search',
     inputSchema: {
       type: 'object' as const,
@@ -97,15 +120,12 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       required: ['query'],
     },
     maxResultChars: 50_000,
-    describe: (input) => `Search for "${(input as any).query}"`,
-    async call(input) {
-      const args = input as Record<string, unknown>
-      const query = args.query as string
-      const searchDir = args.path
-        ? safePath(projectRoot, args.path as string)
+    describe: ({ query }) => `Search for "${query}"`,
+    async call({ query, path: searchPath, includes = '*.ts', case_insensitive }) {
+      const searchDir = searchPath
+        ? safePath(projectRoot, searchPath)
         : projectRoot
-      const includes = (args.includes as string | undefined) ?? '*.ts'
-      const caseFlag = args.case_insensitive ? '-i' : ''
+      const caseFlag = case_insensitive ? '-i' : ''
       const escaped = query.replace(/"/g, '\\"')
       const cmd = `grep -rnI ${caseFlag} --include="${includes}" "${escaped}" "${searchDir}" | head -50`
       const { stdout } = runCmd(cmd, projectRoot)
@@ -123,7 +143,7 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       'Search for a pattern across project source files. Returns matching lines with paths and line numbers.',
   })
 
-  const listDirTool = buildTool({
+  const listDirTool = buildTool<ListDirInput>({
     name: 'list_dir',
     inputSchema: {
       type: 'object' as const,
@@ -133,10 +153,9 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       required: [],
     },
     maxResultChars: 30_000,
-    describe: (input) => `List ${(input as any).path ?? '.'}`,
-    async call(input) {
-      const args = input as Record<string, unknown>
-      const dirPath = safePath(projectRoot, (args.path as string) ?? '.')
+    describe: ({ path: p }) => `List ${p ?? '.'}`,
+    async call({ path: p = '.' }) {
+      const dirPath = safePath(projectRoot, p)
       const entries = await fs.readdir(dirPath, { withFileTypes: true })
       const lines: string[] = []
       for (const entry of entries) {
@@ -148,7 +167,7 @@ export function createDoctorTools(projectRoot: string): Tool[] {
           lines.push(`📄 ${entry.name} (${(stat.size / 1024).toFixed(1)}KB)`)
         }
       }
-      return { data: `Contents of ${args.path ?? '.'}:\n${lines.join('\n')}` }
+      return { data: `Contents of ${p}:\n${lines.join('\n')}` }
     },
     isReadOnly: () => true,
     isConcurrencySafe: () => true,
@@ -176,7 +195,7 @@ export function createDoctorTools(projectRoot: string): Tool[] {
     prompt: () => 'Run tsc --noEmit to check for TypeScript errors.',
   })
 
-  const runTestsTool = buildTool({
+  const runTestsTool = buildTool<RunTestsInput>({
     name: 'run_tests',
     inputSchema: {
       type: 'object' as const,
@@ -186,13 +205,12 @@ export function createDoctorTools(projectRoot: string): Tool[] {
       required: [],
     },
     maxResultChars: 100_000,
-    describe: (input) =>
-      `Run tests${(input as any).filter ? ` (filter: ${(input as any).filter})` : ''}`,
-    async call(input) {
-      const args = input as Record<string, unknown>
-      const filter = args.filter ? ` -- --grep "${args.filter}"` : ''
+    describe: ({ filter }) =>
+      `Run tests${filter ? ` (filter: ${filter})` : ''}`,
+    async call({ filter }) {
+      const filterArg = filter ? ` -- --grep "${filter}"` : ''
       const { stdout, stderr, exitCode } = runCmd(
-        `npm test${filter} 2>&1`,
+        `npm test${filterArg} 2>&1`,
         projectRoot,
       )
       const output = (stdout + stderr).trim()

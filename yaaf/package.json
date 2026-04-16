@@ -43,7 +43,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/runtime/devUi.styles.css src/runtime/devUi.client.js dist/runtime/",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest"

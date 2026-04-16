@@ -1,150 +1,226 @@
 # 🤖 YAAF Expert Agent
 
-A self-referential agent built **with** YAAF, **for** YAAF developers. It has deep knowledge of every YAAF subsystem and can read, search, compile, test, and diagnose the YAAF codebase on your machine.
+A self-referential agent built **with** YAAF, **for** YAAF developers. It serves a browser-based Dev UI backed by a pre-compiled Knowledge Base of 900+ articles covering every API, subsystem, concept, and guide in YAAF.
 
-## Modes
-
-### Interactive REPL (`npm start`)
-
-Ask the agent anything about YAAF — architecture, APIs, configuration, debugging. It uses actual code intelligence tools to ground every answer in the real source code.
-
-```
-$ npm start
-
-  ╔══════════════════════════════════════════════╗
-  ║       🤖 YAAF Expert Agent v0.1.0           ║
-  ║       Mode: Interactive REPL                ║
-  ╚══════════════════════════════════════════════╝
-
-> How does the AgentRunner handle context overflow?
-
-The AgentRunner wraps the LLM call in a try/catch that detects context-too-large
-errors and triggers emergency compaction via the ContextManager...
-
-[searches src/agents/runner.ts:709-730]
-```
-
-### Daemon Mode (`npm run daemon`)
-
-A proactive background agent that periodically compiles the project and runs tests. It **only surfaces new problems** — no noise when everything is green.
-
-```
-$ npm run daemon
-
-  ╔══════════════════════════════════════════════╗
-  ║       🤖 YAAF Expert Agent v0.1.0           ║
-  ║       Mode: Daemon (every 30s)              ║
-  ╚══════════════════════════════════════════════╝
-
-  ✓ Initial check: All clear
-  [09:15:30] Tick #1 ●
-  [09:16:00] Tick #2 ●
-
-  🔴 2 new TypeScript error(s) detected:
-    src/agent.ts(357,17): error TS2352: Conversion of type...
-    src/models/openai.ts(184,5): error TS2322: Type 'number'...
-
-  📋 Agent Brief:
-    Two new compile errors appeared in agent.ts and openai.ts.
-    Root cause: the ChatModel interface doesn't include contextWindowTokens.
-    Fix: cast through `unknown` first — see line 357 of agent.ts.
-```
-
-### Watch Mode (`npm start -- --watch`)
-
-Lightweight error watcher — no LLM calls, just `tsc --noEmit` every 10 seconds. Zero API cost.
-
-```
-$ npm start -- --watch
-  [09:15:30] ● Check #1: clean
-  ✗ 1 new error(s) at 09:16:00:
-    src/agent.ts(357,17): error TS2352: ...
-  ✓ All 1 error(s) resolved!
-```
-
-## Setup
+## Quick Start
 
 ```bash
-cd yaaf/yaaf-agent
-npm install
+npm install -g yaaf-agent
+```
 
-# Set your LLM API key (needed for interactive + daemon modes)
-export GEMINI_API_KEY=...    # or OPENAI_API_KEY=...
+Set one API key and run:
 
-# Interactive
-npm start
+```bash
+# Hosted providers
+GEMINI_API_KEY=...      yaaf-agent   # Google Gemini (recommended)
+ANTHROPIC_API_KEY=...   yaaf-agent   # Anthropic Claude
+OPENAI_API_KEY=...      yaaf-agent   # OpenAI GPT-4o
 
-# Daemon
-npm run daemon
+# Any OpenAI-compatible endpoint (Qwen, GLM, DeepSeek, Groq, Ollama…)
+LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=qwen2.5:72b yaaf-agent
+```
 
-# Watch (no LLM)
-npm start -- --watch
+Or run without installing globally:
+
+```bash
+GEMINI_API_KEY=... npx yaaf-agent
+```
+
+Open [http://localhost:3001](http://localhost:3001) in your browser and start asking questions about YAAF.
+
+---
+
+### Contributing / Running from source
+
+```bash
+git clone https://github.com/your-org/yaaf
+cd yaaf && npm install
+cd yaaf-agent && npm install
+
+export GEMINI_API_KEY=...
+npm start        # → http://localhost:3001
+npm run dev      # + source-level code intelligence tools
+```
+
+## How It Works
+
+The agent uses YAAF's Knowledge Base system — not a giant system prompt or RAG — to answer questions:
+
+```
+User question
+     │
+     ▼
+┌─────────────────────────────────────────────────────────┐
+│ Agent (auto-detected provider)                           │
+│                                                         │
+│  "search_kb"     → Full-text search → top 8 results    │
+│  "read_kb"       → Read full article by docId           │
+│  "list_kb_index" → Browse articles by entity type       │
+│                                                         │
+│  Synthesise answer from KB articles + working examples   │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+Streaming markdown response in Dev UI
+  (headings, code blocks, lists, tables, syntax highlighting)
+```
+
+### KB Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_kb` | Full-text search across all 900+ articles — use this first |
+| `read_kb` | Fetch the full content of a specific article by docId |
+| `list_kb_index` | Browse articles by entity type (api, concept, subsystem, guide, plugin) |
+
+### Dev Mode
+
+For framework contributors who want source-level code intelligence tools:
+
+```bash
+npm run dev    # adds read_file, grep_search, list_dir, etc.
 ```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    yaaf-agent                                │
-│                                                             │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────────────┐ │
-│  │  main.ts   │  │  prompt.ts   │  │     tools.ts        │ │
-│  │  (entry    │  │  (dynamic    │  │  (read_file,        │ │
-│  │   point)   │  │   system     │  │   grep_search,      │ │
-│  │            │  │   prompt     │  │   list_dir,         │ │
-│  │  3 modes:  │  │   builder)   │  │   run_tsc,          │ │
-│  │  • REPL    │  │              │  │   run_tests,        │ │
-│  │  • Daemon  │  │  Ingests:    │  │   get_structure)    │ │
-│  │  • Watch   │  │  • docs/*.md │  │                     │ │
-│  │            │  │  • README    │  │  All sandboxed to   │ │
-│  │            │  │  • index.ts  │  │  YAAF project root  │ │
-│  │            │  │  • file tree │  │                     │ │
-│  └─────┬──────┘  └──────┬───────┘  └──────────┬──────────┘ │
-│        │                │                      │            │
-│        └────────────────┼──────────────────────┘            │
-│                         ▼                                   │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │              YAAF Framework (dogfood)                   ││
-│  │  • Agent (interactive)  • Vigil (daemon)                ││
-│  │  • contextManager:'auto'  • Model specs registry        ││
-│  │  • createCLI()  • toStreamableAgent()                   ││
-│  └─────────────────────────────────────────────────────────┘│
-│                                                             │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │              daemon.ts                                  ││
-│  │  • YaafDaemon extends Vigil                            ││
-│  │  • ErrorTracker (diff-based, only surfaces NEW issues) ││
-│  │  • healthCheck() → DaemonIssue[]                       ││
-│  └─────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     yaaf-agent                                │
+│                                                              │
+│  ┌────────────┐  ┌───────────────────┐  ┌────────────────┐  │
+│  │  main.ts   │  │  KBStore          │  │  Dev UI        │  │
+│  │  (server   │  │  (pre-compiled    │  │  (browser      │  │
+│  │   entry)   │  │   KB, 900+ docs)  │  │   dashboard)   │  │
+│  │            │  │                   │  │                │  │
+│  │  HTTP/SSE  │  │  search_kb        │  │  Streaming MD  │  │
+│  │  server    │  │  read_kb          │  │  Inspector     │  │
+│  │  port 3001 │  │  list_kb_index    │  │  Tool timeline │  │
+│  └─────┬──────┘  └───────┬───────────┘  └────────┬───────┘  │
+│        │                 │                        │          │
+│        └─────────────────┼────────────────────────┘          │
+│                          ▼                                   │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │              YAAF Framework (dogfood)                  │   │
+│  │  • Agent (contextManager: 'auto')                     │   │
+│  │  • createServer({ devUi: true })                      │   │
+│  │  • createKBTools(store)                               │   │
+│  │  • Model specs registry                               │   │
+│  └───────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Tools
+## Knowledge Base
 
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read file contents with optional line ranges |
-| `grep_search` | Pattern search across YAAF source (ripgrep-style) |
-| `list_dir` | List directory contents |
-| `run_tsc` | Run TypeScript compiler in check mode |
-| `run_tests` | Run vitest test suite |
-| `get_project_structure` | Get full file tree map |
+The KB is pre-compiled from YAAF's source code and documentation. It lives in `knowledge/` and is loaded at startup via `KBStore`:
 
-## How It Works
+```
+knowledge/
+├── ontology.yaml          ← domain schema (entity types, vocabulary)
+├── src/                   ← raw source material (TS signatures, docs)
+├── compiled/              ← 900+ LLM-authored wiki articles
+├── .kb-registry.json      ← article index (auto-maintained)
+└── scripts/
+    ├── init-ontology.ts   ← LLM-powered ontology generator
+    ├── extract-source.ts  ← TypeScript → curated raw/ files
+    ├── build-kb.ts        ← compilation entrypoint
+    └── llm-client.ts      ← unified provider detection (KB scripts)
+```
 
-1. **At startup**, the system prompt is dynamically assembled from:
-   - All `docs/*.md` documentation files
-   - The README.md
-   - All public API exports from `src/index.ts`
-   - A recursive file tree of the project
+### KB Scripts
 
-2. **In interactive mode**, the developer asks questions. The agent uses its tools to search the actual source code, verify claims, and provide grounded answers with exact file paths and line numbers.
+| Script | Command | Description |
+|--------|---------|-------------|
+| **Init ontology** | `npm run kb:init` | LLM-guided `ontology.yaml` generator (3-step interactive wizard) |
+| **Full build** | `npm run kb:build` | Extract source + compile all articles |
+| **Incremental** | `npm run kb:incremental` | Only recompile changed sources (fast) |
+| **Lint** | `npm run kb:lint` | Validate compiled KB (no LLM calls) |
+| **Extract** | `npm run kb:extract` | Re-extract TypeScript signatures from source |
 
-3. **In daemon mode**, the `YaafDaemon` (extending `Vigil`) wakes on a timer and:
-   - Runs `tsc --noEmit` to detect compilation errors
-   - Runs `npm test` if compilation passes
-   - Diffs results against the last known state
-   - Only surfaces **new** issues via `brief()`
-   - Uses the LLM to diagnose root causes and suggest fixes
+### Rebuilding the KB
 
-4. **In watch mode**, a zero-cost loop runs `tsc --noEmit` every 10s with no LLM calls — pure filesystem watching with terminal output.
+```bash
+# Full rebuild — provider auto-detected from env vars
+GEMINI_API_KEY=... npm run kb:build
+
+# With a local model via Ollama
+LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=qwen2.5:72b npm run kb:build
+
+# Two-stage: cheap model for extraction, capable for synthesis
+LLM_BASE_URL=http://localhost:11434/v1 \
+  KB_EXTRACTION_MODEL=qwen2.5:7b \
+  KB_SYNTHESIS_MODEL=qwen2.5:72b \
+  npm run kb:build
+
+# Incremental (only changed files — much faster)
+GEMINI_API_KEY=... npm run kb:incremental
+```
+
+## Configuration
+
+### Agent (runtime)
+
+| Variable | Description |
+|----------|-------------|
+| `PORT` | HTTP server port (default: `3001`) |
+| `LLM_BASE_URL` | Base URL for any OpenAI-compatible endpoint (activates compat mode) |
+| `LLM_MODEL` | Model name for any provider |
+| `LLM_API_KEY` | API key for `LLM_BASE_URL` providers |
+| `GEMINI_API_KEY` | Selects Google Gemini (auto-detected) |
+| `ANTHROPIC_API_KEY` | Selects Anthropic Claude (auto-detected) |
+| `OPENAI_API_KEY` | Selects OpenAI (auto-detected) |
+| `YAAF_AGENT_MODEL` | Alias for `LLM_MODEL` (backward compat) |
+
+**Provider resolution order:**
+1. `LLM_BASE_URL` set → OpenAI-compatible mode (Qwen, GLM, DeepSeek, Groq, Ollama…)
+2. `GEMINI_API_KEY` → Google Gemini
+3. `ANTHROPIC_API_KEY` → Anthropic Claude
+4. `OPENAI_API_KEY` → OpenAI
+
+### KB compilation
+
+| Variable | Description |
+|----------|-------------|
+| `LLM_BASE_URL` | OpenAI-compatible endpoint for KB compilation |
+| `LLM_MODEL` | Model for both extraction + synthesis stages |
+| `LLM_API_KEY` | API key for `LLM_BASE_URL` providers |
+| `KB_BASE_URL` | Override `LLM_BASE_URL` for KB only |
+| `KB_API_KEY` | Override `LLM_API_KEY` for KB only |
+| `KB_MODEL` | Override `LLM_MODEL` for both KB stages |
+| `KB_EXTRACTION_MODEL` | Fast/cheap model for the extraction stage |
+| `KB_SYNTHESIS_MODEL` | Capable model for the synthesis stage |
+| `GEMINI_API_KEY` | Selects Gemini for KB (auto-detected) |
+| `ANTHROPIC_API_KEY` | Selects Anthropic for KB (auto-detected) |
+| `OPENAI_API_KEY` | Selects OpenAI for KB (auto-detected) |
+
+### Examples
+
+```bash
+# Gemini — single model for everything
+GEMINI_API_KEY=... npm start
+
+# Gemini — override model
+GEMINI_API_KEY=... LLM_MODEL=gemini-2.5-pro npm start
+
+# Qwen via Ollama
+LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=qwen2.5:72b npm start
+
+# GLM-4 via Zhipu AI
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4 LLM_API_KEY=<key> LLM_MODEL=glm-4-flash npm start
+
+# DeepSeek
+LLM_BASE_URL=https://api.deepseek.com/v1 LLM_API_KEY=<key> LLM_MODEL=deepseek-chat npm start
+
+# Groq (hosted Llama)
+LLM_BASE_URL=https://api.groq.com/openai/v1 LLM_API_KEY=<key> LLM_MODEL=llama-3.3-70b-versatile npm start
+```
+
+## CI/CD
+
+GitHub Actions workflows in `.github/workflows/`:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------| 
+| `ci.yml` | Every push + PR | TypeScript build + tests |
+| `kb-build.yml` | Push to `main` when `knowledge/src/**` changes | Incremental KB recompile + auto-commit |
+
+The KB build workflow uses `GEMINI_API_KEY` as a GitHub Actions secret. To switch providers in CI, replace it with `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `LLM_BASE_URL` + `LLM_MODEL` + `LLM_API_KEY`.

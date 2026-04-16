@@ -169,6 +169,14 @@ export type ContextManagerConfig = {
    * persisted to memory.
    */
   onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[]
+
+  /**
+   * CRITIQUE #8 FIX: Estimated per-message framing token overhead.
+   * Each message incurs overhead from role markers, separators, and
+   * function call metadata that aren't in the message content itself.
+   * Default: 4 tokens per message.
+   */
+  perMessageOverheadTokens?: number
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -228,7 +236,7 @@ function defaultEstimateTokens(text: string): number {
  * ```
  */
 export class ContextManager {
-  private readonly config: Required<Omit<ContextManagerConfig, 'llmAdapter' | 'microCompactableTools' | 'onExtractFacts' | 'strategy'>> & {
+  private readonly config: Required<Omit<ContextManagerConfig, 'llmAdapter' | 'microCompactableTools' | 'onExtractFacts' | 'strategy' | 'perMessageOverheadTokens'>> & {
     microCompactableTools?: Set<string>
     onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[]
   }
@@ -239,6 +247,20 @@ export class ContextManager {
   private microCompactionCount = 0
   /** Pluggable strategy (takes priority over legacy string-based strategy) */
   private readonly strategyPlugin?: CompactionStrategyPlugin
+  /**
+   * CRITIQUE #8 FIX: Track token overhead from tool schemas sent with
+   * every LLM call. Set by the runner via setToolSchemaOverhead().
+   */
+  private _toolSchemaTokens = 0
+  /**
+   * CRITIQUE #8 FIX: Track token overhead from system prompt override
+   * (memory, plugin context) that's built dynamically by the runner.
+   */
+  private _systemOverrideTokens = 0
+  /**
+   * CRITIQUE #8 FIX: Per-message framing token overhead.
+   */
+  private readonly _perMessageOverhead: number
 
   constructor(config: ContextManagerConfig) {
     // Auto-wire from LLMAdapter if provided
@@ -278,6 +300,9 @@ export class ContextManager {
       summarizeFn: (summarizeFn ?? (async () => '')) as SummarizeFn,
       estimateTokensFn,
     }
+
+    // CRITIQUE #8 FIX: Store per-message overhead
+    this._perMessageOverhead = config.perMessageOverheadTokens ?? 4
 
     // Store the strategy plugin separately
     this.strategyPlugin = config.strategy
@@ -387,12 +412,39 @@ export class ContextManager {
     total += this.config.estimateTokensFn(this.buildSystemPrompt())
     total += this.config.estimateTokensFn(this.buildUserContext())
 
-    // Messages
+    // CRITIQUE #8 FIX: Include tool schema overhead (sent with every LLM call
+    // but previously invisible to the context manager)
+    total += this._toolSchemaTokens
+
+    // CRITIQUE #8 FIX: Include system prompt override overhead (memory,
+    // plugin context — built dynamically by the runner)
+    total += this._systemOverrideTokens
+
+    // Messages + per-message framing overhead
     for (const msg of this.messages) {
       total += this.estimateMessageTokens(msg)
+      // CRITIQUE #8 FIX: Add per-message framing tokens (role markers,
+      // separators, function call metadata)
+      total += this._perMessageOverhead
     }
 
     return total
+  }
+
+  /**
+   * CRITIQUE #8 FIX: Set the token overhead from tool schemas.
+   * Called by the runner/agent after tool schemas are built.
+   */
+  setToolSchemaOverhead(tokens: number): void {
+    this._toolSchemaTokens = tokens
+  }
+
+  /**
+   * CRITIQUE #8 FIX: Set the token overhead from system prompt override.
+   * Called by the runner/agent when the override is updated.
+   */
+  setSystemOverrideTokens(tokens: number): void {
+    this._systemOverrideTokens = tokens
   }
 
   /** The effective context limit (window - output reservation) */
@@ -587,6 +639,7 @@ export class ContextManager {
 
     // Truncate / sliding_window return here
     if (strategy !== 'summarize') {
+      this.compactionCount++
       const postCompactTokens = this.estimateTotalTokens()
       return {
         summary,

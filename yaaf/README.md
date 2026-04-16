@@ -18,6 +18,7 @@ yaaf dev
 |---------|------|-------------|---------------|
 | Runtime deps | **0** | 50+ | 15+ |
 | CLI scaffold | `yaaf init` | ❌ | ❌ |
+| **Built-in Dev UI** | `devUi: true` | ❌ | ❌ |
 | Built-in diagnostics | `doctor: true` (16 events) | ❌ | ❌ |
 | Ship as CLI product | `createCLI()` | ❌ | ❌ |
 | Ship as HTTP API | `createServer()` | ❌ | ❌ |
@@ -75,10 +76,55 @@ for await (const event of agent.runStream('Explain relativity')) {
 **Set one API key and go:**
 
 ```bash
-export GEMINI_API_KEY=...           # → auto-selects Gemini
-export OPENAI_API_KEY=sk-...        # → auto-selects GPT-4o
-export ANTHROPIC_API_KEY=sk-ant-... # → auto-selects Claude
+# Hosted providers — set one key, provider auto-detected
+export GEMINI_API_KEY=...           # → Gemini 2.5 Flash
+export ANTHROPIC_API_KEY=sk-ant-... # → Claude Sonnet
+export OPENAI_API_KEY=sk-...        # → GPT-4o
+
+# Any OpenAI-compatible endpoint — Qwen, GLM, DeepSeek, Groq, Ollama…
+export LLM_BASE_URL=http://localhost:11434/v1
+export LLM_MODEL=qwen2.5:72b
+
+# Override the model name for any provider
+export LLM_MODEL=gemini-2.0-flash
 ```
+
+---
+
+## Dev UI — Interactive Browser Dashboard
+
+YAAF ships a zero-dependency, self-contained browser UI for local agent development.
+Enable it with one flag on `createServer()`:
+
+```typescript
+import { createServer } from 'yaaf/server';
+
+const handle = await createServer(agent, {
+  port: 3456,
+  devUi: true,  // ← opens a full dashboard at http://localhost:3456
+  multiTurn: true,
+});
+```
+
+**Features:**
+
+- **Chat interface** — send messages, view streaming responses with full markdown rendering
+  (headings, bold/italic, code blocks with syntax highlighting, tables, blockquotes, 
+  nested lists, task lists, strikethrough, links)
+- **Inspector panel** — live latency (TTFT + total), token usage (prompt/completion/cache),
+  tool call timeline, and request payload
+- **LLM Turns timeline** — collapsible view of every agentic loop iteration showing:
+  - **↑ Input**: full messages array sent to the LLM (system prompt, user message, tool results)
+  - **↓ Output**: the LLM's response text and/or tool call requests with arguments
+- **Settings drawer** — toggle dark mode, multi-turn, conversation persistence; clear history
+- **Empty state** — quick-start prompt chips to get going
+- **Responsive** — mobile-friendly with bottom-sheet inspector
+- **Syntax highlighting** — inline tokenizer for JS/TS, Python, JSON, Bash, CSS
+- **Dark mode** — full dark theme with carefully tuned token colors
+
+**Architecture:** The Dev UI is served as a single self-contained HTML page. CSS and client-side
+JS live in standalone files (`devUi.styles.css`, `devUi.client.js`) which are read via
+`readFileSync` and inlined at startup — no bundler, no CDN, no external dependencies.
 
 ---
 
@@ -89,17 +135,31 @@ YAAF implements a [Karpathy-style](https://docs.yaaf.dev/knowledge-base) "compil
 This is a fundamentally different alternative to RAG. Instead of embedding chunks and retrieving at query time, the LLM **authors** encyclopedia-style articles with explicit wikilinks. The compiled wiki is human-readable, diffable, and directly consumable as agent context.
 
 ```typescript
-import { KBCompiler, makeGenerateFn } from 'yaaf/knowledge';
-import { GeminiChatModel } from 'yaaf';
+import { KBCompiler } from 'yaaf/knowledge';
 
-// Create the compiler — reads ontology.yaml from my-kb/
+// Build GenerateFns without hardcoding a provider —
+// auto-detected from GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / LLM_BASE_URL
+import { createKBGenerateFns } from './scripts/llm-client.js';
+const { extractionFn, synthesisFn } = await createKBGenerateFns();
+
+// 1. Bootstrap your ontology (first time only)
+//    Run: npm run kb:init
+//    Or programmatically:
+import { OntologyGenerator } from 'yaaf/knowledge';
+const gen = new OntologyGenerator({
+  generateFn: synthesisFn,
+  outputPath: './my-kb/ontology.yaml',
+});
+await gen.generate({ domain: 'My project — does X, Y, Z.' });
+
+// 2. Create the compiler — reads ontology.yaml from my-kb/
 const compiler = await KBCompiler.create({
   kbDir: './my-kb',
-  extractionModel: makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-flash' })),
-  synthesisModel:  makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-pro' })),
+  extractionModel: extractionFn,
+  synthesisModel:  synthesisFn,
 });
 
-// Compile raw/ → compiled/
+// 3. Compile raw/ → compiled/
 const result = await compiler.compile({
   incrementalMode: true,  // skip sources older than their compiled article
   autoLint: true,         // run the self-healing linter after synthesis
@@ -113,9 +173,17 @@ const result = await compiler.compile({
 
 console.log(`Created:  ${result.synthesis.created} articles`);
 console.log(`Updated:  ${result.synthesis.updated} articles`);
-console.log(`Stubs:    ${result.synthesis.stubsCreated}`);
-console.log(`Errors:   ${result.lint?.summary.errors}`);
-console.log(`Fixed:    ${result.fixes?.fixedCount}`);
+
+// 4. Give an agent access to the compiled KB (runtime)
+import { Agent, KBStore, createKBTools } from 'yaaf';
+
+const store = new KBStore('./my-kb');
+await store.load();
+
+const agent = new Agent({
+  systemPrompt: 'You are an expert on my project.',
+  tools: createKBTools(store),  // search_kb, read_kb, list_kb_index
+});
 ```
 
 ```
@@ -190,6 +258,52 @@ await compiler.fix(report);
 ```
 
 **[Full Knowledge Base documentation →](docs/knowledge-base.md)**
+
+---
+
+## YAAF Expert Agent — Dogfood Demo
+
+`yaaf-agent/` is a self-referential agent built **with** YAAF, **for** YAAF developers. It ships a pre-compiled Knowledge Base of 900+ articles covering every API, subsystem, concept, and guide in YAAF, served through the built-in Dev UI.
+
+```bash
+npm install -g yaaf-agent
+
+# Pick any provider
+export GEMINI_API_KEY=...                         # Gemini (recommended)
+# export LLM_BASE_URL=http://localhost:11434/v1   # or any local model
+# export LLM_MODEL=qwen2.5:72b
+
+yaaf-agent
+# → http://localhost:3001  (Dev UI with streaming chat + tool inspector)
+```
+
+Or run without installing:
+
+```bash
+GEMINI_API_KEY=... npx yaaf-agent
+```
+
+**What it demonstrates:**
+
+| Feature | How it's used |
+|---------|---------------|
+| `KBStore` + `createKBTools()` | 900+ compiled articles searchable via `search_kb`, `read_kb`, `list_kb_index` |
+| `createServer({ devUi: true })` | Full browser dashboard with streaming markdown, token inspector, tool timeline |
+| `contextManager: 'auto'` | Prevents token overruns regardless of which model is selected |
+| Unified `LLM_*` env vars | Works with Gemini, Claude, OpenAI, Qwen, GLM, DeepSeek, Ollama — one config |
+| `YaafDaemon` | Optional background TypeScript + test watcher with proactive LLM diagnosis |
+
+**Supported providers (zero code changes):**
+
+```bash
+GEMINI_API_KEY=...                                          npm start  # Gemini
+ANTHROPIC_API_KEY=...                                       npm start  # Claude
+OPENAI_API_KEY=...                                          npm start  # OpenAI
+LLM_BASE_URL=http://localhost:11434/v1  LLM_MODEL=qwen2.5:72b npm start  # Qwen/Ollama
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4 LLM_API_KEY=... LLM_MODEL=glm-4-flash npm start
+```
+
+**[Full yaaf-agent documentation →](yaaf-agent/README.md)**
 
 ---
 
@@ -297,6 +411,10 @@ const result = await agent.run('Show my invoices', {
 │   createCLI()    createServer()    createWorker()    createInkCLI() │
 │   yaaf/cli-runtime   yaaf/server     yaaf/worker      yaaf/cli-ink │
 ├─────────────────────────────────────────────────────────────────────┤
+│                       Dev UI (yaaf/server)                          │
+│   Self-contained HTML dashboard · SSE streaming · Inspector panel   │
+│   LLM Turns timeline · Token usage · Dark mode · Markdown renderer  │
+├─────────────────────────────────────────────────────────────────────┤
 │                    Remote & Interop Layer                            │
 │   RemoteSessionServer (yaaf/remote)     A2A Server/Client           │
 │   WebSocket (RFC 6455) + HTTP fallback  Agent Cards + JSON-RPC 2.0  │
@@ -375,7 +493,7 @@ The full documentation is split into focused chapters:
 | Doc | Description |
 |-----|-------------|
 | [CLI Runtime](docs/cli-runtime.md) | `createCLI()`, `createInkCLI()`, slash commands, streaming |
-| [Server Runtime](docs/server-runtime.md) | `createServer()`, REST API, SSE streaming, rate limiting |
+| [Server Runtime](docs/server-runtime.md) | `createServer()`, REST API, SSE streaming, Dev UI, rate limiting |
 | [Worker Runtime](docs/worker-runtime.md) | `createWorker()`, Cloudflare Workers, Vercel Edge, Deno |
 | [Gateway & Channels](docs/gateway.md) | Multi-channel transport, Telegram, Slack, Discord |
 
@@ -424,7 +542,6 @@ import {
   createThread, forkThread, serializeThread, deserializeThread,
   type AgentThread, type StepResult, type SuspendReason, type SuspendResolution,
 } from 'yaaf';
-// then: agent.step(thread), agent.resume(thread, resolution), agent.runThread(thread)
 
 // A2A — cross-framework agent interop (zero deps)
 import { A2AClient, A2AServer, serveA2A, a2aTool } from 'yaaf';
@@ -439,7 +556,11 @@ import { OpenAPIToolset } from 'yaaf';
 import {
   KBCompiler, makeGenerateFn, KBClipper,
   ConceptExtractor, KnowledgeSynthesizer, KBLinter,
-  OntologyLoader, ingestFile, canIngest,
+  OntologyLoader, OntologyGenerator,
+  ingestFile, canIngest,
+  // Runtime — query compiled KBs
+  KnowledgeBase, KBStore, createKBTools,
+  FederatedKnowledgeBase,
 } from 'yaaf/knowledge';
 
 // Remote sessions — WebSocket/HTTP agent serving (zero deps)
@@ -454,7 +575,7 @@ import { createCLI } from 'yaaf/cli-runtime';
 // Premium CLI — Ink/React terminal UI (requires: ink, react)
 import { createInkCLI } from 'yaaf/cli-ink';
 
-// HTTP server (zero deps — uses node:http)
+// HTTP server with Dev UI (zero deps — uses node:http)
 import { createServer } from 'yaaf/server';
 
 // Edge/worker (zero deps — uses Web Fetch API)
@@ -467,6 +588,7 @@ import { createWorker } from 'yaaf/worker';
 
 | Example | Features |
 |---------|----------|
+| [**playground**](examples/playground/) | **Interactive Dev UI**, 5 real tools, multi-turn, `createServer()`, `devUi: true` |
 | [knowledge-base](examples/knowledge-base/) | `KBCompiler`, ontology authoring, web clipping, lint + auto-fix |
 | [human-in-the-loop](examples/human-in-the-loop/) | `agent.step()`, `agent.resume()`, `requiresApproval`, durable pause/resume |
 | [a2a-interop](examples/a2a-interop/) | A2A protocol, YAAF ↔ Vercel AI SDK cross-framework communication |
@@ -475,6 +597,7 @@ import { createWorker } from 'yaaf/worker';
 | [openapi-tools](examples/openapi-tools/) | OpenAPIToolset, auto-generated tools, httpbin.org live API |
 | [multi-agent-workflow](examples/multi-agent-workflow/) | Orchestrator, delegates, multi-agent pipeline |
 | [agent-swarm](examples/agent-swarm/) | Mailbox IPC, peer-to-peer swarm communication |
+| [iam-multi-tenant](examples/iam-multi-tenant/) | RBAC, ABAC, tenant scoping, IAM policies |
 | [deep-research](examples/deep-research/) | Multi-step research, context assembly, structured synthesis |
 | [travel-agent](examples/travel-agent/) | Agent, multi-turn REPL, tool events, Gemini + OpenAI |
 | [doctor-diagnostics](examples/doctor-diagnostics/) | Doctor auto-diagnosis, 16-event watch, error batching |
@@ -515,6 +638,7 @@ const claude = new AnthropicChatModel({ model: 'claude-sonnet-4' });
 // Groq (OpenAI-compatible)
 const groq = new OpenAIChatModel({
   baseUrl: 'https://api.groq.com/openai/v1',
+  apiKey: process.env.GROQ_API_KEY,
   model: 'llama-3.3-70b-versatile',
 });
 
@@ -525,12 +649,48 @@ const ollama = new OpenAIChatModel({
   model: 'llama3.1',
 });
 
+// Qwen via Ollama or Alibaba DashScope
+const qwen = new OpenAIChatModel({
+  baseUrl: 'http://localhost:11434/v1',     // Ollama
+  // baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',  // DashScope
+  apiKey: process.env.LLM_API_KEY ?? 'ollama',
+  model: 'qwen2.5:72b',
+});
+
+// GLM-4 via Zhipu AI
+const glm = new OpenAIChatModel({
+  baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+  apiKey: process.env.LLM_API_KEY,
+  model: 'glm-4-flash',
+});
+
+// DeepSeek
+const deepseek = new OpenAIChatModel({
+  baseUrl: 'https://api.deepseek.com/v1',
+  apiKey: process.env.LLM_API_KEY,
+  model: 'deepseek-chat',
+});
+
 // Smart routing — cheap requests → fast model, complex → capable
 const router = new RouterChatModel({
-  fast: gemini,
+  fast: qwen,
   capable: claude,
   route: (ctx) => ctx.messages.length > 10 ? 'capable' : 'fast',
 });
+```
+
+**Or use env vars — provider auto-detected at startup:**
+
+```bash
+# LLM_BASE_URL activates OpenAI-compatible mode for any provider
+LLM_BASE_URL=http://localhost:11434/v1  LLM_MODEL=qwen2.5:72b      npx tsx src/main.ts
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4  LLM_API_KEY=... LLM_MODEL=glm-4-flash npx tsx src/main.ts
+LLM_BASE_URL=https://api.deepseek.com/v1           LLM_API_KEY=... LLM_MODEL=deepseek-chat npx tsx src/main.ts
+
+# Hosted providers
+GEMINI_API_KEY=...      LLM_MODEL=gemini-2.5-pro   npx tsx src/main.ts
+ANTHROPIC_API_KEY=...   LLM_MODEL=claude-opus-4    npx tsx src/main.ts
+OPENAI_API_KEY=...      LLM_MODEL=gpt-4o           npx tsx src/main.ts
 ```
 
 ---
@@ -637,11 +797,22 @@ npx yaaf doctor --watch         # Lightweight tsc loop (no LLM)
 
 ---
 
+## Testing
+
+YAAF has comprehensive test coverage with **1164 tests across 36 test files**:
+
+```bash
+npm test          # Run all tests (vitest)
+npm run build     # TypeScript compile + copy Dev UI assets
+```
+
+---
+
 ## Design Principles
 
 1. **Zero Runtime Dependencies** — The core framework ships nothing but TypeScript. Optional features (Ink, OTel, HTML parsing) are peer dependencies.
 2. **Secure by Default** — `security: true` enables OWASP-aligned protection with one line. Permissions default to deny. Tools are write-capable and permission-gated by default.
-3. **Ship Anywhere** — One agent, multiple delivery targets: CLI, HTTP API, edge function, chat bot.
+3. **Ship Anywhere** — One agent, multiple delivery targets: CLI, HTTP API, edge function, chat bot, Dev UI.
 4. **Streaming First** — Every runtime supports streaming with a unified `RuntimeStreamEvent` type.
 5. **Memory is Composable** — Extraction (when to persist) and retrieval (what to inject) are independent interfaces.
 6. **Context is Finite** — `ContextManager` actively manages token budgets with 7 pluggable compaction strategies.

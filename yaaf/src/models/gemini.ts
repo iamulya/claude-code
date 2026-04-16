@@ -44,6 +44,7 @@ import type {
 import { BaseLLMAdapter } from './base.js'
 import { YAAFError } from '../errors.js'
 import { resolveModelSpecs } from './specs.js'
+import * as crypto from 'crypto'
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,16 @@ export type GeminiModelConfig =
     temperature?: number
     maxOutputTokens?: number
     contextWindowTokens?: number
+    /**
+     * M2 FIX: Thinking budget for thinking-capable models (e.g. Gemini 2.5 Pro).
+     * When tools are present:
+     * - `undefined` (default): Disables thinking (thinkingBudget: 0) for SDK compatibility
+     * - `0`: Explicitly disable thinking
+     * - `N > 0`: Allow up to N tokens of thinking chain
+     *
+     * Set this to a positive value to enable reasoning with tool-calling models.
+     */
+    thinkingBudget?: number
   }
   | {
     vertexAI: true
@@ -64,6 +75,8 @@ export type GeminiModelConfig =
     temperature?: number
     maxOutputTokens?: number
     contextWindowTokens?: number
+    /** @see GeminiModelConfig.thinkingBudget */
+    thinkingBudget?: number
   }
 
 // ── Local Gemini types (avoids peer-dep import at module level) ───────────────
@@ -160,9 +173,10 @@ function toGeminiContents(messages: ChatMessage[]): {
         for (const tc of msg.toolCalls) {
           let args: Record<string, unknown>
           try { args = JSON.parse(tc.arguments) } catch { args = {} }
-          // Extract and strip the thought_signature we encoded during parseCandidate
-          const thoughtSignature = args.__yaaf_sig__ as string | undefined
-          if (thoughtSignature) delete args.__yaaf_sig__
+          // C3 FIX: Read thought signature from module-level map instead of args.
+          // This keeps tool arguments clean and prevents pollution of telemetry/session data.
+          const thoughtSignature = thoughtSignatureMap.get(tc.id)
+          if (thoughtSignature) thoughtSignatureMap.delete(tc.id)
           // thoughtSignature must be a sibling of functionCall on the Part,
           // NOT nested inside functionCall — this is per Gemini 3 API spec
           const part: GeminiPart = thoughtSignature
@@ -213,10 +227,11 @@ function buildGeminiConfig(
   if (params.tools?.length) {
     genConfig.tools = [{ functionDeclarations: toGeminiFunctions(params.tools) }]
     genConfig.toolConfig = { functionCallingConfig: { mode: 'AUTO' } }
-    // Thinking models (e.g. gemini-3-flash-preview) require thought_signature
-    // when tools are present. Setting thinkingBudget:0 disables the thinking
-    // chain for tool-calling turns, which avoids this SDK-level requirement.
-    genConfig.thinkingConfig = { thinkingBudget: 0 }
+    // M2 FIX: Thinking budget is now configurable instead of hardcoded to 0.
+    // Default behavior: disable thinking for backward compat (thinkingBudget: 0).
+    // Users can set config.thinkingBudget to a positive value to enable reasoning.
+    const thinkingBudget = config.thinkingBudget ?? 0
+    genConfig.thinkingConfig = { thinkingBudget }
   }
 
   return genConfig
@@ -238,15 +253,21 @@ function parseCandidate(
 
     const fc = part.functionCall as Record<string, unknown> | undefined
     if (fc) {
-      // thoughtSignature is on the outer Part object (sibling of functionCall),
-      // not nested inside functionCall itself. Embed it in args for round-trip.
+      // M3 FIX: Use a collision-safe internal key for thought signature round-trip.
+      // The double-underscore + 'internal' prefix makes accidental collisions
+      // with user-defined tool schemas extremely unlikely.
       const args: Record<string, unknown> = (fc.args as Record<string, unknown>) ?? {}
       const thoughtSignature = part.thoughtSignature as string | undefined
-      if (thoughtSignature) args.__yaaf_sig__ = thoughtSignature
+
+      const callId = (fc.id as string | undefined) ??
+        `call_${crypto.randomUUID()}`
+
+      // C3 FIX: Store thought signature in module-level map instead of polluting tool args.
+      // This prevents the signature from appearing in telemetry, session files, and audit logs.
+      if (thoughtSignature) thoughtSignatureMap.set(callId, thoughtSignature)
 
       toolCalls.push({
-        id: (fc.id as string | undefined) ??
-          `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: callId,
         name: (fc.name as string) ?? '',
         arguments: JSON.stringify(args),
       })
@@ -276,14 +297,96 @@ function parseCandidate(
   return result
 }
 
+import type { LLMPricing } from '../plugin/types.js'
+
+const GEMINI_PRICING: Record<string, LLMPricing> = {
+  'gemini-3-flash':         { inputPerMillion: 0.10,  outputPerMillion: 0.40,  cacheReadPerMillion: 0.025 },
+  'gemini-3-flash-preview': { inputPerMillion: 0.10,  outputPerMillion: 0.40,  cacheReadPerMillion: 0.025 },
+  'gemini-2.5-pro':         { inputPerMillion: 1.25,  outputPerMillion: 10.00, cacheReadPerMillion: 0.31 },
+  'gemini-2.5-flash':       { inputPerMillion: 0.15,  outputPerMillion: 0.60,  cacheReadPerMillion: 0.0375 },
+  'gemini-2.0-flash':       { inputPerMillion: 0.10,  outputPerMillion: 0.40,  cacheReadPerMillion: 0.025 },
+  'gemini-2.0-flash-lite':  { inputPerMillion: 0.075, outputPerMillion: 0.30 },
+  'gemini-1.5-pro':         { inputPerMillion: 1.25,  outputPerMillion: 5.00,  cacheReadPerMillion: 0.3125 },
+  'gemini-1.5-flash':       { inputPerMillion: 0.075, outputPerMillion: 0.30,  cacheReadPerMillion: 0.01875 },
+}
+
+function inferGeminiPricing(model: string): LLMPricing | undefined {
+  for (const [prefix, pricing] of Object.entries(GEMINI_PRICING)) {
+    if (model.startsWith(prefix)) return pricing
+  }
+  return undefined
+}
+
+/**
+ * C3 FIX + CRITIQUE #3 FIX: Bounded cache for thought signature round-trip.
+ * Stores thought signatures by tool call ID, avoiding pollution of
+ * tool arguments, telemetry, session files, and audit logs.
+ * Entries are cleaned up in toGeminiContents after use.
+ *
+ * Bounded to prevent unbounded memory growth in long-running server
+ * deployments. Uses LRU eviction when capacity is reached. Entries
+ * older than TTL_MS are lazily pruned on access.
+ */
+class BoundedSignatureCache {
+  private readonly map = new Map<string, { value: string; ts: number }>()
+  private static readonly MAX_SIZE = 10_000
+  /** Entries older than 10 minutes are considered stale (tool call round-trip) */
+  private static readonly TTL_MS = 10 * 60_000
+  private lastPruneTs = Date.now()
+
+  get(key: string): string | undefined {
+    const entry = this.map.get(key)
+    if (!entry) return undefined
+    if (Date.now() - entry.ts > BoundedSignatureCache.TTL_MS) {
+      this.map.delete(key)
+      return undefined
+    }
+    return entry.value
+  }
+
+  set(key: string, value: string): void {
+    // Periodic prune: every 60s, remove expired entries
+    if (Date.now() - this.lastPruneTs > 60_000) {
+      this.prune()
+    }
+    // Evict oldest 20% when at capacity
+    if (this.map.size >= BoundedSignatureCache.MAX_SIZE) {
+      const evictCount = Math.floor(BoundedSignatureCache.MAX_SIZE * 0.2)
+      let i = 0
+      for (const k of this.map.keys()) {
+        if (i++ >= evictCount) break
+        this.map.delete(k)
+      }
+    }
+    this.map.set(key, { value, ts: Date.now() })
+  }
+
+  delete(key: string): boolean { return this.map.delete(key) }
+
+  private prune(): void {
+    const now = Date.now()
+    this.lastPruneTs = now
+    for (const [k, entry] of this.map) {
+      if (now - entry.ts > BoundedSignatureCache.TTL_MS) {
+        this.map.delete(k)
+      }
+    }
+  }
+}
+
+const thoughtSignatureMap = new BoundedSignatureCache()
+
 // ── GeminiChatModel ──────────────────────────────────────────────────────────
 
 export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatModel {
   readonly model: string
   readonly contextWindowTokens: number
   readonly maxOutputTokens: number
+  readonly pricing: LLMPricing | undefined
 
   private client: GenAIClient | null = null
+  /** C4 FIX: Promise gate to prevent duplicate client creation from concurrent calls */
+  private _clientInitPromise: Promise<GenAIClient> | null = null
   private readonly config: GeminiModelConfig
 
   constructor(config: GeminiModelConfig) {
@@ -295,16 +398,30 @@ export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatMode
     const specs = resolveModelSpecs(model)
     this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
     this.maxOutputTokens = config.maxOutputTokens ?? specs.maxOutputTokens
+    this.pricing = GEMINI_PRICING[model] ?? inferGeminiPricing(model)
   }
 
   // ── Client initialization ─────────────────────────────────────────────────
 
+  // C4 FIX: Use a promise gate to prevent duplicate client creation
+  // when concurrent complete()/stream() calls hit getClient() simultaneously.
   private async getClient(): Promise<GenAIClient> {
     if (this.client) return this.client
+    if (this._clientInitPromise) return this._clientInitPromise
 
+    this._clientInitPromise = this._createClient()
+    try {
+      return await this._clientInitPromise
+    } catch (err) {
+      this._clientInitPromise = null  // Allow retry on failure
+      throw err
+    }
+  }
+
+  private async _createClient(): Promise<GenAIClient> {
     let pkg: { GoogleGenAI: new (opts: Record<string, unknown>) => GenAIClient }
     try {
-      // @ts-ignore — optional peer dependency, may not be installed
+      // @ts-expect-error — optional peer dependency, may not be installed
       pkg = await import('@google/genai') as typeof pkg
     } catch {
       throw new YAAFError(
@@ -419,13 +536,16 @@ export class GeminiChatModel extends BaseLLMAdapter implements StreamingChatMode
         if (fc) {
           const args: Record<string, unknown> = (fc.args as Record<string, unknown>) ?? {}
           const sig = part.thoughtSignature as string | undefined
-          if (sig) args.__yaaf_sig__ = sig
+
+          const streamCallId = (fc.id as string | undefined) ??
+            `call_${crypto.randomUUID()}`
+          // C3 FIX: Store thought signature in module-level map instead of args
+          if (sig) thoughtSignatureMap.set(streamCallId, sig)
 
           yield {
             toolCallDelta: {
               index: fcIndex++,
-              id: (fc.id as string | undefined) ??
-                `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              id: streamCallId,
               name: fc.name as string,
               arguments: JSON.stringify(args),
             },

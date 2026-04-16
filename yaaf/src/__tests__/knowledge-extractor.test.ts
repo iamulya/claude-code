@@ -520,7 +520,7 @@ describe('makeGenerateFn', () => {
         { role: 'user', content: 'user prompt' },
       ],
       temperature: 0.0,
-      maxTokens: 2048,
+      maxTokens: 8192,
     })
   })
 

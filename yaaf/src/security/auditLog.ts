@@ -107,6 +107,8 @@ export class SecurityAuditLog {
   private readonly sessionId?: string
   private readonly onEntry?: (entry: AuditEntry) => void
   private _nextId = 0
+  /** GAP 5 FIX: plugin host for forwarding to ObservabilityAdapter + NotificationAdapter */
+  private _pluginHost?: import('../plugin/types.js').PluginHost
 
   constructor(config: AuditLogConfig = {}) {
     this.maxEntries = config.maxEntries ?? 10_000
@@ -115,10 +117,27 @@ export class SecurityAuditLog {
     this.onEntry = config.onEntry
   }
 
-  // ── Write ───────────────────────────────────────────────────────────────
+  /**
+   * GAP 5 FIX: Register a PluginHost so audit entries are forwarded to plugins.
+   *
+   * - **All entries** → `ObservabilityAdapter.log()` (external SIEM, Datadog, etc.)
+   * - **`'critical'` entries** → `NotificationAdapter.notify()` (PagerDuty, Slack, etc.)
+   *
+   * @example
+   * ```ts
+   * const auditLog = new SecurityAuditLog()
+   * auditLog.setPluginHost(agent._pluginHost) // or the PluginHost you built
+   *
+   * // Now every security event flows to your observability and notification plugins
+   * ```
+   */
+  setPluginHost(host: import('../plugin/types.js').PluginHost): void {
+    this._pluginHost = host
+  }
 
   /**
    * Log a security event.
+   * Returns null if the event was below `minSeverity` and was not stored.
    */
   log(
     severity: AuditSeverity,
@@ -130,19 +149,11 @@ export class SecurityAuditLog {
       userId?: string
       sessionId?: string
     },
-  ): AuditEntry {
-    // Severity filter
+  ): AuditEntry | null {
+    // Severity filter — return null instead of a phantom entry that
+    // looks real but isn't stored or forwarded to onEntry.
     if (SEVERITY_ORDER[severity] < this.minSeverity) {
-      return {
-        id: `audit_${this._nextId++}`,
-        timestamp: new Date(),
-        severity,
-        category,
-        summary,
-        source,
-        ...options,
-        sessionId: options?.sessionId ?? this.sessionId,
-      }
+      return null
     }
 
     const entry: AuditEntry = {
@@ -164,24 +175,48 @@ export class SecurityAuditLog {
       this.entries.shift()
     }
 
-    // Forward to callback
+    // Forward to user callback
     this.onEntry?.(entry)
+
+    // GAP 5 FIX: Fan-out to ObservabilityAdapter + NotificationAdapter plugins.
+    // Uses best-effort (never throws) to keep the audit log non-fatal.
+    if (this._pluginHost) {
+      try {
+        this._pluginHost.emitLog({
+          level: severity === 'critical' ? 'error' : severity === 'warning' ? 'warn' : 'info',
+          namespace: `security.audit.${source}`,
+          message: `[${category}] ${summary}`,
+          data: { ...entry, timestamp: entry.timestamp.toISOString() },
+          timestamp: entry.timestamp.toISOString(),
+        })
+      } catch { /* swallow */ }
+
+      // Page on-call for critical security events
+      if (severity === 'critical') {
+        void this._pluginHost.notify({
+          type: 'needs_attention',
+          title: `⚠️ Security Alert: ${category}`,
+          message: summary,
+          metadata: { source, userId: entry.userId, sessionId: entry.sessionId },
+        }).catch(() => { /* best-effort */ })
+      }
+    }
 
     return entry
   }
 
   /** Shorthand for info-level log */
-  info(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry {
+  info(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry | null {
     return this.log('info', category, source, summary, options)
   }
 
   /** Shorthand for warning-level log */
-  warn(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry {
+  warn(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry | null {
     return this.log('warning', category, source, summary, options)
   }
 
   /** Shorthand for critical-level log */
-  critical(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry {
+  critical(category: AuditCategory, source: string, summary: string, options?: { data?: Record<string, unknown>; userId?: string }): AuditEntry | null {
     return this.log('critical', category, source, summary, options)
   }
 

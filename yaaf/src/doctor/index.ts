@@ -47,7 +47,7 @@ import { DOCTOR_SYSTEM_PROMPT, DOCTOR_TICK_PROMPT } from './prompt.js'
 import { Logger } from '../utils/logger.js'
 import type { ModelProvider } from '../models/resolver.js'
 import type { Tool } from '../tools/tool.js'
-import type { ChatModel, RunnerEvents } from '../agents/runner.js'
+import type { ChatModel, RunnerEvents, RunnerEventHandler } from '../agents/runner.js'
 
 const logger = new Logger('doctor')
 
@@ -497,12 +497,12 @@ export class YaafDoctor {
     }
 
     // Register all handlers
-    // Object.keys loses generic key specificity — cast is required here
+    // Object.keys() loses generic key specificity; the cast is unavoidable but safe:
+    // every key in `handlers` is a keyof RunnerEvents and the handler signatures match.
     const typedHandlers = handlers as Partial<Record<keyof RunnerEvents, (data: unknown) => void>>
     const eventKeys = Object.keys(handlers) as Array<keyof RunnerEvents>
     for (const event of eventKeys) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      targetAgent.on(event, typedHandlers[event] as any)
+      targetAgent.on(event, typedHandlers[event] as RunnerEventHandler<typeof event>)
     }
 
     // Store references for cleanup
@@ -523,12 +523,11 @@ export class YaafDoctor {
     entry.buffer.flush()
 
     // Unsubscribe all handlers from the agent
-    // Object.keys loses generic key specificity — cast is required here
+    // Object.keys() loses generic key specificity; cast is unavoidable but safe.
     const typedHandlers = entry.handlers as Partial<Record<keyof RunnerEvents, (data: unknown) => void>>
     const eventKeys = Object.keys(entry.handlers) as Array<keyof RunnerEvents>
     for (const event of eventKeys) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      targetAgent.off(event, typedHandlers[event] as any)
+      targetAgent.off(event, typedHandlers[event] as RunnerEventHandler<typeof event>)
     }
 
     this.watchedAgents.delete(targetAgent)
@@ -783,11 +782,12 @@ export class YaafDoctor {
         maxBuffer: 2 * 1024 * 1024,
       })
       return { stdout, stderr: '', exitCode: 0 }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const e = err as { stdout?: string; stderr?: string; message?: string; status?: number }
       return {
-        stdout: err.stdout ?? '',
-        stderr: err.stderr ?? err.message ?? '',
-        exitCode: err.status ?? 1,
+        stdout: e.stdout ?? '',
+        stderr: e.stderr ?? e.message ?? '',
+        exitCode: e.status ?? 1,
       }
     }
   }

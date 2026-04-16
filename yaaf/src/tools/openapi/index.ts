@@ -326,11 +326,31 @@ function detectFormatFromContentType(
   return detectFormatFromPath(url)
 }
 
+/** Lazily-loaded YAML parser — cached after first successful import. */
+let _yamlParse: ((s: string) => unknown) | null = null
+
+/**
+ * Pre-load the optional YAML peer dependency.
+ * Call this before using any YAML-containing OpenAPI spec files.
+ * Safe to call multiple times — subsequent calls are no-ops.
+ */
+export async function preloadYaml(): Promise<void> {
+  if (_yamlParse) return
+  try {
+    // @ts-expect-error — optional peer dep, may not be installed
+    const yamlModule = await import('yaml') as { parse: (s: string) => unknown }
+    _yamlParse = yamlModule.parse
+  } catch {
+    // YAML not available; createFileResolver will throw with a clear message
+  }
+}
+
 /**
  * Create a file resolver for external `$ref` resolution.
  *
  * Resolves relative paths against the given base directory and reads the
- * file synchronously. Supports JSON and YAML (if the `yaml` package is available).
+ * file synchronously. Supports JSON and YAML.
+ * For YAML specs, call `await preloadYaml()` once before parsing.
  *
  * @param baseDir - Absolute path to the directory containing the root spec
  * @returns A FileResolver function
@@ -359,17 +379,15 @@ function createFileResolver(baseDir: string): FileResolver {
       } catch { /* not JSON, try YAML below */ }
     }
 
-    // YAML requires the optional peer dependency
-    try {
-      const moduleId = 'yaml'
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const yamlModule = require(moduleId) as { parse: (s: string) => unknown }
-      return yamlModule.parse(content) as Record<string, unknown>
-    } catch {
-      throw new Error(
-        `Cannot parse external $ref file "${filePath}". ` +
-        'If it is YAML, install the "yaml" package: npm install yaml'
-      )
+    // YAML: requires preloadYaml() to have been called first
+    if (_yamlParse) {
+      return _yamlParse(content) as Record<string, unknown>
     }
+
+    throw new Error(
+      `Cannot parse YAML $ref file "${filePath}". ` +
+      'Install the "yaml" package (npm install yaml) and call ' +
+      'await preloadYaml() before parsing specs with YAML $ref files.'
+    )
   }
 }

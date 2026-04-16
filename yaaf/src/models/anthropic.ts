@@ -132,7 +132,7 @@ function toAnthropicMessages(messages: ChatMessage[]): {
   messages: AnthropicMessage[]
 } {
   const systemParts: string[] = []
-  const anthropicMessages: AnthropicMessage[] = []
+  const raw: AnthropicMessage[] = []
 
   for (const msg of messages) {
     if (msg.role === 'system') {
@@ -145,10 +145,12 @@ function toAnthropicMessages(messages: ChatMessage[]): {
       // consecutive tool results (one per tool call in the previous assistant turn).
       // We fold them into the previous user message if it's tool_result-only,
       // otherwise start a new user message.
-      const lastMsg = anthropicMessages[anthropicMessages.length - 1]
+      const lastMsg = raw[raw.length - 1]
       const toolResultBlock: AnthropicContentBlock = {
         type: 'tool_result',
-        tool_use_id: msg.toolCallId,
+        // Guard: toolCallId is required by Anthropic — fallback to empty string
+        // so a bad upstream message doesn't send undefined and cause a 400.
+        tool_use_id: msg.toolCallId ?? '',
         content: msg.content,
       }
 
@@ -160,7 +162,7 @@ function toAnthropicMessages(messages: ChatMessage[]): {
         // Extend the existing user tool-result message
         ;(lastMsg.content as AnthropicContentBlock[]).push(toolResultBlock)
       } else {
-        anthropicMessages.push({ role: 'user', content: [toolResultBlock] })
+        raw.push({ role: 'user', content: [toolResultBlock] })
       }
       continue
     }
@@ -180,8 +182,14 @@ function toAnthropicMessages(messages: ChatMessage[]): {
         }
       }
 
-      if (contentBlocks.length > 0) {
-        anthropicMessages.push({
+      // Always emit an assistant message even if content is empty — skipping it
+      // would break Anthropic's strict user/assistant alternation requirement
+      // and cause consecutive same-role messages → HTTP 400.
+      if (contentBlocks.length === 0) {
+        // Placeholder: Anthropic requires non-empty content for assistant turns
+        raw.push({ role: 'assistant', content: '...' })
+      } else {
+        raw.push({
           role: 'assistant',
           content: contentBlocks.length === 1 && contentBlocks[0]!.type === 'text'
             ? (contentBlocks[0] as { type: 'text'; text: string }).text  // simple string form
@@ -192,7 +200,29 @@ function toAnthropicMessages(messages: ChatMessage[]): {
     }
 
     // user role
-    anthropicMessages.push({ role: 'user', content: msg.content ?? '' })
+    raw.push({ role: 'user', content: msg.content ?? '' })
+  }
+
+  // ── Enforce strict alternation ──────────────────────────────────────────
+  // Anthropic rejects consecutive same-role messages. This can happen when
+  // the runner produces back-to-back user messages (e.g., after an empty
+  // assistant turn is compacted away upstream). We merge adjacent same-role
+  // messages by concatenating their content.
+  const anthropicMessages: AnthropicMessage[] = []
+  for (const msg of raw) {
+    const prev = anthropicMessages[anthropicMessages.length - 1]
+    if (prev && prev.role === msg.role) {
+      // Merge: concatenate text content
+      const prevText = typeof prev.content === 'string'
+        ? prev.content
+        : (prev.content as AnthropicContentBlock[]).map(b => 'text' in b ? b.text : '').join('')
+      const curText = typeof msg.content === 'string'
+        ? msg.content
+        : (msg.content as AnthropicContentBlock[]).map(b => 'text' in b ? b.text : '').join('')
+      prev.content = prevText + '\n' + curText
+    } else {
+      anthropicMessages.push(msg)
+    }
   }
 
   return {
@@ -232,12 +262,33 @@ function parseUsage(usage: AnthropicResponse['usage']): TokenUsage {
   }
 }
 
+import type { LLMPricing } from '../plugin/types.js'
+
+const ANTHROPIC_PRICING: Record<string, LLMPricing> = {
+  'claude-opus-4':     { inputPerMillion: 15.00, outputPerMillion: 75.00, cacheReadPerMillion: 1.50 },
+  'claude-sonnet-4':   { inputPerMillion: 3.00,  outputPerMillion: 15.00, cacheReadPerMillion: 0.30 },
+  'claude-3-7-sonnet': { inputPerMillion: 3.00,  outputPerMillion: 15.00, cacheReadPerMillion: 0.30 },
+  'claude-3-5-sonnet': { inputPerMillion: 3.00,  outputPerMillion: 15.00, cacheReadPerMillion: 0.30 },
+  'claude-3-5-haiku':  { inputPerMillion: 0.80,  outputPerMillion: 4.00,  cacheReadPerMillion: 0.08 },
+  'claude-3-opus':     { inputPerMillion: 15.00, outputPerMillion: 75.00, cacheReadPerMillion: 1.50 },
+  'claude-3-sonnet':   { inputPerMillion: 3.00,  outputPerMillion: 15.00, cacheReadPerMillion: 0.30 },
+  'claude-3-haiku':    { inputPerMillion: 0.25,  outputPerMillion: 1.25,  cacheReadPerMillion: 0.03 },
+}
+
+function inferAnthropicPricing(model: string): LLMPricing | undefined {
+  for (const [prefix, pricing] of Object.entries(ANTHROPIC_PRICING)) {
+    if (model.startsWith(prefix)) return pricing
+  }
+  return undefined
+}
+
 // ── AnthropicChatModel ────────────────────────────────────────────────────────
 
 export class AnthropicChatModel extends BaseLLMAdapter implements StreamingChatModel {
   readonly model: string
   readonly contextWindowTokens: number
   readonly maxOutputTokens: number
+  readonly pricing: LLMPricing | undefined
 
   private readonly apiKey: string
   private readonly apiVersion: string
@@ -256,6 +307,7 @@ export class AnthropicChatModel extends BaseLLMAdapter implements StreamingChatM
     const specs = resolveModelSpecs(model)
     this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
     this.maxOutputTokens = config.maxOutputTokens ?? specs.maxOutputTokens
+    this.pricing = ANTHROPIC_PRICING[model] ?? inferAnthropicPricing(model)
   }
 
   // ── Shared fetch ───────────────────────────────────────────────────────────

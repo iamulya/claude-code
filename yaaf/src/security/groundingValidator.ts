@@ -239,49 +239,23 @@ export class GroundingValidator {
 
   /**
    * Create an `afterLLM` hook that validates response grounding.
+   *
+   * **M4 FIX:** This method previously had a dead `currentMessages` variable
+   * that was never populated, making grounding validation silently non-functional.
+   *
+   * Now returns a paired `{ beforeLLM, afterLLM }` object for the full API,
+   * or use `hook()` which wraps `hooks()` and returns just the afterLLM.
+   *
+   * @deprecated Use `hooks()` instead for the full beforeLLM + afterLLM pair.
+   * The single `hook()` method only returns afterLLM and requires `beforeLLM`
+   * to be wired separately via `hooksPair.beforeLLM`.
    */
-  hook(): (response: ChatResult, iteration: number) => LLMHookResult | void {
-    // We need access to messages — store them via beforeLLM
-    let currentMessages: readonly ChatMessage[] = []
-
-    // Return a composite: beforeLLM captures messages, afterLLM validates
-    return (response: ChatResult) => {
-      if (!response.content) return { action: 'continue' as const }
-
-      const assessment = this.assess(response.content, currentMessages)
-
-      switch (assessment.action) {
-        case 'passed':
-          return { action: 'continue' as const }
-
-        case 'warned':
-          // Log but don't modify
-          return { action: 'continue' as const }
-
-        case 'annotated': {
-          // Add markers to ungrounded sentences
-          let annotated = response.content
-          for (const s of assessment.sentences) {
-            if (!s.grounded) {
-              annotated = annotated.replace(
-                s.text,
-                `${s.text} [⚠️ ungrounded]`,
-              )
-            }
-          }
-          return { action: 'override' as const, content: annotated }
-        }
-
-        case 'overridden':
-          return {
-            action: 'override' as const,
-            content: `${this.overrideMessage}\n\nOriginal response (${Math.round(assessment.score * 100)}% grounded):\n${response.content}`,
-          }
-
-        default:
-          return { action: 'continue' as const }
-      }
-    }
+  hook(): {
+    beforeLLM: (messages: ChatMessage[]) => void
+    afterLLM: (response: ChatResult, iteration: number) => LLMHookResult | void
+  } {
+    // M4 FIX: Delegate to hooks() which correctly captures messages
+    return this.hooks()
   }
 
   /**

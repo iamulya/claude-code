@@ -41,6 +41,10 @@ import type { KBOntology, ConceptRegistry, ConceptRegistryEntry } from '../../on
 import { serializeRegistry, upsertRegistryEntry } from '../../ontology/index.js'
 import type { IngestedContent } from '../ingester/index.js'
 import type { CompilationPlan, ArticlePlan, CandidateConcept } from '../extractor/index.js'
+import { writeWithVersioning } from '../versioning.js'
+import { withRetry } from '../retry.js'
+import { generateDocId } from '../utils.js'
+import { validateGrounding } from '../validator.js'
 import {
   serializeFrontmatter,
   validateFrontmatter,
@@ -111,12 +115,16 @@ class Semaphore {
 import type { GenerateFn } from '../extractor/extractor.js'
 
 export class KnowledgeSynthesizer {
+  private readonly versionsDir: string
+
   constructor(
     private readonly ontology: KBOntology,
     private registry: ConceptRegistry,
     private readonly generateFn: GenerateFn,
     private readonly compiledDir: string,
-  ) {}
+  ) {
+    this.versionsDir = join(compiledDir, '..', '.versions')
+  }
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -143,7 +151,18 @@ export class KnowledgeSynthesizer {
 
     // ── Phase 1: Synthesize main articles ──────────────────────────────────────
 
-    const tasks = plan.articles.map(articlePlan =>
+    const skipDocIds = options.skipDocIds ?? new Set<string>()
+
+    const tasks = plan.articles
+      .filter(articlePlan => {
+        if (skipDocIds.has(articlePlan.docId)) {
+          // Emit a lightweight event so progress bars still update
+          emit({ type: 'article:written', docId: articlePlan.docId, action: 'skip', title: articlePlan.canonicalTitle, wordCount: 0 })
+          return false  // excluded from LLM synthesis
+        }
+        return true
+      })
+      .map(articlePlan =>
       semaphore.withPermit(async () => {
         const result = await this.synthesizeArticle(
           articlePlan,
@@ -151,12 +170,22 @@ export class KnowledgeSynthesizer {
           options,
           emit,
         )
-        articleResults.push(result)
         return result
       }),
     )
 
-    await Promise.allSettled(tasks)
+    const settled = await Promise.allSettled(tasks)
+
+    // Phase 1C: Batch-apply registry updates after all tasks complete
+    // This avoids concurrent mutation of the shared registry Map
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        articleResults.push(result.value)
+        if (result.value.action !== 'failed' && result.value.registryEntry) {
+          upsertRegistryEntry(this.registry, result.value.registryEntry)
+        }
+      }
+    }
 
     // ── Phase 2: Create stubs for high-confidence candidates ──────────────────
 
@@ -176,29 +205,31 @@ export class KnowledgeSynthesizer {
       return true
     })
 
-    for (const { candidate, plan: parentPlan } of uniqueCandidates) {
-      // Don't create a stub if an article for this entity already exists
-      const docId = candidateToDocId(candidate)
-      if (this.registry.has(docId)) continue
-
-      const result = await this.createStub(candidate, [parentPlan.docId], options, emit)
-      if (result) stubResults.push(result)
+    // Phase 3C: Create stubs in parallel (template-generated, no LLM cost)
+    const stubTasks = uniqueCandidates
+      .filter(({ candidate }) => !this.registry.has(generateDocId(candidate.name, candidate.entityType)))
+      .map(({ candidate, plan: parentPlan }) =>
+        this.createStub(candidate, [parentPlan.docId], options, emit),
+      )
+    const stubSettled = await Promise.allSettled(stubTasks)
+    for (const result of stubSettled) {
+      if (result.status === 'fulfilled' && result.value) {
+        stubResults.push(result.value)
+      }
     }
 
-    // ── Phase 3: Persist the registry cache ───────────────────────────────────
-
-    if (!options.dryRun) {
-      await this.saveRegistry()
-    }
+    // Phase 1E: Registry persistence is handled by the compiler only
+    // (removed dual-write from synthesizer — compiler.ts:456 is the single source)
 
     // ── Compile results ────────────────────────────────────────────────────────
 
     const allResults = [...articleResults, ...stubResults]
     const result: SynthesisResult = {
-      created: allResults.filter(r => r.action === 'created').length,
-      updated: allResults.filter(r => r.action === 'updated').length,
+      created:      allResults.filter(r => r.action === 'created').length,
+      updated:      allResults.filter(r => r.action === 'updated').length,
       stubsCreated: stubResults.filter(r => r.action === 'created').length,
-      failed: allResults.filter(r => r.action === 'failed').length,
+      failed:       allResults.filter(r => r.action === 'failed').length,
+      skipped:      skipDocIds.size,
       articles: allResults,
       durationMs: Date.now() - startMs,
     }
@@ -258,8 +289,11 @@ export class KnowledgeSynthesizer {
         ontology: this.ontology,
       })
 
-      // Call synthesis model
-      const rawOutput = await this.generateFn(systemPrompt, userPrompt)
+      // Call synthesis model with retry (Phase 2A)
+      const rawOutput = await withRetry(
+        () => this.generateFn(systemPrompt, userPrompt),
+        { maxRetries: 3 },
+      )
 
       // Parse LLM output
       const parsed = parseArticleOutput(rawOutput)
@@ -293,15 +327,37 @@ export class KnowledgeSynthesizer {
       const frontmatterBlock = serializeFrontmatter(completeFrontmatter)
       const finalMarkdown = [frontmatterBlock, '', parsed.body].join('\n')
 
-      // Write to disk (unless dry run)
       const outputPath = join(this.compiledDir, `${articlePlan.docId}.md`)
+      const wordCount = parsed.body.split(/\s+/).filter(Boolean).length
 
+      // Phase 1A: Write with versioning (backs up previous version)
       if (!options.dryRun) {
         await mkdir(dirname(outputPath), { recursive: true })
-        await writeFile(outputPath, finalMarkdown, 'utf-8')
+        const writeResult = await writeWithVersioning(
+          outputPath, finalMarkdown, this.versionsDir,
+        )
+        if (writeResult.action === 'unchanged') {
+          emit({ type: 'article:written', docId: articlePlan.docId, action: articlePlan.action, title: articlePlan.canonicalTitle, wordCount })
+          return {
+            docId: articlePlan.docId,
+            canonicalTitle: articlePlan.canonicalTitle,
+            action: 'skipped',
+            wordCount,
+            outputPath,
+          }
+        }
       }
 
-      // Update registry
+      // Phase 5C: Post-synthesis grounding validation
+      const sourceTexts = sources.map(s => s.text)
+      const grounding = validateGrounding(parsed.body, sourceTexts)
+      if (grounding.score < 0.5) {
+        emit({ type: 'article:warning', docId: articlePlan.docId,
+          title: articlePlan.canonicalTitle,
+          message: `Low grounding score (${(grounding.score * 100).toFixed(0)}%). ${grounding.unsupportedClaims.length} potentially hallucinated claims.` })
+      }
+
+      // Build registry entry for batch application (Phase 1C)
       const registryEntry: ConceptRegistryEntry = {
         docId: articlePlan.docId,
         canonicalTitle: articlePlan.canonicalTitle,
@@ -310,9 +366,7 @@ export class KnowledgeSynthesizer {
         compiledAt: Date.now(),
         isStub: false,
       }
-      upsertRegistryEntry(this.registry, registryEntry)
 
-      const wordCount = parsed.body.split(/\s+/).filter(Boolean).length
       const action: ArticleSynthesisResult['action'] =
         articlePlan.action === 'update' ? 'updated' : 'created'
 
@@ -324,6 +378,7 @@ export class KnowledgeSynthesizer {
         action,
         wordCount,
         outputPath: options.dryRun ? undefined : outputPath,
+        registryEntry,  // Phase 1C: returned for batch application
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
@@ -345,7 +400,7 @@ export class KnowledgeSynthesizer {
     options: SynthesisOptions,
     emit: (e: SynthesisProgressEvent) => void,
   ): Promise<ArticleSynthesisResult | null> {
-    const docId = candidateToDocId(candidate)
+    const docId = generateDocId(candidate.name, candidate.entityType)
     const compiledAt = new Date().toISOString()
 
     const stubMarkdown = generateStubArticle({
@@ -396,29 +451,8 @@ export class KnowledgeSynthesizer {
       return undefined // File doesn't exist — treat as create
     }
   }
-
-  private async saveRegistry(): Promise<void> {
-    const registryPath = join(this.compiledDir, '..', '.kb-registry.json')
-    await writeFile(registryPath, serializeRegistry(this.registry), 'utf-8')
-  }
+  // Phase 1E: Removed saveRegistry() — registry persistence is handled by compiler only
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function candidateToDocId(candidate: CandidateConcept): string {
-  const slug = candidate.name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60)
-
-  const typeDir = candidate.entityType.endsWith('y')
-    ? candidate.entityType.slice(0, -1) + 'ies'
-    : candidate.entityType.endsWith('s')
-      ? candidate.entityType
-      : candidate.entityType + 's'
-
-  return `${typeDir}/${slug}`
-}
+// Phase 4B: Use shared docId generation from utils.ts
+// (removed duplicated candidateToDocId — use generateDocId from utils.ts instead)

@@ -33,6 +33,7 @@
 import { Mailbox, type MailboxMessage } from './mailbox.js'
 import { TaskManager, type TaskState, type TaskType } from './taskManager.js'
 import type { Tool } from '../tools/tool.js'
+import type { PluginHost } from '../plugin/types.js'
 import { EventBus } from '../utils/eventBus.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -193,6 +194,8 @@ export class AgentOrchestrator {
   private readonly tools: readonly Tool[]
   private readonly runAgentFn: AgentRunFn
   private readonly leaderName: string
+  /** GAP 6 FIX: optional PluginHost for NotificationAdapter fan-out */
+  private readonly _pluginHost?: PluginHost
 
   constructor(config: {
     mailboxDir: string
@@ -200,6 +203,20 @@ export class AgentOrchestrator {
     tools: readonly Tool[]
     runAgent: AgentRunFn
     leaderName?: string
+    /**
+     * GAP 6 FIX: Optional PluginHost — when provided, agent lifecycle events
+     * (spawned, completed, failed) are forwarded to NotificationAdapter plugins.
+     *
+     * @example
+     * ```ts
+     * const orchestrator = new AgentOrchestrator({
+     *   ...,
+     *   pluginHost: agent._pluginHost, // or build your own PluginHost
+     * })
+     * // Now Slack/PagerDuty plugins receive completion + failure alerts
+     * ```
+     */
+    pluginHost?: PluginHost
   }) {
     this.mailbox = new Mailbox({
       baseDir: config.mailboxDir,
@@ -210,6 +227,7 @@ export class AgentOrchestrator {
     this.tools = config.tools
     this.runAgentFn = config.runAgent
     this.leaderName = config.leaderName ?? 'team-lead'
+    this._pluginHost = config.pluginHost
   }
 
   /** Access the event bus for subscribing to orchestrator events */
@@ -274,6 +292,16 @@ export class AgentOrchestrator {
 
     this.agents.set(agentId, agentState)
     this.events.emit('agent:spawned', { identity, taskId })
+
+    // GAP 6 FIX: notify NotificationAdapter plugins agent was spawned
+    if (this._pluginHost?.hasCapability('notification')) {
+      void this._pluginHost.notify({
+        type: 'info',
+        title: `Agent spawned: ${agentId}`,
+        message: `Task: ${config.prompt.slice(0, 120)}`,
+        metadata: { agentId, taskId, teamName: config.teamName },
+      }).catch(() => {})
+    }
 
     // Start agent in background
     const promise = this.runAgentInBackground(agentId, config)
@@ -348,6 +376,18 @@ export class AgentOrchestrator {
         success: result.success,
         error: result.error,
       })
+
+      // GAP 6 FIX: fan-out to NotificationAdapter plugins
+      if (this._pluginHost?.hasCapability('notification')) {
+        void this._pluginHost.notify({
+          type: result.success ? 'completed' : 'failed',
+          title: result.success
+            ? `✅ Agent completed: ${agentId}`
+            : `❌ Agent failed: ${agentId}`,
+          message: result.error ?? 'Task completed successfully.',
+          metadata: { agentId, success: result.success },
+        }).catch(() => {})
+      }
     } catch (err) {
       // Distinguish abort (user kill) from crash
       const isAbort = err instanceof Error && err.name === 'AbortError'
@@ -363,6 +403,16 @@ export class AgentOrchestrator {
         success: false,
         error: errorMsg,
       })
+
+      // GAP 6 FIX: fan-out failure to NotificationAdapter plugins
+      if (this._pluginHost?.hasCapability('notification')) {
+        void this._pluginHost.notify({
+          type: 'failed',
+          title: `❌ Agent crashed: ${agentId}`,
+          message: errorMsg,
+          metadata: { agentId, success: false },
+        }).catch(() => {})
+      }
     } finally {
       if (timeoutTimer) clearTimeout(timeoutTimer)
     }

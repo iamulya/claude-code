@@ -1,8 +1,8 @@
 # Knowledge Base Agent — YAAF Example
 
-A complete, runnable example of the YAAF Knowledge Base compilation pipeline.
+A complete, runnable example of the YAAF Knowledge Base system.
 
-Raw source files (papers, notes, tool docs) are compiled by LLMs into a structured wiki, then a YAAF agent answers questions using that wiki as context — **no RAG, no vector search**.
+Raw source files (papers, notes, tool docs) are compiled by LLMs into a structured wiki, then a YAAF agent answers questions using that wiki — **no RAG, no vector search**.
 
 ---
 
@@ -14,18 +14,37 @@ kb/raw/          →   compile.ts   →   kb/compiled/   →   chat.ts
 
 papers/              Ingester          concepts/           KBAgent
 notes/               Extractor         research-papers/    with 3 tools:
-tools/               Synthesizer       tools/              - search_kb
-                     Linter                                - list_kb
-                                                           - get_article
+tools/               Synthesizer       tools/              - list_kb_index
+                     Linter                                - fetch_kb_document
+                                                           - search_kb
 ```
 
-The compiled wiki is injected **directly into the agent's system prompt**. No retrieval step — the LLM reads the full wiki and reasons across it naturally.
+### Architecture (v2)
+
+The KB system has two halves:
+
+- **Compile-time** (`KBCompiler`) — Runs the raw/ → compiled/ pipeline. Ingests PDFs/markdown/HTML, extracts concepts via LLM, synthesizes encyclopedia-style articles, and lints.
+- **Runtime** (`KnowledgeBase`) — Loads compiled articles and exposes them as YAAF tools. The agent dynamically searches and retrieves articles on demand.
+
+```typescript
+import { Agent } from 'yaaf'
+import { KnowledgeBase } from 'yaaf/knowledge'
+
+// Load the compiled KB and create an agent
+const kb = await KnowledgeBase.load('./kb')
+const agent = new Agent({
+  tools:        kb.tools(),               // list_kb_index, fetch_kb_document, search_kb
+  systemPrompt: kb.systemPromptSection(),  // tells the agent what articles are available
+})
+
+const answer = await agent.run('How does the attention mechanism work?')
+```
 
 ---
 
 ## What's in the KB
 
-The example ships with 5 source files covering:
+The example ships with 6 source files covering:
 
 | Source | Topic |
 |--------|-------|
@@ -35,8 +54,6 @@ The example ships with 5 source files covering:
 | `raw/notes/rag-guide.md` | RAG: pipeline, limitations, hybrid search, KB vs RAG |
 | `raw/tools/pytorch-overview.md` | PyTorch: tensors, autograd, multi-head attention in code |
 | `raw/tools/hugging-face-transformers.md` | Pipelines, tokenizers, Trainer, PEFT/LoRA |
-
-The compiler will produce articles in `kb/compiled/`: concepts like Transformer, Attention Mechanism, LLM, RLHF, RAG; a research paper article; and tool articles for PyTorch and Hugging Face Transformers.
 
 ---
 
@@ -66,6 +83,20 @@ npm start
 
 ---
 
+## Runtime Tools
+
+The agent gets three tools via `kb.tools()`:
+
+| Tool | Purpose | Example Input |
+|------|---------|---------------|
+| `list_kb_index` | Browse all articles with summaries | `{}` or `{ entityType: "concept" }` |
+| `fetch_kb_document` | Read a specific article's full content | `{ docId: "concepts/attention-mechanism" }` |
+| `search_kb` | Search articles by keyword | `{ query: "transformer" }` |
+
+The agent autonomously decides when to use each tool — it browses the index, searches for topics, and fetches specific articles as needed to answer your questions.
+
+---
+
 ## Compiler Options
 
 ```bash
@@ -82,8 +113,17 @@ npm run compile -- --lint-only
 # (requires: npm install @mozilla/readability jsdom turndown)
 npm run compile -- --clip https://arxiv.org/abs/1706.03762
 
+# [Opt-in] LLM-powered heal: fix broken wikilinks, expand thin articles
+npm run compile -- --heal
+
+# [Opt-in] LLM-powered discovery: find missing articles and weak connections
+npm run compile -- --discover
+
+# [Opt-in] Vision pass: auto-generate alt-text for images
+npm run compile -- --vision
+
 # Combine flags
-npm run compile -- --incremental --fix
+npm run compile -- --incremental --fix --heal --discover
 ```
 
 ---
@@ -120,23 +160,31 @@ How does RLHF relate to Constitutional AI and RLAIF?
 
 ## Adding More Sources
 
-To expand the knowledge base:
-
 ### From a file
-Add any `.md`, `.txt`, `.json`, or code file to `kb/raw/`:
+Add any `.md`, `.txt`, `.json`, `.pdf`, or code file to `kb/raw/`:
 
 ```bash
 cp my-notes.md kb/raw/notes/
 npm run compile -- --incremental
 ```
 
+### From a PDF (LLM extraction)
+
+PDF extraction is **automatic** — just drop a PDF into `raw/` and recompile. The compiler auto-detects your API key and uses LLM-based extraction:
+
+| Key Set | Extractor Used |
+|---------|---------------|
+| `GEMINI_API_KEY` | Gemini Flash (fastest, cheapest) |
+| `OPENAI_API_KEY` | GPT-4o |
+| `ANTHROPIC_API_KEY` | Claude Sonnet |
+
+Tables, equations, figures, and multi-column layouts are preserved faithfully.
+
 ### From a web page (web clipper)
 ```bash
 npm install @mozilla/readability jsdom turndown   # one-time
 npm run compile -- --clip https://example.com/article
 ```
-
-The clipper downloads the page, extracts the main content using Mozilla Readability, converts it to Markdown, saves images locally, and adds it to `kb/raw/web-clips/`.
 
 ### Updating the ontology
 Edit `kb/ontology.yaml` to add new entity types or vocabulary, then recompile:
@@ -149,8 +197,6 @@ npm run compile   # full recompile to apply new schema
 
 ## Custom Model Config
 
-Override which models are used for each pipeline stage:
-
 ```bash
 # Gemini — use different models per stage
 GEMINI_API_KEY=... GEMINI_EXTRACTION_MODEL=gemini-2.5-flash GEMINI_SYNTHESIS_MODEL=gemini-2.5-pro npm run compile
@@ -158,14 +204,6 @@ GEMINI_API_KEY=... GEMINI_EXTRACTION_MODEL=gemini-2.5-flash GEMINI_SYNTHESIS_MOD
 # OpenAI
 OPENAI_API_KEY=... OPENAI_EXTRACTION_MODEL=gpt-4o-mini OPENAI_SYNTHESIS_MODEL=gpt-4o npm run compile
 ```
-
-**Recommended pairings:**
-
-| Stage | Model | Why |
-|-------|-------|-----|
-| Extraction | `gemini-2.5-flash` / `gpt-4o-mini` — fastest&cheapest | One call per source file |
-| Synthesis | `gemini-2.5-pro` / `gpt-4o` — most capable | One call per article (writes encyclopedia content) |
-| Chat | auto-detected from env | Full context window used |
 
 ---
 

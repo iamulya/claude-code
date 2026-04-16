@@ -229,11 +229,201 @@ describe('createServer', () => {
     expect(captured).toBe('original')
     expect(data.response).toBe('Echo: Modified: original')
   })
-})
+
+  // ── SSE tool-call event flow (regression for tool_call_result gap) ─────────
+
+  it('SSE stream includes tool_call_start and tool_call_result events', async () => {
+    // The server passes runner events through verbatim, accumulates event.text
+    // to build the final synthetic 'done' event, then closes the stream.
+    const toolCallAgent: ServerAgent = {
+      run: async () => 'done',
+      async *runStream(_input: string) {
+        yield { type: 'tool_call_start' as const, name: 'my_tool', arguments: { q: 'test' } }
+        yield { type: 'tool_call_result' as const, name: 'my_tool', result: '{"answer":42}', durationMs: 5 }
+        // Server accumulates event.text (not event.content) for the done event
+        yield { type: 'text_delta' as const, text: 'The answer is 42.' }
+      },
+    }
+
+    server = createServer(toolCallAgent, { port: 18790, onStart: () => {} })
+    await new Promise(r => setTimeout(r, 100))
+
+    const res = await fetch('http://localhost:18790/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'what is the answer?' }),
+    })
+
+    expect(res.status).toBe(200)
+    const text = await res.text()
+
+    // Parse all SSE events
+    const events = text
+      .split('\n')
+      .filter(l => l.startsWith('data: '))
+      .map(l => JSON.parse(l.slice(6)) as Record<string, unknown>)
+
+    const types = events.map(e => e['type'])
+
+    // Server passes tool events through verbatim
+    expect(types).toContain('tool_call_start')
+    expect(types).toContain('tool_call_result')
+    expect(types).toContain('text_delta')
+    // Server always appends a synthetic 'done' event after the stream
+    expect(types).toContain('done')
+
+    // Verify tool_call_start payload
+    const tcStart = events.find(e => e['type'] === 'tool_call_start')
+    expect(tcStart?.['toolName']).toBe('my_tool')
+
+    // Verify tool_call_result payload
+    const tcResult = events.find(e => e['type'] === 'tool_call_result')
+    expect(tcResult?.['toolName']).toBe('my_tool')
+
+    // The synthetic done event text is built from accumulated event.text fields
+    const done = events.find(e => e['type'] === 'done')
+    expect(done?.['text']).toBe('The answer is 42.')
+  })
+
+
+  it('SSE stream emits error event when runStream throws, does not crash server', async () => {
+    const errorAgent: ServerAgent = {
+      run: async () => 'ok',
+      async *runStream(): AsyncGenerator<{ type: 'text_delta'; content: string }> {
+        yield { type: 'text_delta', content: 'starting...' }
+        throw new Error('tool pipeline exploded')
+      },
+    }
+
+    server = createServer(errorAgent, { port: 18791, onStart: () => {} })
+    await new Promise(r => setTimeout(r, 100))
+
+    const res = await fetch('http://localhost:18791/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'go' }),
+    })
+
+    expect(res.status).toBe(200) // headers already sent; error is in SSE body
+    const text = await res.text()
+    const events = text
+      .split('\n')
+      .filter(l => l.startsWith('data: '))
+      .map(l => JSON.parse(l.slice(6)) as Record<string, unknown>)
+
+    const errEvent = events.find(e => e['type'] === 'error')
+    expect(errEvent).toBeDefined()
+    expect(String(errEvent?.['text'])).toContain('tool pipeline exploded')
+
+    // Server stays alive — another request after error must succeed
+    const res2 = await fetch('http://localhost:18791/health')
+    expect(res2.status).toBe(200)
+  })
+
+  // ── Multi-turn input (buildMultiTurnInput) ─────────────────────────────────
+
+  it('SSE /chat/stream passes multi-turn history to agent when multiTurn enabled', async () => {
+    let receivedInput = ''
+    const historyAgent: ServerAgent = {
+      run: async () => 'done',
+      async *runStream(input: string) {
+        receivedInput = input
+        yield { type: 'text_delta' as const, content: 'ok' }
+        yield { type: 'final_response' as const, content: 'ok' }
+      },
+    }
+
+    server = createServer(historyAgent, { port: 18792, multiTurn: true, onStart: () => {} })
+    await new Promise(r => setTimeout(r, 100))
+
+    await fetch('http://localhost:18792/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'And what is 2+2?',
+        history: [
+          { role: 'user',      content: 'What is 1+1?' },
+          { role: 'assistant', content: 'It is 2.' },
+        ],
+      }),
+    })
+
+    // Agent must receive formatted multi-turn context
+    expect(receivedInput).toContain('Human: What is 1+1?')
+    expect(receivedInput).toContain('Assistant: It is 2.')
+    expect(receivedInput).toContain('Human: And what is 2+2?')
+    expect(receivedInput).toContain('Assistant:')
+  })
+
+  it('ignores history with invalid entries (strips malformed turns)', async () => {
+    let receivedInput = ''
+    const historyAgent: ServerAgent = {
+      run: async () => 'done',
+      async *runStream(input: string) {
+        receivedInput = input
+        yield { type: 'text_delta' as const, content: 'ok' }
+        yield { type: 'final_response' as const, content: 'ok' }
+      },
+    }
+
+    server = createServer(historyAgent, { port: 18793, multiTurn: true, onStart: () => {} })
+    await new Promise(r => setTimeout(r, 100))
+
+    await fetch('http://localhost:18793/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'hello',
+        history: [
+          { role: 'user',    content: 'valid turn' },
+          { role: 'invalid', content: 'bad role — should be filtered' },  // invalid role
+          null,                                                            // null entry
+          42,                                                              // non-object
+        ],
+      }),
+    })
+
+    // Only the valid turn should appear; invalid ones stripped
+    expect(receivedInput).toContain('Human: valid turn')
+    expect(receivedInput).not.toContain('invalid')
+    expect(receivedInput).not.toContain('bad role')
+  })
+
+  it('/chat/stream ignores history when multiTurn is disabled', async () => {
+    let receivedInput = ''
+    const historyAgent: ServerAgent = {
+      run: async () => 'done',
+      async *runStream(input: string) {
+        receivedInput = input
+        yield { type: 'text_delta' as const, content: 'ok' }
+        yield { type: 'final_response' as const, content: 'ok' }
+      },
+    }
+
+    // multiTurn NOT set → defaults to false
+    server = createServer(historyAgent, { port: 18794, onStart: () => {} })
+    await new Promise(r => setTimeout(r, 100))
+
+    await fetch('http://localhost:18794/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'current message',
+        history: [{ role: 'user', content: 'should be ignored' }],
+      }),
+    })
+
+    // Only the raw message should reach the agent
+    expect(receivedInput).toBe('current message')
+    expect(receivedInput).not.toContain('should be ignored')
+  })
+}) // end createServer
+
 
 // ════════════════════════════════════════════════════════════════════════════
 // createWorker
 // ════════════════════════════════════════════════════════════════════════════
+
 
 describe('createWorker', () => {
   it('GET /health returns ok', async () => {

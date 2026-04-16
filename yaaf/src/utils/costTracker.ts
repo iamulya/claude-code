@@ -7,6 +7,10 @@
  * - Session-resumable state (save/restore across session boundaries)
  * - Formatted usage summaries for UIs and logs
  *
+ * Plugin integration: if a `PluginHost` is passed to the constructor,
+ * pricing declarations from all registered `LLMAdapter` plugins are merged
+ * in, keeping the table accurate without hardcoding new model names.
+ *
  * @example
  * ```ts
  * const tracker = new CostTracker();
@@ -21,6 +25,8 @@
  * const restored = CostTracker.restore(snapshot);
  * ```
  */
+
+import type { PluginHost } from '../plugin/types.js'
 
 // ── Price Table ──────────────────────────────────────────────────────────────
 
@@ -98,8 +104,19 @@ export class CostTracker {
   private _startTime = Date.now()
   private _hasUnknownCost = false
 
-  constructor(customPricing?: Record<string, ModelPricing>) {
-    this.pricing = { ...DEFAULT_PRICING, ...customPricing }
+  constructor(customPricing?: Record<string, ModelPricing>, pluginHost?: PluginHost) {
+    // Priority: plugin adapter pricing > custom pricing > hardcoded defaults
+    const pluginPricing = pluginHost?.getLLMPricing() ?? {}
+    this.pricing = { ...DEFAULT_PRICING, ...customPricing, ...pluginPricing }
+  }
+
+  /**
+   * Merge pricing from a PluginHost after construction.
+   * Useful when the host is available after the tracker is created.
+   */
+  mergePluginPricing(pluginHost: PluginHost): void {
+    const pluginPricing = pluginHost.getLLMPricing()
+    this.pricing = { ...this.pricing, ...pluginPricing }
   }
 
   // ── Recording ──────────────────────────────────────────────────────────

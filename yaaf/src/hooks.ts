@@ -50,6 +50,8 @@ export type HookResult =
 export type LLMHookResult =
   | { action: 'continue' }
   | { action: 'override'; content: string }
+  /** Stop the agent run immediately. Content is set to the reason message. */
+  | { action: 'stop'; reason: string }
 
 export type Hooks = {
   /**
@@ -113,10 +115,12 @@ export async function dispatchBeforeToolCall(
     }
     return result
   } catch (err) {
+    // W-20 fix: fail-CLOSED for pre-execution hooks — a broken security check
+    // should NOT silently allow the tool to proceed.
     const msg = err instanceof Error ? err.message : String(err)
-    logger.error('beforeToolCall hook threw', { error: msg })
+    logger.error('beforeToolCall hook threw — blocking tool call (fail-closed)', { error: msg })
     callbacks?.onError?.('beforeToolCall', msg)
-    return { action: 'continue' }
+    return { action: 'block', reason: `Security hook error: ${msg}` }
   }
 }
 
@@ -142,6 +146,12 @@ export async function dispatchAfterToolCall(
   }
 }
 
+/**
+ * CRITIQUE #6 FIX: `beforeLLM` now fails CLOSED on error.
+ * If a beforeLLM hook throws (e.g. PII redactor, PromptGuard), the LLM call
+ * is blocked by re-throwing. This prevents unredacted/unscanned messages from
+ * reaching the LLM when a security hook is broken.
+ */
 export async function dispatchBeforeLLM(
   hooks: Hooks | undefined,
   messages: ChatMessage[],
@@ -151,13 +161,21 @@ export async function dispatchBeforeLLM(
   try {
     return (await hooks.beforeLLM(messages)) ?? messages
   } catch (err) {
+    // CRITIQUE #6 FIX: Fail-closed — a broken security hook (PII redactor,
+    // PromptGuard, etc.) must block the LLM call, not silently pass through.
     const msg = err instanceof Error ? err.message : String(err)
-    logger.error('beforeLLM hook threw', { error: msg })
+    logger.error('beforeLLM hook threw — blocking LLM call (fail-closed)', { error: msg })
     callbacks?.onError?.('beforeLLM', msg)
-    return messages
+    throw new Error(`beforeLLM hook failed (fail-closed): ${msg}`)
   }
 }
 
+/**
+ * CRITIQUE #6 FIX: `afterLLM` now fails CLOSED on error.
+ * If an afterLLM hook throws (e.g. OutputSanitizer, PII redactor), the
+ * LLM response is blocked with a 'stop' action. This prevents unsanitized
+ * output from reaching the user when a security hook is broken.
+ */
 export async function dispatchAfterLLM(
   hooks: Hooks | undefined,
   response: ChatResult,
@@ -168,9 +186,11 @@ export async function dispatchAfterLLM(
   try {
     return (await hooks.afterLLM(response, iteration)) ?? { action: 'continue' }
   } catch (err) {
+    // CRITIQUE #6 FIX: Fail-closed — a broken output sanitizer or PII redactor
+    // must block the response, not let unsanitized data through.
     const msg = err instanceof Error ? err.message : String(err)
-    logger.error('afterLLM hook threw', { error: msg })
+    logger.error('afterLLM hook threw — blocking response (fail-closed)', { error: msg })
     callbacks?.onError?.('afterLLM', msg)
-    return { action: 'continue' }
+    return { action: 'stop', reason: `afterLLM hook failed (fail-closed): ${msg}` }
   }
 }

@@ -71,20 +71,23 @@ async function loadHtmlDeps(): Promise<{
     )
   }
 
-  const [readabilityMod, jsdomMod, turndownMod] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — optional peer dep, may not be installed
-    import('@mozilla/readability'),
-    // @ts-ignore — optional peer dep, may not be installed
-    import('jsdom'),
-    // @ts-ignore — optional peer dep, may not be installed
-    import('turndown'),
-  ])
+  // @ts-expect-error — optional peer dep, may not be installed
+  const readabilityMod = await import('@mozilla/readability') as { Readability: unknown }
+  // @ts-expect-error — optional peer dep, may not be installed
+  const jsdomMod = await import('jsdom') as { JSDOM: unknown; default?: { JSDOM: unknown } }
+  // @ts-expect-error — optional peer dep, may not be installed
+  const turndownMod = await import('turndown') as { default?: unknown; TurndownService?: unknown }
 
   return {
-    Readability: (readabilityMod as any).Readability,
-    JSDOM: (jsdomMod as any).JSDOM,
-    TurndownService: (turndownMod as any).default ?? (turndownMod as any).TurndownService,
+    Readability: readabilityMod.Readability as (
+      new (doc: unknown, options?: unknown) => { parse(): ReadabilityResult | null }
+    ),
+    JSDOM: (jsdomMod.JSDOM ?? (jsdomMod as { default: { JSDOM: unknown } }).default?.JSDOM) as (
+      new (html: string, options?: unknown) => JSDOMInstance
+    ),
+    TurndownService: (turndownMod.default ?? turndownMod.TurndownService) as (
+      new (options?: unknown) => TurndownInstance
+    ),
   }
 }
 
@@ -232,8 +235,7 @@ export const htmlIngester: Ingester = {
     })
 
     // Run Mozilla Readability
-    // @ts-ignore — optional peer dep
-    const reader = new Readability((dom as any).window.document, {
+    const reader = new Readability(dom.window.document, {
       // Keep images and figure elements
       keepClasses: false,
       // Readability throws on non-article content — we prefer a degraded result
@@ -244,7 +246,7 @@ export const htmlIngester: Ingester = {
 
     if (!article) {
       // Readability couldn't extract an article — fall back to full page text
-      const fallbackText = (dom as any).window.document?.body?.textContent
+      const fallbackText = (dom.window.document as { body?: { textContent?: string } }).body?.textContent
         ?? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
       return {

@@ -1,262 +1,164 @@
 #!/usr/bin/env node
 /**
- * YAAF Expert Agent — Entrypoint
+ * YAAF Expert Agent — Server Entrypoint
  *
- * Two modes:
- *   $ npm start          → Interactive REPL (ask questions about YAAF)
- *   $ npm run daemon     → Background daemon (watches for errors, proactively helps)
- *   $ npm start -- --watch → Lightweight file watcher (no LLM calls)
+ * Runs as an HTTP/SSE server with the YAAF Dev UI enabled.
+ * Knowledge is served from the pre-compiled KB (knowledge/compiled/).
+ * No doc-slurping at startup — the agent retrieves knowledge on demand
+ * via KB tools (search_kb, read_kb, list_kb_index).
  *
- * This agent is built WITH YAAF, FOR YAAF developers — the ultimate dogfood.
+ * Usage:
+ *   npm start                  → server on PORT (default 3001)
+ *   PORT=4000 npm start        → custom port
+ *   npm start -- --dev         → also mount live source tools (contributors only)
+ *
+ * End users:
+ *   npx yaaf-agent             → same as npm start
  */
 
-import * as readline from 'readline'
-import { Agent, Vigil, ContextManager } from 'yaaf'
-import { codeIntelligenceTools } from './tools.js'
-import { buildSystemPrompt, DAEMON_TICK_PROMPT } from './prompt.js'
-import { YaafDaemon } from './daemon.js'
+import { createRequire } from 'module'
+import * as path from 'path'
 
-// ── Mode detection ───────────────────────────────────────────────────────────
+import { Agent, KBStore, createKBTools } from 'yaaf'
+import { createServer }             from 'yaaf/server'
 
-const isDaemon = process.argv.includes('--daemon')
-const isWatch = process.argv.includes('--watch')
+// ── KB path resolution ────────────────────────────────────────────────────────
 
-// ── ANSI colors ──────────────────────────────────────────────────────────────
-
-const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
-const green = (s: string) => `\x1b[32m${s}\x1b[0m`
-const red = (s: string) => `\x1b[31m${s}\x1b[0m`
-const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`
-const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`
-
-// ── Banner ───────────────────────────────────────────────────────────────────
-
-function printBanner(mode: string): void {
-  console.log('')
-  console.log(cyan('  ╔══════════════════════════════════════════════╗'))
-  console.log(cyan('  ║') + bold('       🤖 YAAF Expert Agent v0.1.0          ') + cyan('║'))
-  console.log(cyan('  ║') + dim(`       Mode: ${mode.padEnd(30)}`) + cyan('║'))
-  console.log(cyan('  ╚══════════════════════════════════════════════╝'))
-  console.log('')
+/**
+ * Resolve the compiled KB directory.
+ *
+ * - End users (npm install yaaf-agent):
+ *     node_modules/yaaf-agent/knowledge/compiled/
+ * - Dev (running from the monorepo):
+ *     yaaf-agent/knowledge/compiled/
+ */
+function resolveKBDir(): string {
+  try {
+    // Production: resolve from the installed package
+    const req = createRequire(import.meta.url)
+    const pkgPath = req.resolve('yaaf-agent/package.json')
+    return path.join(path.dirname(pkgPath), 'knowledge')
+  } catch {
+    // Dev fallback: relative to this source file
+    return path.resolve(import.meta.dirname, '..', 'knowledge')
+  }
 }
 
-// ── Interactive Mode ─────────────────────────────────────────────────────────
+// ── System prompt (slim — knowledge lives in the KB, not here) ────────────────
 
-async function startInteractive(): Promise<void> {
-  printBanner('Interactive REPL')
+const SYSTEM_PROMPT = `\
+You are the YAAF Expert Agent — an AI assistant with deep knowledge of YAAF (Yet Another Agent Framework), a TypeScript-first, provider-agnostic, production-grade agent framework.
 
-  console.log(dim('  Building knowledge base from YAAF source tree...'))
-  const systemPrompt = await buildSystemPrompt()
-  console.log(green('  ✓ Knowledge base loaded'))
-  console.log(dim('  Tools: read_file, grep_search, list_dir, run_tsc, run_tests, get_project_structure'))
+## How to answer questions
+
+You have access to a pre-compiled knowledge base containing 900+ articles covering every API, subsystem, concept, and guide in YAAF. Always use the KB tools to retrieve accurate, up-to-date information before answering.
+
+### KB tools available
+- **search_kb**: Full-text search across all articles — use this first for any question
+- **list_kb_index**: Browse articles by entity type (api, concept, subsystem, guide, plugin)
+- **read_kb**: Fetch the full content of a specific article by docId
+
+### Answering strategy
+1. Search the KB for the most relevant articles using \`search_kb\`
+2. Read the full article(s) with \`read_kb\` when you need complete details
+3. Synthesise a precise, helpful answer with working code examples
+4. Cross-reference related articles when the question spans multiple subsystems
+
+## Response style
+- Be concise and direct — developers are reading this in a chat UI
+- Include working TypeScript code examples where relevant
+- Use markdown formatting: code blocks, headers (h1–h4), bullet lists
+- When referencing an API, always include the import path
+- If you're not sure about something, say so clearly
+- **Never** include a "Related KB Articles", "Related:", or "See also:" section — users cannot navigate to internal KB docIds
+- **Never** expose raw KB docIds (e.g. \`subsystems/foo\`, \`apis/bar\`) in your response — they are internal references meaningless to the user
+
+## What you know about YAAF
+YAAF is a production-grade TypeScript agent framework. Key capabilities:
+- Multi-LLM provider support (Gemini, OpenAI, Anthropic, Ollama, etc.)
+- Plugin system with typed adapter interfaces (memory, session, browser, observability)
+- Built-in context management and compaction strategies
+- Permission policies, IAM, and security hooks
+- Runtimes: HTTP/SSE server, CLI, Web Worker, Gateway
+- Multi-agent orchestration, Vigil (autonomous mode), A2A integration
+- Knowledge Base subsystem (KBCompiler, KBStore, KBFederation)
+`
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const port   = parseInt(process.env.PORT ?? '3001', 10)
+  const isDev  = process.argv.includes('--dev')
+  const kbDir  = resolveKBDir()
+
   console.log('')
-  console.log(bold('  Ask me anything about YAAF.'))
-  console.log(dim('  Examples:'))
-  console.log(dim('    • "How does the AgentRunner handle context overflow?"'))
-  console.log(dim('    • "What compaction strategies are available?"'))
-  console.log(dim('    • "Run the tests and tell me about any failures"'))
-  console.log(dim('    • "Find all places where maxTokens is used"'))
+  console.log('🤖 YAAF Expert Agent')
+  console.log(`   KB:   ${kbDir}`)
+  console.log(`   Port: ${port}`)
+  if (isDev) console.log('   Mode: dev (live source tools enabled)')
   console.log('')
+
+  // ── Load the pre-compiled knowledge base ──────────────────────────────────
+
+  console.log('Loading knowledge base...')
+  const store = new KBStore(kbDir)
+  await store.load()
+  const docCount = store.getAllDocuments().length
+  console.log(`✓ Knowledge base loaded (${docCount} articles)`)
+  console.log('')
+
+  // ── Build tool set ────────────────────────────────────────────────────────
+
+  const kbTools = createKBTools(store, {
+    maxDocumentChars: 20_000,   // generous — modern context windows can handle it
+    maxSearchResults: 8,
+    maxExcerptChars: 1_200,
+  })
+
+  // Dev-mode: add live source tools for framework contributors
+  const devTools = isDev ? (await import('./tools.js')).codeIntelligenceTools : []
+
+  // ── Create agent ──────────────────────────────────────────────────────────
 
   const agent = new Agent({
     name: 'YAAF Expert',
-    systemPrompt,
-    tools: codeIntelligenceTools,
-    contextManager: new ContextManager({
-      contextWindowTokens: 1_048_576,
-      maxOutputTokens: 65_536,
-      compactionStrategy: 'truncate',
-    }),
-    maxIterations: 25,  // Allow deep multi-step investigations
+    systemPrompt: SYSTEM_PROMPT,
+    tools: [...kbTools, ...devTools],
+    // contextManager:'auto' reads context window + output token limits from the
+    // model spec registry — prevents requesting more tokens than the model allows.
+    contextManager: 'auto',
+    // Model selection (unified env var strategy — pick one):
+    //
+    //   LLM_BASE_URL + LLM_MODEL  → any OpenAI-compatible endpoint
+    //     e.g. LLM_BASE_URL=http://localhost:11434/v1  LLM_MODEL=qwen2.5:72b
+    //
+    //   GEMINI_API_KEY   → Google Gemini   (LLM_MODEL overrides default)
+    //   ANTHROPIC_API_KEY → Anthropic Claude (LLM_MODEL overrides default)
+    //   OPENAI_API_KEY   → OpenAI           (LLM_MODEL overrides default)
+    //
+    //   YAAF_AGENT_MODEL is also accepted as an alias for LLM_MODEL.
+    ...(process.env.YAAF_AGENT_MODEL ? { model: process.env.YAAF_AGENT_MODEL } : {}),
+    maxIterations: 15,
   })
 
-  // Simple readline REPL
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: cyan('  yaaf> '),
-  })
+  // ── Start HTTP server with Dev UI ─────────────────────────────────────────
 
-  rl.prompt()
-
-  rl.on('line', async (line) => {
-    const input = line.trim()
-    if (!input) { rl.prompt(); return }
-    if (input === 'exit' || input === 'quit' || input === '.exit') {
-      console.log(dim('\n  Goodbye!'))
-      rl.close()
-      process.exit(0)
-    }
-    if (input === 'reset') {
-      agent.reset()
-      console.log(green('  ✓ Conversation reset'))
-      rl.prompt()
-      return
-    }
-
-    try {
+  createServer(agent, {
+    port,
+    name: 'YAAF Expert Agent',
+    devUi: true,
+    cors: true,
+    onStart: (port) => {
+      console.log(`✓ Dev UI ready at http://localhost:${port}`)
       console.log('')
-      // Stream the response
-      let hasContent = false
-      for await (const event of agent.runStream(input)) {
-        if (event.type === 'text_delta') {
-          if (!hasContent) { process.stdout.write(cyan('  ')); hasContent = true }
-          process.stdout.write(event.content)
-        } else if (event.type === 'tool_call_start') {
-          console.log(dim(`\n  ⚙ ${event.name}...`))
-        } else if (event.type === 'tool_call_result') {
-          console.log(dim(`  ✓ ${event.name} (${event.durationMs}ms)`))
-        }
-      }
-      if (hasContent) console.log('')
-      console.log('')
-    } catch (err: any) {
-      console.error(red(`  Error: ${err.message}`))
-      console.log('')
-    }
-
-    rl.prompt()
-  })
-
-  rl.on('close', () => {
-    process.exit(0)
-  })
-}
-
-// ── Daemon Mode ──────────────────────────────────────────────────────────────
-
-async function startDaemon(): Promise<void> {
-  const checkInterval = parseInt(process.env.CHECK_INTERVAL_SEC ?? '30', 10)
-  printBanner(`Daemon (every ${checkInterval}s)`)
-
-  console.log(dim('  Building knowledge base from YAAF source tree...'))
-  const systemPrompt = await buildSystemPrompt()
-  console.log(green('  ✓ Knowledge base loaded'))
-  console.log(dim(`  Watching for TypeScript errors and test failures every ${checkInterval}s`))
-  console.log(dim('  Press Ctrl+C to stop'))
-  console.log('')
-
-  const daemon = new YaafDaemon({
-    name: 'YAAF Daemon',
-    systemPrompt,
-    tools: codeIntelligenceTools,
-    contextManager: new ContextManager({
-      contextWindowTokens: 1_048_576,
-      maxOutputTokens: 65_536,
-      compactionStrategy: 'truncate',
-    }),
-    maxIterations: 10,
-    checkIntervalSec: checkInterval,
-    onIssue: (issue) => {
-      const icon = issue.type === 'compile_error' ? red('🔴') : yellow('🟡')
-      console.log(`\n${icon} ${bold(issue.summary)}`)
-      console.log(dim(issue.details.split('\n').slice(0, 5).join('\n')))
+      console.log('  Open the URL above in your browser to start chatting.')
+      console.log('  Press Ctrl+C to stop.')
       console.log('')
     },
   })
-
-  // Event listeners
-  daemon.onVigil('start', ({ tickInterval, taskCount }) => {
-    console.log(green(`  ✓ Daemon started (interval: ${tickInterval / 1000}s, tasks: ${taskCount})`))
-  })
-
-  daemon.onVigil('tick', ({ count }) => {
-    const status = daemon.getHealthStatus()
-    const statusIcon = status.healthy ? green('●') : red('●')
-    const line = dim(`  [${new Date().toLocaleTimeString()}] Tick #${count} ${statusIcon}`)
-    process.stdout.write(`\r${line}`)
-  })
-
-  daemon.onVigil('error', ({ source, error }) => {
-    console.error(red(`\n  ✗ ${source} error: ${error.message}`))
-  })
-
-  daemon.onVigil('brief', ({ message }) => {
-    console.log(`\n${cyan('  📋 Agent Brief:')}\n${message.split('\n').map(l => `    ${l}`).join('\n')}`)
-  })
-
-  // Run initial health check immediately
-  console.log(dim('  Running initial health check...'))
-  const issues = await daemon.healthCheck()
-  if (issues.length === 0) {
-    console.log(green('  ✓ Initial check: All clear'))
-  } else {
-    console.log(yellow(`  ⚠ Initial check: ${issues.length} issue(s) found`))
-  }
-
-  await daemon.start()
-
-  process.on('SIGINT', () => {
-    console.log(dim('\n\n  Shutting down daemon...'))
-    daemon.stop()
-    process.exit(0)
-  })
-}
-
-// ── Watch Mode (lightweight — no LLM, just error detection) ──────────────────
-
-async function startWatch(): Promise<void> {
-  printBanner('Watch (no LLM)')
-
-  console.log(dim('  Lightweight error watcher — no LLM calls, just tsc every 10s'))
-  console.log(dim('  Press Ctrl+C to stop'))
-  console.log('')
-
-  const { execSync: exec } = await import('child_process')
-  const pathMod = await import('path')
-  const root = pathMod.resolve(import.meta.dirname, '..', '..')
-
-  let lastErrors = new Set<string>()
-  let tickCount = 0
-
-  const check = () => {
-    tickCount++
-    const time = new Date().toLocaleTimeString()
-
-    try {
-      exec('npx tsc --noEmit 2>&1', { cwd: root, encoding: 'utf8', timeout: 60_000 })
-      process.stdout.write(`\r  ${dim(`[${time}]`)} ${green('●')} ${dim(`Check #${tickCount}: clean`)}`)
-      if (lastErrors.size > 0) {
-        console.log(green(`\n  ✓ All ${lastErrors.size} error(s) resolved!`))
-        lastErrors = new Set()
-      }
-    } catch (err: any) {
-      const output = (err.stdout ?? '') + (err.stderr ?? '')
-      const errors = output.split('\n').filter((l: string) => l.match(/error TS\d+/)).map((l: string) => l.trim())
-      const newErrors = errors.filter((e: string) => !lastErrors.has(e))
-      lastErrors = new Set(errors)
-      if (newErrors.length > 0) {
-        console.log(red(`\n  ✗ ${newErrors.length} new error(s) at ${time}:`))
-        for (const e of newErrors.slice(0, 10)) console.log(`    ${e}`)
-      } else {
-        process.stdout.write(`\r  ${dim(`[${time}]`)} ${red('●')} ${dim(`Check #${tickCount}: ${errors.length} error(s) (unchanged)`)}`)
-      }
-    }
-  }
-
-  check()
-  setInterval(check, 10_000)
-
-  process.on('SIGINT', () => {
-    console.log(dim('\n\n  Stopped.'))
-    process.exit(0)
-  })
-}
-
-// ── Main ─────────────────────────────────────────────────────────────────────
-
-async function main(): Promise<void> {
-  if (isDaemon) {
-    await startDaemon()
-  } else if (isWatch) {
-    await startWatch()
-  } else {
-    await startInteractive()
-  }
 }
 
 main().catch(err => {
-  console.error(red(`Fatal: ${err.message}`))
+  console.error('Fatal:', err instanceof Error ? err.message : String(err))
   process.exit(1)
 })

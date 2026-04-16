@@ -104,6 +104,9 @@ export function buildSynthesisSystemPrompt(
     `5. If sources are conflicting, note the discrepancy explicitly`,
     `6. Code examples from sources should be preserved in fenced code blocks`,
     `7. Mathematical notation from sources should be preserved in LaTeX if possible`,
+    `8. When writing claims from sources, add inline citations using [Source N] notation`,
+    `   Example: "Attention mechanisms were first described in 2014 [Source 1]."`,
+    `9. At the end, include a ## Sources section mapping [Source N] to source file paths`,
     ``,
     `# Output Format`,
     `Output ONLY the complete markdown article — no explanation, no preamble, no trailing comments.`,
@@ -131,10 +134,7 @@ export function buildSynthesisUserPrompt(params: {
 
   // Build source text blocks
   const sourceBlocks = sources.map((source, i) => {
-    const text = source.text.length > SOURCE_TEXT_MAX_CHARS
-      ? source.text.slice(0, SOURCE_TEXT_MAX_CHARS) +
-        `\n\n[... ${source.text.length - SOURCE_TEXT_MAX_CHARS} chars omitted for token budget ...]`
-      : source.text
+    const text = smartTruncate(source.text, SOURCE_TEXT_MAX_CHARS)
 
     const imageNote = source.images.length > 0
       ? `\nImages in this source: ${source.images.map(img => `![${img.altText}](${img.localPath})`).join(', ')}`
@@ -267,4 +267,73 @@ export function generateStubArticle(params: {
   ].filter(Boolean).join('\n')
 
   return [frontmatter, '', body].join('\n')
+}
+
+// ── Smart truncation (Phase 2D) ───────────────────────────────────────────────
+
+/**
+ * Intelligently truncate source text to fit token budget.
+ * Instead of cutting at an arbitrary character position (which can break
+ * mid-sentence, mid-code-block, or mid-table), this splits at paragraph
+ * boundaries and prioritizes:
+ *
+ * 1. Head (introduction/abstract) — 40% of budget
+ * 2. Tail (conclusion/summary)   — 25% of budget
+ * 3. Middle sections             — remaining budget
+ */
+function smartTruncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+
+  const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0)
+  if (paragraphs.length <= 2) {
+    // Very few paragraphs — fall back to simple split
+    return text.slice(0, maxChars) +
+      `\n\n[... ${text.length - maxChars} chars omitted ...]`
+  }
+
+  const headBudget = Math.floor(maxChars * 0.4)
+  const tailBudget = Math.floor(maxChars * 0.25)
+  const midBudget = maxChars - headBudget - tailBudget - 100
+
+  // Build head (from start)
+  let head = ''
+  let headParaCount = 0
+  for (const p of paragraphs) {
+    if ((head + '\n\n' + p).length > headBudget) break
+    head += (head ? '\n\n' : '') + p
+    headParaCount++
+  }
+
+  // Build tail (from end)
+  let tail = ''
+  let tailParaCount = 0
+  for (let i = paragraphs.length - 1; i >= headParaCount; i--) {
+    const p = paragraphs[i]!
+    if ((p + '\n\n' + tail).length > tailBudget) break
+    tail = p + (tail ? '\n\n' : '') + tail
+    tailParaCount++
+  }
+
+  // Fill middle from remaining paragraphs
+  let mid = ''
+  const midStart = headParaCount
+  const midEnd = paragraphs.length - tailParaCount
+  for (let i = midStart; i < midEnd; i++) {
+    const p = paragraphs[i]!
+    if ((mid + '\n\n' + p).length > midBudget) break
+    mid += (mid ? '\n\n' : '') + p
+  }
+
+  const omitted = text.length - head.length - mid.length - tail.length
+  const parts: string[] = [head]
+
+  if (mid) {
+    parts.push(`\n\n[... ${omitted} chars from middle sections omitted for token budget ...]\n\n${mid}`)
+  }
+
+  if (tail) {
+    parts.push(`\n\n[...]\n\n${tail}`)
+  }
+
+  return parts.join('')
 }

@@ -233,6 +233,34 @@ export class ContextEngine {
     return result
   }
 
+  /**
+   * Build the prompt with context sections from registered PluginHost providers.
+   *
+   * Calls `pluginHost.gatherContext(query)` to fan-out to all registered
+   * `ContextProvider` plugins (KnowledgeBase, AgentFS, Honcho, etc.) and
+   * merges the returned sections into this engine before calling `build()`.
+   *
+   * @param query       - The user's message/query (used for relevance filtering)
+   * @param pluginHost  - The PluginHost from the current Agent
+   * @returns           - The assembled system prompt including plugin-contributed context
+   */
+  async buildWithPlugins(
+    query: string,
+    pluginHost: import('../plugin/types.js').PluginHost,
+  ): Promise<string> {
+    const pluginSections = await pluginHost.gatherContext(query)
+    for (const s of pluginSections) {
+      this.addSection({
+        id: `plugin:${s.key}`,
+        name: s.key,
+        content: s.content,
+        priority: s.priority ?? 40,  // below soul/skills (≥50) but above memory (≤30)
+        droppable: true,
+      })
+    }
+    return this.build()
+  }
+
   /** Total character count of the built prompt. */
   totalChars(): number {
     return this.build().length

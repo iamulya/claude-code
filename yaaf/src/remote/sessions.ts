@@ -79,7 +79,9 @@
  */
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import type { Duplex } from 'node:stream'
+import { buildDevUiHtml } from '../runtime/devUi.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,6 +106,29 @@ export type RemoteSessionConfig = {
   onSessionCreated?: (sessionId: string) => void
   /** Called when a session is destroyed. */
   onSessionDestroyed?: (sessionId: string, reason: string) => void
+  /**
+   * Called when the server starts listening.
+   * When omitted, the server prints a startup message to stdout.
+   * Pass a no-op function to suppress the message.
+   */
+  onStart?: (info: { url: string; wsUrl: string; port: number }) => void
+  /**
+   * Serve the YAAF Dev UI at GET /.
+   * The UI connects over WebSocket (/ws) for full-duplex streaming.
+   * Disable in production.
+   * Default: false.
+   */
+  devUi?: boolean
+  /**
+   * Model identifier shown in the UI inspector.
+   * Example: 'gemini-2.0-flash'.
+   */
+  model?: string
+  /**
+   * Optionally expose the agent's system prompt in the UI Settings drawer.
+   * Default: undefined (not exposed).
+   */
+  systemPrompt?: string
 }
 
 /** Minimal agent interface for remote sessions. */
@@ -165,11 +190,12 @@ export type RemoteSessionHandle = {
 
 export class RemoteSessionServer {
   private readonly agent: RemoteAgent
-  private readonly config: Required<Omit<RemoteSessionConfig, 'onSessionCreated' | 'onSessionDestroyed'>> & Pick<RemoteSessionConfig, 'onSessionCreated' | 'onSessionDestroyed'>
+  private readonly config: Required<Omit<RemoteSessionConfig, 'onSessionCreated' | 'onSessionDestroyed' | 'onStart' | 'model' | 'systemPrompt'>> & Pick<RemoteSessionConfig, 'onSessionCreated' | 'onSessionDestroyed' | 'onStart' | 'model' | 'systemPrompt'>
   private readonly sessions = new Map<string, Session>()
   private server: ReturnType<typeof createHttpServer> | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private cleanupTimer: ReturnType<typeof setInterval> | null = null
+  private readonly devUiHtml: string | null
 
   constructor(agent: RemoteAgent, config: RemoteSessionConfig = {}) {
     this.agent = agent
@@ -182,9 +208,23 @@ export class RemoteSessionServer {
       cors: config.cors ?? true,
       corsOrigin: config.corsOrigin ?? '*',
       name: config.name ?? 'yaaf-remote',
+      devUi: config.devUi ?? false,
+      model: config.model,
+      systemPrompt: config.systemPrompt,
       onSessionCreated: config.onSessionCreated,
       onSessionDestroyed: config.onSessionDestroyed,
+      onStart: config.onStart,
     }
+    this.devUiHtml = this.config.devUi
+      ? buildDevUiHtml({
+          name: this.config.name,
+          version: '—',
+          model: this.config.model ?? null,
+          streaming: true,
+          multiTurn: true,
+          systemPrompt: this.config.systemPrompt ?? null,
+        })
+      : null
   }
 
   /** Start the remote session server. */
@@ -209,6 +249,18 @@ export class RemoteSessionServer {
         const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
         switch (url.pathname) {
+          case '/':
+            if (this.config.devUi && this.devUiHtml) {
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+              res.end(this.devUiHtml)
+            } else {
+              this.sendJson(res, 200, {
+                name: this.config.name,
+                transport: ['http', 'websocket'],
+              })
+            }
+            break
+
           case '/health':
             this.sendJson(res, 200, {
               status: 'ok',
@@ -287,11 +339,19 @@ export class RemoteSessionServer {
         const baseUrl = `http://${hostname}:${actualPort}`
         const wsUrl = `ws://${hostname}:${actualPort}/ws`
 
-        console.log(`\n🔌 Remote Session Server "${this.config.name}" listening`)
-        console.log(`   HTTP: ${baseUrl}`)
-        console.log(`   WebSocket: ${wsUrl}`)
-        console.log(`   Max sessions: ${this.config.maxSessions}\n`)
-
+        const startInfo = { url: baseUrl, wsUrl, port: actualPort }
+        if (this.config.onStart) {
+          this.config.onStart(startInfo)
+        } else {
+          const devUiLine = this.config.devUi ? `   ▶  Dev UI:          ${baseUrl}/\n` : ''
+          process.stdout.write(
+            `\n🔌 Remote Session Server "${this.config.name}" listening\n` +
+            `   HTTP:      ${baseUrl}\n` +
+            devUiLine +
+            `   WebSocket: ${wsUrl}\n` +
+            `   Max sessions: ${this.config.maxSessions}\n\n`,
+          )
+        }
         resolve({
           url: baseUrl,
           wsUrl,
@@ -328,7 +388,7 @@ export class RemoteSessionServer {
 
   // ── WebSocket Handling ──────────────────────────────────────────────────
 
-  private handleWebSocketUpgrade(req: IncomingMessage, socket: any, head: Buffer): void {
+  private handleWebSocketUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     // Perform the WebSocket handshake manually using the raw socket
     // This avoids requiring the `ws` package
     const key = req.headers['sec-websocket-key']
@@ -337,9 +397,7 @@ export class RemoteSessionServer {
       return
     }
 
-    const crypto = require('crypto') as typeof import('crypto')
-    const acceptKey = crypto
-      .createHash('sha1')
+    const acceptKey = createHash('sha1')
       .update(key + '258EAFA5-E914-47DA-95CA-5AB5DC11505E')
       .digest('base64')
 
@@ -359,11 +417,11 @@ export class RemoteSessionServer {
   private handleWebSocketConnection(ws: WebSocketLike): void {
     let sessionId: string | null = null
 
-    ws.addEventListener('message', async (event: any) => {
+    ws.addEventListener('message', async (event: unknown) => {
       try {
-        const data = typeof event === 'string' ? event : event?.data
+        const data = typeof event === 'string' ? event : (event as { data?: unknown })?.data
         if (!data) return
-        const msg = JSON.parse(data) as ClientMessage
+        const msg = JSON.parse(data as string) as ClientMessage
 
         switch (msg.type) {
           case 'ping':
@@ -578,11 +636,11 @@ export class RemoteSessionServer {
  */
 class RawWebSocket implements WebSocketLike {
   readyState = 1 // OPEN
-  private readonly socket: any
+  private readonly socket: Duplex
   private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   private buffer = Buffer.alloc(0)
 
-  constructor(socket: any) {
+  constructor(socket: Duplex) {
     this.socket = socket
 
     socket.on('data', (chunk: Buffer) => {

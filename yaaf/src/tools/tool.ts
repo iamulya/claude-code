@@ -150,11 +150,15 @@ const TOOL_DEFAULTS = {
   isConcurrencySafe: (_input?: unknown) => false,
   isReadOnly: (_input?: unknown) => false,
   isDestructive: (_input?: unknown) => false,
+  // M14 FIX: Default to 'ask' (fail-closed) instead of 'allow' (fail-open).
+  // This makes checkPermissions consistent with the other fail-closed defaults
+  // (isConcurrencySafe: false, isReadOnly: false). Tools that should auto-allow
+  // must explicitly override checkPermissions.
   checkPermissions: (
     input: Record<string, unknown>,
     _ctx?: ToolContext,
   ): Promise<PermissionResult> =>
-    Promise.resolve({ behavior: 'allow' as const, updatedInput: input }),
+    Promise.resolve({ behavior: 'ask' as const, updatedInput: input }),
   userFacingName: (_input?: unknown) => '',
 }
 
@@ -166,7 +170,7 @@ const TOOL_DEFAULTS = {
  * - isConcurrencySafe → false (assume not safe)
  * - isReadOnly → false (assume writes)
  * - isDestructive → false
- * - checkPermissions → allow (defer to general permission system)
+ * - checkPermissions → ask (fail-closed; override to 'allow' for auto-permit)
  * - userFacingName → tool.name
  *
  * @example

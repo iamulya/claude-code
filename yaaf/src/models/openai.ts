@@ -230,12 +230,40 @@ function parseFinishReason(reason: string | null | undefined): ChatResult['finis
   return 'stop'
 }
 
+// ── Pricing table (USD per 1M tokens) ───────────────────────────────────────
+// Consumed by CostTracker via PluginHost.getLLMPricing().
+// Source: https://openai.com/api/pricing (update as needed)
+
+import type { LLMPricing } from '../plugin/types.js'
+
+const OPENAI_PRICING: Record<string, LLMPricing> = {
+  'gpt-4o':               { inputPerMillion: 2.50,  outputPerMillion: 10.00, cacheReadPerMillion: 1.25 },
+  'gpt-4o-mini':          { inputPerMillion: 0.15,  outputPerMillion: 0.60,  cacheReadPerMillion: 0.075 },
+  'gpt-4-turbo':          { inputPerMillion: 10.00, outputPerMillion: 30.00 },
+  'gpt-4':                { inputPerMillion: 30.00, outputPerMillion: 60.00 },
+  'gpt-3.5-turbo':        { inputPerMillion: 0.50,  outputPerMillion: 1.50 },
+  'o1':                   { inputPerMillion: 15.00, outputPerMillion: 60.00, cacheReadPerMillion: 7.50 },
+  'o1-mini':              { inputPerMillion: 3.00,  outputPerMillion: 12.00, cacheReadPerMillion: 1.50 },
+  'o3-mini':              { inputPerMillion: 1.10,  outputPerMillion: 4.40,  cacheReadPerMillion: 0.55 },
+  'o3':                   { inputPerMillion: 10.00, outputPerMillion: 40.00, cacheReadPerMillion: 2.50 },
+  'o4-mini':              { inputPerMillion: 1.10,  outputPerMillion: 4.40,  cacheReadPerMillion: 0.275 },
+}
+
+/** Best-effort pricing inference for model variant suffixes (e.g. gpt-4o-2024-11-20). */
+function inferOpenAIPricing(model: string): LLMPricing | undefined {
+  for (const [prefix, pricing] of Object.entries(OPENAI_PRICING)) {
+    if (model.startsWith(prefix)) return pricing
+  }
+  return undefined
+}
+
 // ── OpenAIChatModel ──────────────────────────────────────────────────────────
 
 export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatModel {
   readonly model: string
   readonly contextWindowTokens: number
   readonly maxOutputTokens: number
+  readonly pricing: import('../plugin/types.js').LLMPricing | undefined
 
   private readonly apiKey: string
   private readonly baseUrl: string
@@ -260,6 +288,8 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
     const specs = resolveModelSpecs(model)
     this.contextWindowTokens = config.contextWindowTokens ?? specs.contextWindowTokens
     this.maxOutputTokens = config.maxOutputTokens ?? specs.maxOutputTokens
+    // Pricing by model prefix — consumed by CostTracker via PluginHost.getLLMPricing()
+    this.pricing = OPENAI_PRICING[model] ?? inferOpenAIPricing(model)
   }
 
   // ── Shared fetch ──────────────────────────────────────────────────────────
@@ -407,16 +437,6 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
               delta.content = choice.delta.content
             }
 
-            if (choice.delta.tool_calls?.length) {
-              const tc = choice.delta.tool_calls[0]!
-              delta.toolCallDelta = {
-                index: tc.index,
-                id: tc.id,
-                name: tc.function?.name,
-                arguments: tc.function?.arguments,
-              }
-            }
-
             if (choice.finish_reason) {
               delta.finishReason = parseFinishReason(choice.finish_reason)
             }
@@ -427,6 +447,34 @@ export class OpenAIChatModel extends BaseLLMAdapter implements StreamingChatMode
                 promptTokens: chunk.usage.prompt_tokens,
                 completionTokens: chunk.usage.completion_tokens,
                 cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens,
+              }
+            }
+
+            if (choice.delta.tool_calls?.length) {
+              // Process ALL tool calls in this delta — not just [0].
+              // OpenAI usually sends one per chunk, but third-party providers
+              // (vLLM, Ollama, etc.) may batch multiple in a single delta.
+              for (let tci = 0; tci < choice.delta.tool_calls.length; tci++) {
+                const tc = choice.delta.tool_calls[tci]!
+                if (tci === 0) {
+                  // First tool call: attach to the main delta (which may also carry content/usage)
+                  delta.toolCallDelta = {
+                    index: tc.index,
+                    id: tc.id,
+                    name: tc.function?.name,
+                    arguments: tc.function?.arguments,
+                  }
+                } else {
+                  // Additional tool calls: yield as separate deltas
+                  yield {
+                    toolCallDelta: {
+                      index: tc.index,
+                      id: tc.id,
+                      name: tc.function?.name,
+                      arguments: tc.function?.arguments,
+                    },
+                  }
+                }
               }
             }
 

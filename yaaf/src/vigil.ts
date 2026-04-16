@@ -103,6 +103,12 @@ export type ScheduledTask = {
   recurring: boolean
   /** When true, skips recurringMaxAgeMs auto-expiry */
   permanent?: boolean
+  /**
+   * CRITIQUE #7 FIX: Task execution priority.
+   * Higher values execute first when multiple tasks are due simultaneously.
+   * Default: 0. Range: -100 to 100.
+   */
+  priority?: number
 }
 
 export type VigilEvents = {
@@ -188,6 +194,17 @@ export class Vigil extends Agent {
   private tickCount = 0
   private tasksRun = 0
   private running = false
+  /** X-17/X-18 fix: reentrancy guard — prevents overlapping run() calls */
+  private _isExecuting = false
+  /** M12 FIX: Persistence mutex — prevents concurrent writes corrupting the task file */
+  private _isPersisting = false
+  private _persistPending = false
+  /** C6 FIX: Promise that resolves when the current execution (tick/cron) completes */
+  private _executionPromise: Promise<void> | null = null
+  private _resolveExecution: (() => void) | null = null
+  /** C9 FIX: Track pending journal writes for backpressure */
+  private _pendingJournalWrites = 0
+  private static readonly MAX_PENDING_JOURNAL_WRITES = 100
 
   // Session journal (append-only daily log)
   private journalPath: string
@@ -297,12 +314,20 @@ export class Vigil extends Agent {
   /**
    * Emit a structured message from the agent to the world.
    * The primary output pathway for structured agent → world communication.
+   * Fan-outs to registered NotificationAdapter plugins automatically.
    */
   brief(message: string): void {
     const timestamp = new Date()
     this.onBrief?.(message)
     this.emitVigil('brief', { message, timestamp })
     this.journalEntry(`[brief] ${message}`)
+    // Fan-out to PluginHost notification adapters (best-effort)
+    void this._pluginHost.notify({
+      type: 'info',
+      title: 'Agent Brief',
+      message,
+      timestamp: timestamp.toISOString(),
+    })
   }
 
   // ── Session Journal ───────────────────────────────────────────────────────
@@ -319,11 +344,17 @@ export class Vigil extends Agent {
   }
 
   private async appendJournal(entry: string): Promise<void> {
+    // C9 FIX: Backpressure — skip writes when too many are pending.
+    // Prevents unbounded promise accumulation on slow filesystems.
+    if (this._pendingJournalWrites >= Vigil.MAX_PENDING_JOURNAL_WRITES) return
+    this._pendingJournalWrites++
     try {
       await fsp.mkdir(this.storageDir, { recursive: true })
       await fsp.appendFile(this.journalPath, entry + '\n', 'utf8')
     } catch {
       // Journal writes are best-effort
+    } finally {
+      this._pendingJournalWrites--
     }
   }
 
@@ -380,7 +411,8 @@ export class Vigil extends Agent {
   }
 
   /**
-   * Stop the autonomous agent gracefully.
+   * Stop the autonomous agent (non-blocking — does not wait for in-progress tasks).
+   * Use `stopGracefully()` to wait for the current task to finish.
    */
   stop(): void {
     if (!this.running) return
@@ -394,9 +426,41 @@ export class Vigil extends Agent {
   }
 
   /**
+   * C6 FIX: Stop the autonomous agent gracefully, waiting for any
+   * in-progress tick or cron task to complete before returning.
+   *
+   * This prevents race conditions where tool execution, session journal
+   * writes, or plugin cleanup races with in-progress work.
+   */
+  async stopGracefully(): Promise<void> {
+    if (!this.running) return
+    this.running = false
+
+    if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null }
+    if (this.schedulerTimer) { clearInterval(this.schedulerTimer); this.schedulerTimer = null }
+
+    // Wait for in-progress execution to finish
+    if (this._executionPromise) {
+      try { await this._executionPromise } catch { /* already handled by emitVigil('error') */ }
+    }
+
+    this.journalEntry(`Vigil stopped (graceful) | ticks=${this.tickCount} | tasksRun=${this.tasksRun}`)
+    this.emitVigil('stop', { ticksRun: this.tickCount, tasksRun: this.tasksRun })
+  }
+
+  /**
    * Run the agent once on-demand (bypass tick interval).
    */
   async tick(): Promise<string> {
+    // X-17 fix: skip if a previous tick or cron task is still running
+    if (this._isExecuting) {
+      this.journalEntry(`[tick #${this.tickCount + 1}] skipped — previous execution still running`)
+      return '[skipped: agent busy]'
+    }
+
+    this._isExecuting = true
+    // C6 FIX: Track execution promise so stopGracefully() can await it
+    this._executionPromise = new Promise<void>(r => { this._resolveExecution = r })
     this.tickCount++
     const ts = new Date().toISOString()
     const prompt = this.tickPromptFn(ts, this.tickCount)
@@ -412,6 +476,10 @@ export class Vigil extends Agent {
       const error = err instanceof Error ? err : new Error(String(err))
       this.emitVigil('error', { source: 'tick', error })
       throw error
+    } finally {
+      this._isExecuting = false
+      this._resolveExecution?.()
+      this._executionPromise = null
     }
   }
 
@@ -426,6 +494,10 @@ export class Vigil extends Agent {
       if (task.nextFireAt <= now) toFire.push(task)
     }
 
+    // CRITIQUE #7 FIX: Sort by priority (highest first) so high-priority
+    // tasks execute before low-priority ones when multiple are due.
+    toFire.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+
     for (const task of toFire) {
       await this.fireTask(task, Date.now())
     }
@@ -437,6 +509,20 @@ export class Vigil extends Agent {
     task: ScheduledTask & { nextFireAt: number },
     now: number,
   ): Promise<void> {
+    // H8 FIX: skip if a tick or other cron task is already running.
+    // For one-shot tasks, re-queue them instead of silently losing them.
+    if (this._isExecuting) {
+      this.journalEntry(`[cron:skip] task=${task.id} — agent busy`)
+      // H8 FIX: Re-queue the task so it fires again soon (60s delay).
+      // Without this, one-shot tasks are permanently lost when the agent is busy.
+      task.nextFireAt = now + 60_000
+      this.journalEntry(`[cron:requeued] task=${task.id} — will retry in 60s`)
+      return
+    }
+
+    this._isExecuting = true
+    // C6 FIX: Track execution promise so stopGracefully() can await it
+    this._executionPromise = new Promise<void>(r => { this._resolveExecution = r })
     this.tasksRun++
     this.journalEntry(`[cron:fire] task=${task.id} cron="${task.cron}"`)
 
@@ -466,6 +552,10 @@ export class Vigil extends Agent {
       const error = err instanceof Error ? err : new Error(String(err))
       const taskSnap: ScheduledTask = { ...task }
       this.emitVigil('error', { source: 'cron', error, task: taskSnap })
+    } finally {
+      this._isExecuting = false
+      this._resolveExecution?.()
+      this._executionPromise = null
     }
   }
 
@@ -477,7 +567,9 @@ export class Vigil extends Agent {
 
   private addTask(cron: string, prompt: string, recurring: boolean): string {
     if (!validateCron(cron)) throw new Error(`Invalid cron expression: "${cron}"`)
-    const id = randomUUID().slice(0, 8)
+    // C10 FIX: Use full UUID to prevent collision risk over long-running deployments.
+    // 8-char truncation has birthday-problem collisions around ~65K tasks.
+    const id = randomUUID()
     const createdAt = Date.now()
     const nextFireAt = nextCronRunMs(cron, createdAt) ?? Infinity
 
@@ -486,8 +578,25 @@ export class Vigil extends Agent {
     return id
   }
 
+  /**
+   * M12 FIX: Persist with a mutex to prevent concurrent writes.
+   * If persistence is already in progress, flags a pending re-persist
+   * which runs after the current write completes.
+   *
+   * CRITIQUE #15 FIX: Uses atomic write (temp file + rename) to prevent
+   * file corruption if the process crashes mid-write. `rename()` is
+   * atomic on POSIX systems.
+   */
   private async persistTasks(): Promise<void> {
+    // If already persisting, schedule a follow-up
+    if (this._isPersisting) {
+      this._persistPending = true
+      return
+    }
+
+    this._isPersisting = true
     const filePath = this.tasksFilePath()
+    const tmpPath = filePath + '.tmp.' + Date.now()
     const data = {
       tasks: Array.from(this.tasks.values()).map(
         ({ nextFireAt: _, ...t }) => t,
@@ -495,11 +604,23 @@ export class Vigil extends Agent {
     }
     try {
       await fsp.mkdir(this.storageDir, { recursive: true })
-      await fsp.writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8')
+      // CRITIQUE #15 FIX: Atomic write — write to temp file, then rename.
+      // rename() is atomic on POSIX, preventing corruption on crash.
+      await fsp.writeFile(tmpPath, JSON.stringify(data, null, 2) + '\n', 'utf8')
+      await fsp.rename(tmpPath, filePath)
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       logger.error('Failed to persist tasks', { error: error.message })
       this.emitVigil('error', { source: 'persist', error })
+      // Clean up temp file on failure
+      try { await fsp.unlink(tmpPath) } catch { /* best effort */ }
+    } finally {
+      this._isPersisting = false
+      // If another persist was requested while we were writing, do it now
+      if (this._persistPending) {
+        this._persistPending = false
+        void this.persistTasks()
+      }
     }
   }
 
