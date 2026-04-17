@@ -12,58 +12,58 @@
  * @module tools/openapi/schema
  */
 
-import type { ToolInput } from '../tool.js'
-import type { ParsedOperation, ParsedParam } from './parser.js'
+import type { ToolInput } from "../tool.js";
+import type { ParsedOperation, ParsedParam } from "./parser.js";
 
 // ── Schema Simplification ────────────────────────────────────────────────────
 
 /** Keys to strip from schemas to reduce noise for LLMs */
 const STRIP_KEYS = new Set([
-  'example',
-  'examples',
-  'xml',
-  'externalDocs',
-  'deprecated',
-  'readOnly',
-  'writeOnly',
-  'nullable',  // LLMs handle null gracefully
-])
+  "example",
+  "examples",
+  "xml",
+  "externalDocs",
+  "deprecated",
+  "readOnly",
+  "writeOnly",
+  "nullable", // LLMs handle null gracefully
+]);
 
 /**
  * Remove LLM-noisy keys from a JSON Schema, recursively.
  * Also collapses single-item `allOf` into the item itself.
  */
 function simplifySchema(schema: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
+  const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(schema)) {
     // Strip noisy keys
-    if (STRIP_KEYS.has(key)) continue
+    if (STRIP_KEYS.has(key)) continue;
     // Strip vendor extensions
-    if (key.startsWith('x-')) continue
+    if (key.startsWith("x-")) continue;
 
-    if (key === 'allOf' && Array.isArray(value) && value.length === 1) {
+    if (key === "allOf" && Array.isArray(value) && value.length === 1) {
       // Collapse single-item allOf
-      const inner = simplifySchema(value[0] as Record<string, unknown>)
-      Object.assign(result, inner)
-      continue
+      const inner = simplifySchema(value[0] as Record<string, unknown>);
+      Object.assign(result, inner);
+      continue;
     }
 
     // Recurse into objects (but not arrays of primitives)
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = simplifySchema(value as Record<string, unknown>)
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      result[key] = simplifySchema(value as Record<string, unknown>);
     } else if (Array.isArray(value)) {
-      result[key] = value.map(item =>
-        item !== null && typeof item === 'object' && !Array.isArray(item)
+      result[key] = value.map((item) =>
+        item !== null && typeof item === "object" && !Array.isArray(item)
           ? simplifySchema(item as Record<string, unknown>)
           : item,
-      )
+      );
     } else {
-      result[key] = value
+      result[key] = value;
     }
   }
 
-  return result
+  return result;
 }
 
 // ── Schema Generation ────────────────────────────────────────────────────────
@@ -85,66 +85,66 @@ function simplifySchema(schema: Record<string, unknown>): Record<string, unknown
  * // → { type: 'object', properties: { name: {...}, tag: {...}, dryRun: {...} }, required: ['name'] }
  */
 export function operationToToolInput(operation: ParsedOperation): ToolInput {
-  const properties: Record<string, unknown> = {}
-  const required: string[] = []
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
 
   // Track parameter names to detect body collisions
-  const paramNames = new Set<string>()
+  const paramNames = new Set<string>();
 
   // 1. Parameters (path, query, header, cookie)
   for (const param of operation.parameters) {
-    paramNames.add(param.name)
+    paramNames.add(param.name);
 
-    const paramSchema = simplifySchema(param.schema)
+    const paramSchema = simplifySchema(param.schema);
     if (param.description && !paramSchema.description) {
-      paramSchema.description = param.description
+      paramSchema.description = param.description;
     }
 
-    properties[param.name] = paramSchema
+    properties[param.name] = paramSchema;
 
     if (param.required) {
-      required.push(param.name)
+      required.push(param.name);
     }
   }
 
   // 2. Request body (inline properties at top level)
   if (operation.requestBody?.schema) {
-    const bodySchema = simplifySchema(operation.requestBody.schema)
+    const bodySchema = simplifySchema(operation.requestBody.schema);
 
-    if (bodySchema.type === 'object' && bodySchema.properties) {
-      const bodyProps = bodySchema.properties as Record<string, Record<string, unknown>>
-      const bodyRequired = (bodySchema.required ?? []) as string[]
+    if (bodySchema.type === "object" && bodySchema.properties) {
+      const bodyProps = bodySchema.properties as Record<string, Record<string, unknown>>;
+      const bodyRequired = (bodySchema.required ?? []) as string[];
 
       for (const [propName, propSchema] of Object.entries(bodyProps)) {
         // Check for collision with parameter names
-        const safeName = paramNames.has(propName) ? `__body_${propName}` : propName
-        properties[safeName] = propSchema
+        const safeName = paramNames.has(propName) ? `__body_${propName}` : propName;
+        properties[safeName] = propSchema;
 
         if (bodyRequired.includes(propName) && operation.requestBody!.required) {
-          required.push(safeName)
+          required.push(safeName);
         }
       }
     } else {
       // Non-object body (e.g., raw string) — wrap it as a single `body` property
-      const safeName = paramNames.has('body') ? '__body' : 'body'
-      properties[safeName] = bodySchema
+      const safeName = paramNames.has("body") ? "__body" : "body";
+      properties[safeName] = bodySchema;
 
       if (operation.requestBody!.required) {
-        required.push(safeName)
+        required.push(safeName);
       }
     }
   }
 
   const result: ToolInput = {
-    type: 'object',
+    type: "object",
     properties,
-  }
+  };
 
   if (required.length > 0) {
-    result.required = required
+    result.required = required;
   }
 
-  return result
+  return result;
 }
 
 /**
@@ -156,26 +156,26 @@ export function operationToToolInput(operation: ParsedOperation): ToolInput {
  * @returns Set of property names that belong in the request body
  */
 export function getBodyPropertyNames(operation: ParsedOperation): Set<string> {
-  const bodyNames = new Set<string>()
+  const bodyNames = new Set<string>();
 
-  if (!operation.requestBody?.schema) return bodyNames
+  if (!operation.requestBody?.schema) return bodyNames;
 
-  const bodySchema = operation.requestBody.schema
-  const paramNames = new Set(operation.parameters.map(p => p.name))
+  const bodySchema = operation.requestBody.schema;
+  const paramNames = new Set(operation.parameters.map((p) => p.name));
 
   if (
-    bodySchema.type === 'object' &&
+    bodySchema.type === "object" &&
     bodySchema.properties &&
-    typeof bodySchema.properties === 'object'
+    typeof bodySchema.properties === "object"
   ) {
     for (const propName of Object.keys(bodySchema.properties as Record<string, unknown>)) {
-      const safeName = paramNames.has(propName) ? `__body_${propName}` : propName
-      bodyNames.add(safeName)
+      const safeName = paramNames.has(propName) ? `__body_${propName}` : propName;
+      bodyNames.add(safeName);
     }
   } else {
-    const safeName = paramNames.has('body') ? '__body' : 'body'
-    bodyNames.add(safeName)
+    const safeName = paramNames.has("body") ? "__body" : "body";
+    bodyNames.add(safeName);
   }
 
-  return bodyNames
+  return bodyNames;
 }

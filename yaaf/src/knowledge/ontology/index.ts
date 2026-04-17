@@ -22,7 +22,7 @@ export type {
   // Validation
   OntologyValidationResult,
   OntologyValidationIssue,
-} from './types.js'
+} from "./types.js";
 
 export {
   // Loader
@@ -31,9 +31,14 @@ export {
   serializeOntology,
   ONTOLOGY_FILENAME,
   KB_CONFIG_FILENAME,
-} from './loader.js'
+} from "./loader.js";
 
-export type { AliasIndex, EntityMention, NormalizeOptions, NormalizationResult } from './vocabulary.js'
+export type {
+  AliasIndex,
+  EntityMention,
+  NormalizeOptions,
+  NormalizationResult,
+} from "./vocabulary.js";
 
 export {
   // Vocabulary
@@ -41,7 +46,7 @@ export {
   resolveWikilink,
   normalizeWikilinks,
   scanForEntityMentions,
-} from './vocabulary.js'
+} from "./vocabulary.js";
 
 export {
   // Registry
@@ -53,12 +58,12 @@ export {
   removeRegistryEntry,
   serializeRegistry,
   deserializeRegistry,
-} from './registry.js'
+} from "./registry.js";
 
-export { OntologyGenerator } from './generator.js'
+export { OntologyGenerator } from "./generator.js";
 
 export type {
   OntologyGeneratorOptions,
   GenerateOntologyOptions,
   GenerateOntologyResult,
-} from './generator.js'
+} from "./generator.js";

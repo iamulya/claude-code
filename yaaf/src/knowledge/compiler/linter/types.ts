@@ -15,46 +15,46 @@
  */
 export type LintCode =
   // ── Structural issues (error severity) ────────────────────────────
-  | 'BROKEN_WIKILINK'          // [[Target]] not found in registry
-  | 'MISSING_REQUIRED_FIELD'   // Required frontmatter field absent
-  | 'UNKNOWN_ENTITY_TYPE'      // entity_type not in ontology
-  | 'MISSING_ENTITY_TYPE'      // entity_type frontmatter field missing altogether
-  | 'INVALID_FIELD_VALUE'      // Enum violation, type mismatch, etc.
+  | "BROKEN_WIKILINK" // [[Target]] not found in registry
+  | "MISSING_REQUIRED_FIELD" // Required frontmatter field absent
+  | "UNKNOWN_ENTITY_TYPE" // entity_type not in ontology
+  | "MISSING_ENTITY_TYPE" // entity_type frontmatter field missing altogether
+  | "INVALID_FIELD_VALUE" // Enum violation, type mismatch, etc.
   // ── Linking issues (warning severity) ─────────────────────────────
-  | 'ORPHANED_ARTICLE'         // No other article links to this one
-  | 'NON_CANONICAL_WIKILINK'   // [[alias]] used instead of [[canonical term]]
-  | 'UNLINKED_MENTION'         // Known KB entity mentioned in text without [[wikilink]]
-  | 'MISSING_RECIPROCAL_LINK'  // Article A → B but B doesn't → A (for reciprocal relationships)
+  | "ORPHANED_ARTICLE" // No other article links to this one
+  | "NON_CANONICAL_WIKILINK" // [[alias]] used instead of [[canonical term]]
+  | "UNLINKED_MENTION" // Known KB entity mentioned in text without [[wikilink]]
+  | "MISSING_RECIPROCAL_LINK" // Article A → B but B doesn't → A (for reciprocal relationships)
   // ── Quality issues (info/warning severity) ─────────────────────────
-  | 'STUB_WITH_SOURCES'        // Stub article can be expanded (sources cover it)
-  | 'LOW_ARTICLE_QUALITY'      // Article body is very short and not marked as stub
-  | 'BROKEN_SOURCE_REF'        // compiled_from path doesn't exist on disk
-  | 'DUPLICATE_CANDIDATE'      // Two articles have very similar titles
-  | 'CONTRADICTORY_CLAIMS'     // Articles make contradictory claims about the same entity
+  | "STUB_WITH_SOURCES" // Stub article can be expanded (sources cover it)
+  | "LOW_ARTICLE_QUALITY" // Article body is very short and not marked as stub
+  | "BROKEN_SOURCE_REF" // compiled_from path doesn't exist on disk
+  | "DUPLICATE_CANDIDATE" // Two articles have very similar titles
+  | "CONTRADICTORY_CLAIMS" // Articles make contradictory claims about the same entity
   // ── Plugin-defined rules ────────────────────────────────────────────
   // Plugin rules use the pattern `PLUGIN_<RuleId>` so they can be filtered separately.
-  | `PLUGIN_${string}`
+  | `PLUGIN_${string}`;
 
 // ── Severity ──────────────────────────────────────────────────────────────────
 
-export type LintSeverity = 'error' | 'warning' | 'info'
+export type LintSeverity = "error" | "warning" | "info";
 
 // ── Single issue ──────────────────────────────────────────────────────────────
 
 export type LintIssue = {
   /** Classification of this issue */
-  code: LintCode
+  code: LintCode;
 
   /** Human-readable description of the specific problem */
-  message: string
+  message: string;
 
-  severity: LintSeverity
+  severity: LintSeverity;
 
   /** The docId of the article that has this issue */
-  docId: string
+  docId: string;
 
   /** Frontmatter field name (for MISSING_REQUIRED_FIELD, INVALID_FIELD_VALUE) */
-  field?: string
+  field?: string;
 
   /**
    * For link issues: the target docId or wikilink text involved.
@@ -63,10 +63,10 @@ export type LintIssue = {
    * For NON_CANONICAL_WIKILINK: the canonical docId.
    * For MISSING_RECIPROCAL_LINK: the docId that should link back.
    */
-  relatedTarget?: string
+  relatedTarget?: string;
 
   /** What to do to fix this issue */
-  suggestion?: string
+  suggestion?: string;
 
   /**
    * Whether this issue can be fixed automatically by `KBLinter.fix()`.
@@ -80,7 +80,7 @@ export type LintIssue = {
    * - STUB_WITH_SOURCES → trigger a synthesis pass
    * - DUPLICATE_CANDIDATE → human decision on which to keep/merge
    */
-  autoFixable: boolean
+  autoFixable: boolean;
 
   /**
    * For UNLINKED_MENTION and NON_CANONICAL_WIKILINK:
@@ -88,42 +88,45 @@ export type LintIssue = {
    * Used by the auto-fixer to apply the change without re-parsing.
    */
   fix?: {
-    findText: string
-    replaceWith: string
+    findText: string;
+    replaceWith: string;
     /** Only replace the first occurrence (true for UNLINKED_MENTION) */
-    firstOccurrenceOnly: boolean
-  }
-}
+    firstOccurrenceOnly: boolean;
+  };
+};
 
 // ── Link graph ────────────────────────────────────────────────────────────────
 
 /** Bidirectional wikilink graph for the compiled KB */
-export type LinkGraph = Map<string, {
-  outgoing: Set<string>   // docIds this article links to
-  incoming: Set<string>   // docIds that link to this article
-}>
+export type LinkGraph = Map<
+  string,
+  {
+    outgoing: Set<string>; // docIds this article links to
+    incoming: Set<string>; // docIds that link to this article
+  }
+>;
 
 // ── Lint report ────────────────────────────────────────────────────────────────
 
 export type LintReport = {
   /** Timestamp when this report was generated */
-  generatedAt: number
+  generatedAt: number;
 
   /** Number of compiled articles scanned */
-  articlesChecked: number
+  articlesChecked: number;
 
   /** All detected issues */
-  issues: LintIssue[]
+  issues: LintIssue[];
 
   /** Aggregated stats */
   summary: {
-    errors: number
-    warnings: number
-    info: number
-    autoFixable: number
-    byCode: Partial<Record<LintCode, number>>
-  }
-}
+    errors: number;
+    warnings: number;
+    info: number;
+    autoFixable: number;
+    byCode: Partial<Record<LintCode, number>>;
+  };
+};
 
 // ── Lint options ──────────────────────────────────────────────────────────────
 
@@ -132,25 +135,25 @@ export type LintOptions = {
    * Whether to run LLM-based semantic checks (slower, more expensive).
    * Default: false (static checks only)
    */
-  includeSemantic?: boolean
+  includeSemantic?: boolean;
 
   /**
    * Minimum word count below which a non-stub article is flagged as
    * LOW_ARTICLE_QUALITY. Default: 50.
    */
-  minArticleWordCount?: number
+  minArticleWordCount?: number;
 
   /**
    * Maximum Levenshtein distance ratio for DUPLICATE_CANDIDATE detection.
    * 0 = identical titles only, 0.2 = slightly different titles.
    * Default: 0.15
    */
-  duplicateSimilarityThreshold?: number
+  duplicateSimilarityThreshold?: number;
 
   /**
    * DocIds to skip (e.g., canonical list of known-good articles).
    */
-  skipDocIds?: string[]
+  skipDocIds?: string[];
 
   /**
    * Phase 4C: How many mentions to wikilink per article.
@@ -158,19 +161,19 @@ export type LintOptions = {
    * 'all' = all occurrences
    * Default: 'first'
    */
-  unlinkedMentionStrategy?: 'first' | 'all'
-}
+  unlinkedMentionStrategy?: "first" | "all";
+};
 
 // ── Auto-fix result ───────────────────────────────────────────────────────────
 
 export type FixedIssue = {
-  docId: string
-  code: LintCode
-  description: string
-}
+  docId: string;
+  code: LintCode;
+  description: string;
+};
 
 export type AutoFixResult = {
-  fixedCount: number
-  fixed: FixedIssue[]
-  skipped: Array<{ issue: LintIssue; reason: string }>
-}
+  fixedCount: number;
+  fixed: FixedIssue[];
+  skipped: Array<{ issue: LintIssue; reason: string }>;
+};

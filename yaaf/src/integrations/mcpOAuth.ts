@@ -16,12 +16,12 @@
  * ```ts
  * // Authorization Code flow
  * const oauth = new McpOAuthClient({
- *   clientId: process.env.GITHUB_CLIENT_ID!,
- *   clientSecret: process.env.GITHUB_CLIENT_SECRET!,
- *   authorizationUrl: 'https://github.com/login/oauth/authorize',
- *   tokenUrl: 'https://github.com/login/oauth/access_token',
- *   scopes: ['repo', 'read:org'],
- *   redirectUri: 'http://localhost:9090/callback',
+ * clientId: process.env.GITHUB_CLIENT_ID!,
+ * clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+ * authorizationUrl: 'https://github.com/login/oauth/authorize',
+ * tokenUrl: 'https://github.com/login/oauth/access_token',
+ * scopes: ['repo', 'read:org'],
+ * redirectUri: 'http://localhost:9090/callback',
  * });
  *
  * // Get the authorization URL — user visits this in a browser
@@ -36,12 +36,12 @@
  *
  * // Use with McpPlugin
  * const plugin = new McpPlugin({
- *   servers: [{
- *     name: 'github',
- *     type: 'sse',
- *     url: 'https://mcp.github.com',
- *     headers, // ← OAuth headers
- *   }],
+ * servers: [{
+ * name: 'github',
+ * type: 'sse',
+ * url: 'https://mcp.github.com',
+ * headers, // ← OAuth headers
+ * }],
  * });
  * ```
  *
@@ -49,11 +49,11 @@
  * ```ts
  * // Client Credentials flow (machine-to-machine)
  * const oauth = new McpOAuthClient({
- *   clientId: 'my-app',
- *   clientSecret: 'secret',
- *   tokenUrl: 'https://auth.example.com/token',
- *   grantType: 'client_credentials',
- *   scopes: ['mcp:tools'],
+ * clientId: 'my-app',
+ * clientSecret: 'secret',
+ * tokenUrl: 'https://auth.example.com/token',
+ * grantType: 'client_credentials',
+ * scopes: ['mcp:tools'],
  * });
  *
  * await oauth.authenticate();
@@ -71,77 +71,81 @@
  * @module integrations/mcpOAuth
  */
 
-import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { randomBytes, createHash } from 'crypto'
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import { randomBytes, createHash } from "crypto";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type McpOAuthConfig = {
   /** OAuth client ID. */
-  clientId: string
+  clientId: string;
   /** OAuth client secret. */
-  clientSecret?: string
+  clientSecret?: string;
   /** Authorization endpoint URL (for auth code flow). */
-  authorizationUrl?: string
+  authorizationUrl?: string;
   /** Token endpoint URL. */
-  tokenUrl: string
+  tokenUrl: string;
   /** OAuth scopes to request. */
-  scopes?: string[]
+  scopes?: string[];
   /** Redirect URI for auth code flow. Default: 'http://localhost:9090/callback'. */
-  redirectUri?: string
+  redirectUri?: string;
   /** Grant type. Default: 'authorization_code'. */
-  grantType?: 'authorization_code' | 'client_credentials'
+  grantType?: "authorization_code" | "client_credentials";
   /** Use PKCE (Proof Key for Code Exchange). Default: true for auth code flows. */
-  usePKCE?: boolean
+  usePKCE?: boolean;
   /** Custom token storage. Default: in-memory. */
-  tokenStore?: TokenStore
+  tokenStore?: TokenStore;
   /** Additional parameters for the authorization request. */
-  authParams?: Record<string, string>
+  authParams?: Record<string, string>;
   /** Additional parameters for the token request. */
-  tokenParams?: Record<string, string>
+  tokenParams?: Record<string, string>;
   /** Refresh tokens before they expire, with this many seconds of buffer. Default: 300 (5 min). */
-  refreshBufferSeconds?: number
-}
+  refreshBufferSeconds?: number;
+};
 
 export type OAuthTokens = {
-  accessToken: string
-  refreshToken?: string
-  expiresAt?: number // Epoch ms
-  tokenType?: string
-  scope?: string
-}
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number; // Epoch ms
+  tokenType?: string;
+  scope?: string;
+};
 
 /** Pluggable token persistence. */
 export interface TokenStore {
-  get(key: string): Promise<OAuthTokens | null>
-  set(key: string, tokens: OAuthTokens): Promise<void>
-  delete(key: string): Promise<void>
+  get(key: string): Promise<OAuthTokens | null>;
+  set(key: string, tokens: OAuthTokens): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
 export type AuthorizationUrlResult = {
-  url: string
-  state: string
-  codeVerifier?: string // For PKCE
-}
+  url: string;
+  state: string;
+  codeVerifier?: string; // For PKCE
+};
 
 export type CallbackResult = {
-  code: string
-  state: string
-}
+  code: string;
+  state: string;
+};
 
 // ── In-Memory Token Store ────────────────────────────────────────────────────
 
 class InMemoryTokenStore implements TokenStore {
-  private readonly store = new Map<string, OAuthTokens>()
+  private readonly store = new Map<string, OAuthTokens>();
 
   async get(key: string): Promise<OAuthTokens | null> {
-    return this.store.get(key) ?? null
+    return this.store.get(key) ?? null;
   }
   async set(key: string, tokens: OAuthTokens): Promise<void> {
-    this.store.set(key, tokens)
+    this.store.set(key, tokens);
   }
   async delete(key: string): Promise<void> {
-    this.store.delete(key)
+    this.store.delete(key);
   }
 }
 
@@ -157,42 +161,56 @@ class InMemoryTokenStore implements TokenStore {
  * ```
  */
 export class FileTokenStore implements TokenStore {
-  private readonly filePath: string
+  private readonly filePath: string;
 
   constructor(filePath: string) {
-    this.filePath = filePath
+    this.filePath = filePath;
   }
 
   async get(key: string): Promise<OAuthTokens | null> {
     try {
-      const fs = await import('fs/promises')
-      const data = await fs.readFile(this.filePath, 'utf-8')
-      const store = JSON.parse(data) as Record<string, OAuthTokens>
-      return store[key] ?? null
+      const fs = await import("fs/promises");
+      const data = await fs.readFile(this.filePath, "utf-8");
+      const store = JSON.parse(data) as Record<string, OAuthTokens>;
+      return store[key] ?? null;
     } catch {
-      return null
+      return null;
     }
   }
 
   async set(key: string, tokens: OAuthTokens): Promise<void> {
-    const fs = await import('fs/promises')
-    let store: Record<string, OAuthTokens> = {}
+    const fs = await import("fs/promises");
+    let store: Record<string, OAuthTokens> = {};
     try {
-      const data = await fs.readFile(this.filePath, 'utf-8')
-      store = JSON.parse(data)
-    } catch { /* file doesn't exist yet */ }
-    store[key] = tokens
-    await fs.writeFile(this.filePath, JSON.stringify(store, null, 2), 'utf-8')
+      const data = await fs.readFile(this.filePath, "utf-8");
+      store = JSON.parse(data);
+    } catch {
+      /* file doesn't exist yet */
+    }
+    store[key] = tokens;
+    // Write the token file with mode 0o600 (owner-only read/write).
+    // The default umask produces 0o644 (world-readable), which exposes OAuth
+    // access/refresh tokens to any user on the system (CI, shared containers).
+    await fs.writeFile(this.filePath, JSON.stringify(store, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
   }
 
   async delete(key: string): Promise<void> {
-    const fs = await import('fs/promises')
+    const fs = await import("fs/promises");
     try {
-      const data = await fs.readFile(this.filePath, 'utf-8')
-      const store = JSON.parse(data) as Record<string, OAuthTokens>
-      delete store[key]
-      await fs.writeFile(this.filePath, JSON.stringify(store, null, 2), 'utf-8')
-    } catch { /* ignore */ }
+      const data = await fs.readFile(this.filePath, "utf-8");
+      const store = JSON.parse(data) as Record<string, OAuthTokens>;
+      delete store[key];
+      // Maintain 0o600 on re-write after deletion.
+      await fs.writeFile(this.filePath, JSON.stringify(store, null, 2), {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -205,11 +223,14 @@ export class FileTokenStore implements TokenStore {
  * code exchange, token storage, and automatic refresh.
  */
 export class McpOAuthClient {
-  private readonly config: Required<Omit<McpOAuthConfig, 'clientSecret' | 'authorizationUrl' | 'authParams' | 'tokenParams'>> & Pick<McpOAuthConfig, 'clientSecret' | 'authorizationUrl' | 'authParams' | 'tokenParams'>
-  private readonly storeKey: string
+  private readonly config: Required<
+    Omit<McpOAuthConfig, "clientSecret" | "authorizationUrl" | "authParams" | "tokenParams">
+  > &
+    Pick<McpOAuthConfig, "clientSecret" | "authorizationUrl" | "authParams" | "tokenParams">;
+  private readonly storeKey: string;
   /** Cached PKCE verifier for the current auth flow. */
-  private pendingCodeVerifier: string | null = null
-  private pendingState: string | null = null
+  private pendingCodeVerifier: string | null = null;
+  private pendingState: string | null = null;
 
   constructor(config: McpOAuthConfig) {
     this.config = {
@@ -218,16 +239,16 @@ export class McpOAuthClient {
       authorizationUrl: config.authorizationUrl,
       tokenUrl: config.tokenUrl,
       scopes: config.scopes ?? [],
-      redirectUri: config.redirectUri ?? 'http://localhost:9090/callback',
-      grantType: config.grantType ?? 'authorization_code',
-      usePKCE: config.usePKCE ?? (config.grantType !== 'client_credentials'),
+      redirectUri: config.redirectUri ?? "http://localhost:9090/callback",
+      grantType: config.grantType ?? "authorization_code",
+      usePKCE: config.usePKCE ?? config.grantType !== "client_credentials",
       tokenStore: config.tokenStore ?? new InMemoryTokenStore(),
       authParams: config.authParams,
       tokenParams: config.tokenParams,
       refreshBufferSeconds: config.refreshBufferSeconds ?? 300,
-    }
+    };
     // Unique key for token storage based on client + token URL
-    this.storeKey = `oauth:${config.clientId}@${config.tokenUrl}`
+    this.storeKey = `oauth:${config.clientId}@${config.tokenUrl}`;
   }
 
   // ── Authorization Code Flow ──────────────────────────────────────────
@@ -238,75 +259,73 @@ export class McpOAuthClient {
    */
   getAuthorizationUrl(): AuthorizationUrlResult {
     if (!this.config.authorizationUrl) {
-      throw new Error('authorizationUrl is required for authorization code flow')
+      throw new Error("authorizationUrl is required for authorization code flow");
     }
 
-    const state = randomBytes(16).toString('hex')
-    this.pendingState = state
+    const state = randomBytes(16).toString("hex");
+    this.pendingState = state;
 
     const params = new URLSearchParams({
       client_id: this.config.clientId,
       redirect_uri: this.config.redirectUri,
-      response_type: 'code',
+      response_type: "code",
       state,
-      ...(this.config.scopes.length ? { scope: this.config.scopes.join(' ') } : {}),
+      ...(this.config.scopes.length ? { scope: this.config.scopes.join(" ") } : {}),
       ...(this.config.authParams ?? {}),
-    })
+    });
 
-    let codeVerifier: string | undefined
+    let codeVerifier: string | undefined;
 
     if (this.config.usePKCE) {
-      codeVerifier = randomBytes(32).toString('base64url')
-      this.pendingCodeVerifier = codeVerifier
-      const codeChallenge = createHash('sha256')
-        .update(codeVerifier)
-        .digest('base64url')
-      params.set('code_challenge', codeChallenge)
-      params.set('code_challenge_method', 'S256')
+      codeVerifier = randomBytes(32).toString("base64url");
+      this.pendingCodeVerifier = codeVerifier;
+      const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+      params.set("code_challenge", codeChallenge);
+      params.set("code_challenge_method", "S256");
     }
 
     return {
       url: `${this.config.authorizationUrl}?${params.toString()}`,
       state,
       codeVerifier,
-    }
+    };
   }
 
   /**
    * Exchange an authorization code for tokens.
    */
   async exchangeCode(code: string, state: string): Promise<OAuthTokens> {
-    // X-21 fix: always validate state — reject if no pending auth flow exists
+    // always validate state — reject if no pending auth flow exists
     if (!this.pendingState) {
-      throw new Error('No pending OAuth flow — call getAuthorizationUrl() before exchangeCode()')
+      throw new Error("No pending OAuth flow — call getAuthorizationUrl() before exchangeCode()");
     }
     if (state !== this.pendingState) {
-      throw new Error(`OAuth state mismatch: expected ${this.pendingState}, got ${state}`)
+      throw new Error(`OAuth state mismatch: expected ${this.pendingState}, got ${state}`);
     }
 
     const body: Record<string, string> = {
-      grant_type: 'authorization_code',
+      grant_type: "authorization_code",
       client_id: this.config.clientId,
       code,
       redirect_uri: this.config.redirectUri,
       ...(this.config.tokenParams ?? {}),
-    }
+    };
 
     if (this.config.clientSecret) {
-      body.client_secret = this.config.clientSecret
+      body.client_secret = this.config.clientSecret;
     }
 
     if (this.pendingCodeVerifier) {
-      body.code_verifier = this.pendingCodeVerifier
+      body.code_verifier = this.pendingCodeVerifier;
     }
 
-    const tokens = await this.tokenRequest(body)
-    await this.config.tokenStore.set(this.storeKey, tokens)
+    const tokens = await this.tokenRequest(body);
+    await this.config.tokenStore.set(this.storeKey, tokens);
 
-    this.pendingState = null
-    this.pendingCodeVerifier = null
+    this.pendingState = null;
+    this.pendingCodeVerifier = null;
 
-    return tokens
+    return tokens;
   }
 
   // ── Client Credentials Flow ──────────────────────────────────────────
@@ -315,25 +334,27 @@ export class McpOAuthClient {
    * Authenticate using client credentials (machine-to-machine).
    */
   async authenticate(): Promise<OAuthTokens> {
-    if (this.config.grantType !== 'client_credentials') {
-      throw new Error('authenticate() is only for client_credentials flow. Use getAuthorizationUrl() + exchangeCode() for auth code flow.')
+    if (this.config.grantType !== "client_credentials") {
+      throw new Error(
+        "authenticate() is only for client_credentials flow. Use getAuthorizationUrl() + exchangeCode() for auth code flow.",
+      );
     }
 
     if (!this.config.clientSecret) {
-      throw new Error('clientSecret is required for client_credentials flow')
+      throw new Error("clientSecret is required for client_credentials flow");
     }
 
     const body: Record<string, string> = {
-      grant_type: 'client_credentials',
+      grant_type: "client_credentials",
       client_id: this.config.clientId,
       client_secret: this.config.clientSecret,
-      ...(this.config.scopes.length ? { scope: this.config.scopes.join(' ') } : {}),
+      ...(this.config.scopes.length ? { scope: this.config.scopes.join(" ") } : {}),
       ...(this.config.tokenParams ?? {}),
-    }
+    };
 
-    const tokens = await this.tokenRequest(body)
-    await this.config.tokenStore.set(this.storeKey, tokens)
-    return tokens
+    const tokens = await this.tokenRequest(body);
+    await this.config.tokenStore.set(this.storeKey, tokens);
+    return tokens;
   }
 
   // ── Token Management ─────────────────────────────────────────────────
@@ -342,23 +363,23 @@ export class McpOAuthClient {
    * Get a valid access token, refreshing if needed.
    */
   async getAccessToken(): Promise<string> {
-    let tokens = await this.config.tokenStore.get(this.storeKey)
+    let tokens = await this.config.tokenStore.get(this.storeKey);
     if (!tokens) {
-      throw new Error('No tokens available. Call authenticate() or exchangeCode() first.')
+      throw new Error("No tokens available. Call authenticate() or exchangeCode() first.");
     }
 
     // Check if token needs refresh
     if (this.isExpired(tokens)) {
       if (tokens.refreshToken) {
-        tokens = await this.refreshTokens(tokens.refreshToken)
-      } else if (this.config.grantType === 'client_credentials') {
-        tokens = await this.authenticate()
+        tokens = await this.refreshTokens(tokens.refreshToken);
+      } else if (this.config.grantType === "client_credentials") {
+        tokens = await this.authenticate();
       } else {
-        throw new Error('Access token expired and no refresh token available. Re-authorize.')
+        throw new Error("Access token expired and no refresh token available. Re-authorize.");
       }
     }
 
-    return tokens.accessToken
+    return tokens.accessToken;
   }
 
   /**
@@ -371,31 +392,31 @@ export class McpOAuthClient {
    * ```
    */
   async getHeaders(): Promise<Record<string, string>> {
-    const token = await this.getAccessToken()
-    return { Authorization: `Bearer ${token}` }
+    const token = await this.getAccessToken();
+    return { Authorization: `Bearer ${token}` };
   }
 
   /**
    * Check if the client has valid (non-expired) tokens.
    */
   async hasValidTokens(): Promise<boolean> {
-    const tokens = await this.config.tokenStore.get(this.storeKey)
-    if (!tokens) return false
-    return !this.isExpired(tokens) || !!tokens.refreshToken
+    const tokens = await this.config.tokenStore.get(this.storeKey);
+    if (!tokens) return false;
+    return !this.isExpired(tokens) || !!tokens.refreshToken;
   }
 
   /**
    * Clear stored tokens (logout).
    */
   async clearTokens(): Promise<void> {
-    await this.config.tokenStore.delete(this.storeKey)
+    await this.config.tokenStore.delete(this.storeKey);
   }
 
   /**
    * Get the raw stored tokens.
    */
   async getTokens(): Promise<OAuthTokens | null> {
-    return this.config.tokenStore.get(this.storeKey)
+    return this.config.tokenStore.get(this.storeKey);
   }
 
   // ── Local Callback Server ────────────────────────────────────────────
@@ -416,118 +437,125 @@ export class McpOAuthClient {
    * ```
    */
   listenForCallback(port?: number, timeoutMs = 120_000): Promise<CallbackResult> {
-    const callbackPort = port ?? (parseInt(new URL(this.config.redirectUri).port) || 9090)
+    const callbackPort = port ?? (parseInt(new URL(this.config.redirectUri).port) || 9090);
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        server.close()
-        reject(new Error(`OAuth callback timeout after ${timeoutMs}ms`))
-      }, timeoutMs)
+        server.close();
+        reject(new Error(`OAuth callback timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       const server = createHttpServer((req: IncomingMessage, res: ServerResponse) => {
-        const url = new URL(req.url ?? '/', `http://localhost:${callbackPort}`)
+        const url = new URL(req.url ?? "/", `http://localhost:${callbackPort}`);
 
-        if (url.pathname === '/callback' || url.pathname === new URL(this.config.redirectUri).pathname) {
-          const code = url.searchParams.get('code')
-          const state = url.searchParams.get('state')
-          const error = url.searchParams.get('error')
+        if (
+          url.pathname === "/callback" ||
+          url.pathname === new URL(this.config.redirectUri).pathname
+        ) {
+          const code = url.searchParams.get("code");
+          const state = url.searchParams.get("state");
+          const error = url.searchParams.get("error");
 
           if (error) {
-            // X-24 fix: HTML-escape the error to prevent reflected XSS
-            const safeError = error.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-            res.writeHead(400, { 'Content-Type': 'text/html' })
-            res.end(`<h1>OAuth Error</h1><p>${safeError}</p><p>You can close this window.</p>`)
-            clearTimeout(timer)
-            server.close()
-            reject(new Error(`OAuth error: ${error}`))
-            return
+            // HTML-escape the error to prevent reflected XSS
+            const safeError = error
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;");
+            res.writeHead(400, { "Content-Type": "text/html" });
+            res.end(`<h1>OAuth Error</h1><p>${safeError}</p><p>You can close this window.</p>`);
+            clearTimeout(timer);
+            server.close();
+            reject(new Error(`OAuth error: ${error}`));
+            return;
           }
 
           if (code && state) {
-            res.writeHead(200, { 'Content-Type': 'text/html' })
-            res.end('<h1>Authentication Successful</h1><p>You can close this window and return to the terminal.</p>')
-            clearTimeout(timer)
-            server.close()
-            resolve({ code, state })
-            return
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(
+              "<h1>Authentication Successful</h1><p>You can close this window and return to the terminal.</p>",
+            );
+            clearTimeout(timer);
+            server.close();
+            resolve({ code, state });
+            return;
           }
         }
 
-        res.writeHead(404, { 'Content-Type': 'text/plain' })
-        res.end('Not found')
-      })
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not found");
+      });
 
       server.listen(callbackPort, () => {
         // Server is listening, ready for callback
-      })
-    })
+      });
+    });
   }
 
   // ── Internal ──────────────────────────────────────────────────────────
 
   private async refreshTokens(refreshToken: string): Promise<OAuthTokens> {
     const body: Record<string, string> = {
-      grant_type: 'refresh_token',
+      grant_type: "refresh_token",
       client_id: this.config.clientId,
       refresh_token: refreshToken,
       ...(this.config.tokenParams ?? {}),
-    }
+    };
 
     if (this.config.clientSecret) {
-      body.client_secret = this.config.clientSecret
+      body.client_secret = this.config.clientSecret;
     }
 
-    const tokens = await this.tokenRequest(body)
+    const tokens = await this.tokenRequest(body);
     // Preserve the refresh token if the server didn't return a new one
     if (!tokens.refreshToken) {
-      tokens.refreshToken = refreshToken
+      tokens.refreshToken = refreshToken;
     }
-    await this.config.tokenStore.set(this.storeKey, tokens)
-    return tokens
+    await this.config.tokenStore.set(this.storeKey, tokens);
+    return tokens;
   }
 
   private async tokenRequest(body: Record<string, string>): Promise<OAuthTokens> {
     const response = await fetch(this.config.tokenUrl, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
       },
       body: new URLSearchParams(body).toString(),
-    })
+    });
 
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`OAuth token request failed (${response.status}): ${text}`)
+      const text = await response.text();
+      throw new Error(`OAuth token request failed (${response.status}): ${text}`);
     }
 
-    const data = await response.json() as {
-      access_token: string
-      refresh_token?: string
-      expires_in?: number
-      token_type?: string
-      scope?: string
-    }
+    const data = (await response.json()) as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+      token_type?: string;
+      scope?: string;
+    };
 
     if (!data.access_token) {
-      throw new Error('OAuth token response missing access_token')
+      throw new Error("OAuth token response missing access_token");
     }
 
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
-      expiresAt: data.expires_in
-        ? Date.now() + data.expires_in * 1000
-        : undefined,
-      tokenType: data.token_type ?? 'Bearer',
+      expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+      tokenType: data.token_type ?? "Bearer",
       scope: data.scope,
-    }
+    };
   }
 
   private isExpired(tokens: OAuthTokens): boolean {
-    if (!tokens.expiresAt) return false // No expiration = never expires
-    const buffer = this.config.refreshBufferSeconds * 1000
-    return Date.now() >= tokens.expiresAt - buffer
+    if (!tokens.expiresAt) return false; // No expiration = never expires
+    const buffer = this.config.refreshBufferSeconds * 1000;
+    return Date.now() >= tokens.expiresAt - buffer;
   }
 }
 
@@ -545,51 +573,51 @@ export class McpOAuthClient {
  * import { oauthMcpServer } from 'yaaf/integrations/mcpOAuth';
  *
  * const server = await oauthMcpServer({
- *   serverName: 'github',
- *   serverUrl: 'https://mcp.github.com',
- *   oauth: {
- *     clientId: process.env.GITHUB_CLIENT_ID!,
- *     clientSecret: process.env.GITHUB_CLIENT_SECRET!,
- *     authorizationUrl: 'https://github.com/login/oauth/authorize',
- *     tokenUrl: 'https://github.com/login/oauth/access_token',
- *     scopes: ['repo'],
- *   },
+ * serverName: 'github',
+ * serverUrl: 'https://mcp.github.com',
+ * oauth: {
+ * clientId: process.env.GITHUB_CLIENT_ID!,
+ * clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+ * authorizationUrl: 'https://github.com/login/oauth/authorize',
+ * tokenUrl: 'https://github.com/login/oauth/access_token',
+ * scopes: ['repo'],
+ * },
  * });
  *
  * const plugin = new McpPlugin({ servers: [server] });
  * ```
  */
 export async function oauthMcpServer(config: {
-  serverName: string
-  serverUrl: string
-  oauth: McpOAuthConfig
+  serverName: string;
+  serverUrl: string;
+  oauth: McpOAuthConfig;
 }): Promise<{
-  name: string
-  type: 'sse'
-  url: string
-  headers: Record<string, string>
+  name: string;
+  type: "sse";
+  url: string;
+  headers: Record<string, string>;
 }> {
-  const client = new McpOAuthClient(config.oauth)
+  const client = new McpOAuthClient(config.oauth);
 
   // Try to use existing tokens, or authenticate
   if (!(await client.hasValidTokens())) {
-    if (config.oauth.grantType === 'client_credentials') {
-      await client.authenticate()
+    if (config.oauth.grantType === "client_credentials") {
+      await client.authenticate();
     } else {
       throw new Error(
         `No valid tokens for "${config.serverName}". ` +
-        'Call McpOAuthClient.getAuthorizationUrl() and exchangeCode() first, ' +
-        'or use grantType: "client_credentials" for machine-to-machine auth.',
-      )
+          "Call McpOAuthClient.getAuthorizationUrl() and exchangeCode() first, " +
+          'or use grantType: "client_credentials" for machine-to-machine auth.',
+      );
     }
   }
 
-  const headers = await client.getHeaders()
+  const headers = await client.getHeaders();
 
   return {
     name: config.serverName,
-    type: 'sse' as const,
+    type: "sse" as const,
     url: config.serverUrl,
     headers,
-  }
+  };
 }

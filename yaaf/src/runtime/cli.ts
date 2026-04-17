@@ -16,203 +16,210 @@
  * import { createCLI } from 'yaaf/cli-runtime';
  *
  * const agent = new Agent({
- *   systemPrompt: 'You are a helpful assistant.',
- *   tools: myTools,
+ * systemPrompt: 'You are a helpful assistant.',
+ * tools: myTools,
  * });
  *
  * createCLI(agent, {
- *   name: 'my-assistant',
- *   greeting: 'Hello! How can I help you today?',
- *   streaming: true,
+ * name: 'my-assistant',
+ * greeting: 'Hello! How can I help you today?',
+ * streaming: true,
  * });
  * ```
  *
  * @module runtime/cli
  */
 
-import { createInterface, Interface as ReadlineInterface } from 'node:readline'
-import { resolve } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { createInterface, Interface as ReadlineInterface } from "node:readline";
+import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { homedir } from "node:os";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Minimal agent interface — anything with a run() method. */
 export type CLIAgent = {
-  run(input: string, signal?: AbortSignal): Promise<string>
+  run(input: string, signal?: AbortSignal): Promise<string>;
   /** Optional streaming interface. If present, tokens render as they arrive. */
-  runStream?: (input: string, signal?: AbortSignal) => AsyncIterable<CLIStreamEvent>
-}
+  runStream?: (input: string, signal?: AbortSignal) => AsyncIterable<CLIStreamEvent>;
+};
 
 export type CLIStreamEvent = {
-  type: 'text_delta' | 'tool_call_start' | 'tool_call_end' | 'done'
-  text?: string
-  toolName?: string
-}
+  type: "text_delta" | "tool_call_start" | "tool_call_end" | "done";
+  text?: string;
+  toolName?: string;
+};
 
 export type CLITheme = {
   /** Color for the user prompt indicator */
-  promptColor: string
+  promptColor: string;
   /** Color for the agent name/indicator */
-  agentColor: string
+  agentColor: string;
   /** Color for system messages */
-  systemColor: string
+  systemColor: string;
   /** Color for errors */
-  errorColor: string
-}
+  errorColor: string;
+};
 
 export type CLIConfig = {
   /** Display name for the agent (shown in prompt) */
-  name?: string
+  name?: string;
   /** Greeting message displayed on startup */
-  greeting?: string
+  greeting?: string;
   /** Enable streaming mode (requires agent.runStream) */
-  streaming?: boolean
+  streaming?: boolean;
   /** User prompt string. Default: 'you ▸ ' */
-  promptString?: string
+  promptString?: string;
   /** Agent response prefix. Default: '<name> ▸ ' */
-  agentPrefix?: string
+  agentPrefix?: string;
   /** Directory for history file and session data */
-  dataDir?: string
+  dataDir?: string;
   /** Max history entries to persist */
-  maxHistory?: number
+  maxHistory?: number;
   /** Custom theme colors */
-  theme?: Partial<CLITheme>
+  theme?: Partial<CLITheme>;
   /** Custom slash commands */
-  commands?: Record<string, CLISlashCommand>
+  commands?: Record<string, CLISlashCommand>;
   /** Called before the agent runs (e.g., to inject context). Return modified input. */
-  beforeRun?: (input: string) => string | Promise<string>
+  beforeRun?: (input: string) => string | Promise<string>;
   /** Called after the agent responds. */
-  afterRun?: (input: string, response: string) => void | Promise<void>
+  afterRun?: (input: string, response: string) => void | Promise<void>;
   /** Permission handler for tool approvals. Return true to allow, false to deny. */
-  approveToolCall?: (toolName: string, args: Record<string, unknown>) => Promise<boolean>
+  approveToolCall?: (toolName: string, args: Record<string, unknown>) => Promise<boolean>;
   /** Called on graceful shutdown. */
-  onExit?: () => void | Promise<void>
-}
+  onExit?: () => void | Promise<void>;
+};
 
 export type CLISlashCommand = {
-  description: string
-  handler: (args: string, ctx: CLIContext) => void | Promise<void>
-}
+  description: string;
+  handler: (args: string, ctx: CLIContext) => void | Promise<void>;
+};
 
 export type CLIContext = {
   /** Number of messages in this session */
-  messageCount: number
+  messageCount: number;
   /** Session start time */
-  startedAt: Date
+  startedAt: Date;
   /** Clear the screen */
-  clear: () => void
+  clear: () => void;
   /** Print a system message */
-  print: (msg: string) => void
-}
+  print: (msg: string) => void;
+};
 
 // ── ANSI Colors ──────────────────────────────────────────────────────────────
 
 const ANSI = {
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  italic: '\x1b[3m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  magenta: '\x1b[35m',
-  blue: '\x1b[34m',
-  reset: '\x1b[0m',
-  clearLine: '\x1b[2K\r',
-}
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  italic: "\x1b[3m",
+  cyan: "\x1b[36m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  magenta: "\x1b[35m",
+  blue: "\x1b[34m",
+  reset: "\x1b[0m",
+  clearLine: "\x1b[2K\r",
+};
 
 const DEFAULT_THEME: CLITheme = {
   promptColor: ANSI.cyan,
   agentColor: ANSI.magenta,
   systemColor: ANSI.dim,
   errorColor: ANSI.red,
-}
+};
 
 // ── CLI Runtime ──────────────────────────────────────────────────────────────
 
 export function createCLI(agent: CLIAgent, config: CLIConfig = {}): void {
-  const name = config.name ?? 'agent'
-  const theme = { ...DEFAULT_THEME, ...config.theme }
-  const promptStr = config.promptString ?? `${theme.promptColor}you ▸${ANSI.reset} `
-  const agentPrefix = config.agentPrefix ?? `${theme.agentColor}${ANSI.bold}${name} ▸${ANSI.reset} `
-  const dataDir = config.dataDir ?? resolve(homedir(), `.${name}`)
-  const maxHistory = config.maxHistory ?? 1000
+  const name = config.name ?? "agent";
+  const theme = { ...DEFAULT_THEME, ...config.theme };
+  const promptStr = config.promptString ?? `${theme.promptColor}you ▸${ANSI.reset} `;
+  const agentPrefix =
+    config.agentPrefix ?? `${theme.agentColor}${ANSI.bold}${name} ▸${ANSI.reset} `;
+  const dataDir = config.dataDir ?? resolve(homedir(), `.${name}`);
+  const maxHistory = config.maxHistory ?? 1000;
 
-  let messageCount = 0
-  let isProcessing = false
-  const startedAt = new Date()
+  let messageCount = 0;
+  let isProcessing = false;
+  const startedAt = new Date();
 
   // Ensure data directory
   if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true })
+    mkdirSync(dataDir, { recursive: true });
   }
 
-  const historyFile = resolve(dataDir, 'history')
+  const historyFile = resolve(dataDir, "history");
 
   // Load history
-  const history: string[] = []
+  const history: string[] = [];
   if (existsSync(historyFile)) {
     try {
-      const lines = readFileSync(historyFile, 'utf-8').split('\n').filter(Boolean)
-      history.push(...lines.slice(-maxHistory))
-    } catch { /* ignore */ }
+      const lines = readFileSync(historyFile, "utf-8").split("\n").filter(Boolean);
+      history.push(...lines.slice(-maxHistory));
+    } catch {
+      /* ignore */
+    }
   }
 
   // Build slash commands
   const builtinCommands: Record<string, CLISlashCommand> = {
-    quit: { description: 'Exit', handler: () => shutdown() },
-    exit: { description: 'Exit', handler: () => shutdown() },
-    q: { description: 'Exit', handler: () => shutdown() },
+    quit: { description: "Exit", handler: () => shutdown() },
+    exit: { description: "Exit", handler: () => shutdown() },
+    q: { description: "Exit", handler: () => shutdown() },
     clear: {
-      description: 'Clear screen',
+      description: "Clear screen",
       handler: (_, ctx) => {
-        ctx.clear()
-        ctx.print(`${ANSI.green}✓ Screen cleared${ANSI.reset}`)
+        ctx.clear();
+        ctx.print(`${ANSI.green}✓ Screen cleared${ANSI.reset}`);
       },
     },
     help: {
-      description: 'Show available commands',
+      description: "Show available commands",
       handler: (_, ctx) => {
-        const allCmds = { ...builtinCommands, ...config.commands }
-        ctx.print(`\n  ${ANSI.bold}Commands:${ANSI.reset}`)
-        const shown = new Set<string>()
+        const allCmds = { ...builtinCommands, ...config.commands };
+        ctx.print(`\n ${ANSI.bold}Commands:${ANSI.reset}`);
+        const shown = new Set<string>();
         for (const [cmd, def] of Object.entries(allCmds)) {
-          if (shown.has(def.description)) continue
-          shown.add(def.description)
-          ctx.print(`    ${ANSI.green}/${cmd}${ANSI.reset}  ${ANSI.dim}${def.description}${ANSI.reset}`)
+          if (shown.has(def.description)) continue;
+          shown.add(def.description);
+          ctx.print(
+            ` ${ANSI.green}/${cmd}${ANSI.reset} ${ANSI.dim}${def.description}${ANSI.reset}`,
+          );
         }
-        ctx.print('')
+        ctx.print("");
       },
     },
     history: {
-      description: 'Show recent history',
+      description: "Show recent history",
       handler: (_, ctx) => {
-        const recent = history.slice(-10)
-        ctx.print(`\n  ${ANSI.bold}Recent (${recent.length}):${ANSI.reset}`)
+        const recent = history.slice(-10);
+        ctx.print(`\n ${ANSI.bold}Recent (${recent.length}):${ANSI.reset}`);
         for (const entry of recent) {
-          ctx.print(`    ${ANSI.dim}${entry}${ANSI.reset}`)
+          ctx.print(` ${ANSI.dim}${entry}${ANSI.reset}`);
         }
-        ctx.print('')
+        ctx.print("");
       },
     },
-  }
+  };
 
-  const allCommands = { ...builtinCommands, ...config.commands }
+  const allCommands = { ...builtinCommands, ...config.commands };
 
   // Build context object for slash commands
   const ctx: CLIContext = {
-    get messageCount() { return messageCount },
+    get messageCount() {
+      return messageCount;
+    },
     startedAt,
     clear: () => console.clear(),
     print: (msg: string) => console.log(msg),
-  }
+  };
 
   // Print greeting
   if (config.greeting) {
-    console.log(`\n  ${theme.agentColor}${config.greeting}${ANSI.reset}\n`)
+    console.log(`\n ${theme.agentColor}${config.greeting}${ANSI.reset}\n`);
   } else {
-    console.log(`\n  ${ANSI.dim}Type a message to start. /help for commands.${ANSI.reset}\n`)
+    console.log(`\n ${ANSI.dim}Type a message to start. /help for commands.${ANSI.reset}\n`);
   }
 
   // Create readline interface
@@ -223,121 +230,127 @@ export function createCLI(agent: CLIAgent, config: CLIConfig = {}): void {
     terminal: true,
     history,
     historySize: maxHistory,
-  })
+  });
 
   // Graceful shutdown
   async function shutdown(): Promise<void> {
     // Save history
     try {
-      writeFileSync(historyFile, history.slice(-maxHistory).join('\n') + '\n', 'utf-8')
-    } catch { /* ignore */ }
+      writeFileSync(historyFile, history.slice(-maxHistory).join("\n") + "\n", "utf-8");
+    } catch {
+      /* ignore */
+    }
 
-    const elapsed = ((Date.now() - startedAt.getTime()) / 1000).toFixed(0)
-    console.log(`\n  ${ANSI.dim}Session: ${messageCount} messages in ${elapsed}s${ANSI.reset}\n`)
+    const elapsed = ((Date.now() - startedAt.getTime()) / 1000).toFixed(0);
+    console.log(`\n ${ANSI.dim}Session: ${messageCount} messages in ${elapsed}s${ANSI.reset}\n`);
 
-    await config.onExit?.()
-    process.exit(0)
+    await config.onExit?.();
+    process.exit(0);
   }
 
   // Handle SIGINT
-  process.on('SIGINT', () => void shutdown())
+  process.on("SIGINT", () => void shutdown());
 
-  rl.prompt()
+  rl.prompt();
 
-  rl.on('line', async (line) => {
-    const input = line.trim()
+  rl.on("line", async (line) => {
+    const input = line.trim();
     if (!input) {
-      rl.prompt()
-      return
+      rl.prompt();
+      return;
     }
 
     // Persist to history
-    history.push(input)
+    history.push(input);
 
     // Handle slash commands
-    if (input.startsWith('/')) {
-      const [cmdName, ...cmdArgs] = input.slice(1).split(/\s+/)
-      const cmd = allCommands[cmdName!]
+    if (input.startsWith("/")) {
+      const [cmdName, ...cmdArgs] = input.slice(1).split(/\s+/);
+      const cmd = allCommands[cmdName!];
       if (cmd) {
-        await cmd.handler(cmdArgs.join(' '), ctx)
+        await cmd.handler(cmdArgs.join(" "), ctx);
       } else {
-        console.log(`  ${theme.errorColor}Unknown command: /${cmdName}${ANSI.reset}`)
+        console.log(` ${theme.errorColor}Unknown command: /${cmdName}${ANSI.reset}`);
       }
-      rl.prompt()
-      return
+      rl.prompt();
+      return;
     }
 
     // Process through agent
     if (isProcessing) {
-      console.log(`  ${ANSI.yellow}⏳ Still processing previous message...${ANSI.reset}`)
-      rl.prompt()
-      return
+      console.log(` ${ANSI.yellow}⏳ Still processing previous message...${ANSI.reset}`);
+      rl.prompt();
+      return;
     }
 
-    isProcessing = true
-    messageCount++
+    isProcessing = true;
+    messageCount++;
 
     try {
       // Pre-processing hook
-      let processedInput = input
+      let processedInput = input;
       if (config.beforeRun) {
-        processedInput = await config.beforeRun(input)
+        processedInput = await config.beforeRun(input);
       }
 
       // Streaming or batch mode
       if (config.streaming && agent.runStream) {
-        process.stdout.write(`\n${agentPrefix}`)
+        process.stdout.write(`\n${agentPrefix}`);
 
-        let fullResponse = ''
+        let fullResponse = "";
         for await (const event of agent.runStream(processedInput)) {
           switch (event.type) {
-            case 'text_delta':
+            case "text_delta":
               if (event.text) {
-                process.stdout.write(event.text)
-                fullResponse += event.text
+                process.stdout.write(event.text);
+                fullResponse += event.text;
               }
-              break
-            case 'tool_call_start':
-              process.stdout.write(`\n  ${ANSI.dim}⚙ ${event.toolName ?? 'tool'}...${ANSI.reset}`)
-              break
-            case 'tool_call_end':
-              process.stdout.write(` ${ANSI.green}✓${ANSI.reset}\n`)
-              break
+              break;
+            case "tool_call_start":
+              process.stdout.write(`\n ${ANSI.dim}⚙ ${event.toolName ?? "tool"}...${ANSI.reset}`);
+              break;
+            case "tool_call_end":
+              process.stdout.write(` ${ANSI.green}✓${ANSI.reset}\n`);
+              break;
           }
         }
-        console.log('\n')
+        console.log("\n");
 
-        await config.afterRun?.(input, fullResponse)
+        await config.afterRun?.(input, fullResponse);
       } else {
         // Batch mode — show spinner
-        const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        let frame = 0
+        const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let frame = 0;
         const spinner = setInterval(() => {
-          process.stdout.write(`${ANSI.clearLine}  ${ANSI.dim}${spinnerFrames[frame % spinnerFrames.length]} Thinking...${ANSI.reset}`)
-          frame++
-        }, 80)
+          process.stdout.write(
+            `${ANSI.clearLine} ${ANSI.dim}${spinnerFrames[frame % spinnerFrames.length]} Thinking...${ANSI.reset}`,
+          );
+          frame++;
+        }, 80);
 
         try {
-          const response = await agent.run(processedInput)
-          clearInterval(spinner)
-          process.stdout.write(ANSI.clearLine)
-          console.log(`\n${agentPrefix}${response}\n`)
+          const response = await agent.run(processedInput);
+          clearInterval(spinner);
+          process.stdout.write(ANSI.clearLine);
+          console.log(`\n${agentPrefix}${response}\n`);
 
-          await config.afterRun?.(input, response)
+          await config.afterRun?.(input, response);
         } catch (err) {
-          clearInterval(spinner)
-          process.stdout.write(ANSI.clearLine)
-          throw err
+          clearInterval(spinner);
+          process.stdout.write(ANSI.clearLine);
+          throw err;
         }
       }
     } catch (err) {
-      console.error(`  ${theme.errorColor}Error: ${err instanceof Error ? err.message : String(err)}${ANSI.reset}\n`)
+      console.error(
+        ` ${theme.errorColor}Error: ${err instanceof Error ? err.message : String(err)}${ANSI.reset}\n`,
+      );
     } finally {
-      isProcessing = false
+      isProcessing = false;
     }
 
-    rl.prompt()
-  })
+    rl.prompt();
+  });
 
-  rl.on('close', () => void shutdown())
+  rl.on("close", () => void shutdown());
 }

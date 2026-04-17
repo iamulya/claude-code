@@ -17,14 +17,14 @@
  * import { rbac } from 'yaaf'
  *
  * const agent = new Agent({
- *   tools: [...],
- *   accessPolicy: {
- *     authorization: rbac({
- *       viewer: ['search_*', 'read_*'],
- *       editor: ['search_*', 'read_*', 'write_*'],
- *       admin: ['*'],
- *     }),
- *   },
+ * tools: [...],
+ * accessPolicy: {
+ * authorization: rbac({
+ * viewer: ['search_*', 'read_*'],
+ * editor: ['search_*', 'read_*', 'write_*'],
+ * admin: ['*'],
+ * }),
+ * },
  * })
  * ```
  *
@@ -33,20 +33,20 @@
  * import { abac, when, CompositeStrategy, TenantScopeStrategy } from 'yaaf'
  *
  * const agent = new Agent({
- *   accessPolicy: {
- *     authorization: CompositeStrategy.firstMatch([
- *       abac([
- *         when((u) => u.attributes?.isContractor).deny('delete_*', 'Contractors cannot delete'),
- *         when((u) => u.attributes?.department === 'finance').allow('query_invoices'),
- *       ]),
- *       rbac({ viewer: ['read_*'], admin: ['*'] }),
- *     ]),
- *     dataScope: new TenantScopeStrategy({ bypassRoles: ['super_admin'] }),
- *   },
+ * accessPolicy: {
+ * authorization: CompositeStrategy.firstMatch([
+ * abac([
+ * when((u) => u.attributes?.isContractor).deny('delete_*', 'Contractors cannot delete'),
+ * when((u) => u.attributes?.department === 'finance').allow('query_invoices'),
+ * ]),
+ * rbac({ viewer: ['read_*'], admin: ['*'] }),
+ * ]),
+ * dataScope: new TenantScopeStrategy({ bypassRoles: ['super_admin'] }),
+ * },
  * })
  *
  * await agent.run('Show me invoices', {
- *   user: { userId: 'alice', roles: ['viewer'], attributes: { tenantId: 'acme' } },
+ * user: { userId: 'alice', roles: ['viewer'], attributes: { tenantId: 'acme' } },
  * })
  * ```
  *
@@ -70,7 +70,7 @@ export type {
   IncomingRequest,
   AccessPolicy,
   AccessDecisionEvent,
-} from './types.js'
+} from "./types.js";
 
 // ── Authorization Strategies ─────────────────────────────────────────────────
 export {
@@ -85,7 +85,7 @@ export {
   type RoleStrategyConfig,
   type AttributeRule,
   type AttributeStrategyConfig,
-} from './authorization.js'
+} from "./authorization.js";
 
 // ── Data Scoping Strategies ──────────────────────────────────────────────────
 export {
@@ -104,7 +104,7 @@ export {
   type HierarchyScopeConfig,
   type ResolverScopeConfig,
   type SystemAwareScopeConfig,
-} from './scoping.js'
+} from "./scoping.js";
 
 // ── Identity Providers ───────────────────────────────────────────────────────
 export {
@@ -117,7 +117,7 @@ export {
   type ApiKeyIdentityConfig,
   type OidcIdentityConfig,
   type CompositeIdentityConfig,
-} from './providers.js'
+} from "./providers.js";
 
 // ── JWT (internal, but exposed for advanced use) ─────────────────────────────
 export {
@@ -128,4 +128,4 @@ export {
   type JwtPayload,
   type JwtHeader,
   type JwtVerifyOptions,
-} from './jwt.js'
+} from "./jwt.js";

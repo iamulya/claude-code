@@ -11,11 +11,7 @@
  * @module cli-ink
  */
 
-export {
-  createInkCLI,
-  type InkCLIConfig,
-  type InkCLITheme,
-} from './runtime/inkCli.js'
+export { createInkCLI, type InkCLIConfig, type InkCLITheme } from "./runtime/inkCli.js";
 
 // Re-export adapter for convenience
 export {
@@ -23,4 +19,4 @@ export {
   adaptStream,
   type RuntimeStreamEvent,
   type StreamableAgent,
-} from './runtime/adapter.js'
+} from "./runtime/adapter.js";

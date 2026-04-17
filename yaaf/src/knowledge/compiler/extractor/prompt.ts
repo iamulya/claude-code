@@ -21,21 +21,21 @@
  * - Use few-shot examples for the expected JSON format
  */
 
-import type { KBOntology, ConceptRegistry } from '../../ontology/index.js'
-import type { IngestedContent } from '../ingester/index.js'
-import type { StaticAnalysisResult } from './types.js'
+import type { KBOntology, ConceptRegistry } from "../../ontology/index.js";
+import type { IngestedContent } from "../ingester/index.js";
+import type { StaticAnalysisResult } from "./types.js";
 
 // ── Token budget ──────────────────────────────────────────────────────────────
 
 /** Maximum characters of source text to include in the extraction prompt */
-const SOURCE_TEXT_MAX_CHARS = 8_000
+const SOURCE_TEXT_MAX_CHARS = 8_000;
 
 /**
  * Maximum registry entries to show in the prompt.
  * Too many entries overwhelm the LLM and reduce classification accuracy.
  * We prioritize entries that match vocabulary mentions in the source.
  */
-const MAX_REGISTRY_ENTRIES_IN_PROMPT = 30
+const MAX_REGISTRY_ENTRIES_IN_PROMPT = 30;
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -45,26 +45,24 @@ export function buildExtractionSystemPrompt(ontology: KBOntology): string {
       const requiredFields = Object.entries(schema.frontmatter.fields)
         .filter(([, f]) => f.required)
         .map(([name, f]) => `${name} (${f.type}): ${f.description}`)
-        .join(', ')
+        .join(", ");
 
-      const sections = schema.articleStructure
-        .map(s => s.heading)
-        .join(', ')
+      const sections = schema.articleStructure.map((s) => s.heading).join(", ");
 
       return [
-        `  ${typeName}: ${schema.description}`,
-        requiredFields ? `    Required frontmatter: ${requiredFields}` : '',
-        sections ? `    Article sections: ${sections}` : '',
-        schema.linkableTo.length > 0
-          ? `    Can link to: ${schema.linkableTo.join(', ')}`
-          : '',
-      ].filter(Boolean).join('\n')
+        ` ${typeName}: ${schema.description}`,
+        requiredFields ? ` Required frontmatter: ${requiredFields}` : "",
+        sections ? ` Article sections: ${sections}` : "",
+        schema.linkableTo.length > 0 ? ` Can link to: ${schema.linkableTo.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     })
-    .join('\n\n')
+    .join("\n\n");
 
   const relTypes = ontology.relationshipTypes
-    .map(r => `  ${r.name}: (${r.from} → ${r.to}) ${r.description}`)
-    .join('\n')
+    .map((r) => ` ${r.name}: (${r.from} → ${r.to}) ${r.description}`)
+    .join("\n");
 
   return [
     `You are a knowledge base compilation assistant for the following domain:`,
@@ -79,7 +77,7 @@ export function buildExtractionSystemPrompt(ontology: KBOntology): string {
     entityTypeBlocks,
     ``,
     `# Relationship Types`,
-    relTypes ? relTypes : `  (none defined)`,
+    relTypes ? relTypes : ` (none defined)`,
     ``,
     `# Rules`,
     `1. One source can produce multiple articles (e.g., a survey paper → many concept updates).`,
@@ -89,7 +87,7 @@ export function buildExtractionSystemPrompt(ontology: KBOntology): string {
     `5. docId format: {entityType}s/{slug} where slug is lowercase + hyphens. Example: concepts/attention-mechanism`,
     `6. candidateNewConcepts are entities mentioned but NOT in the registry — suggest creating stubs.`,
     `7. Your output must be valid JSON matching the schema exactly.`,
-  ].join('\n')
+  ].join("\n");
 }
 
 // ── User prompt ───────────────────────────────────────────────────────────────
@@ -101,59 +99,62 @@ export function buildExtractionUserPrompt(
   ontology: KBOntology,
 ): string {
   // Select the most relevant registry entries to show
-  const relevantRegistryEntries = selectRelevantRegistryEntries(
-    staticResult,
-    registry,
-  )
+  const relevantRegistryEntries = selectRelevantRegistryEntries(staticResult, registry);
 
   const registryBlock =
     relevantRegistryEntries.length > 0
       ? relevantRegistryEntries
-          .map(e => `  - "${e.canonicalTitle}" [${e.entityType}] → docId: ${e.docId}`)
-          .join('\n')
-      : '  (empty — this is the first compilation run)'
+          .map((e) => ` - "${e.canonicalTitle}" [${e.entityType}] → docId: ${e.docId}`)
+          .join("\n")
+      : " (empty — this is the first compilation run)";
 
   // Vocabulary terms that appear in the source
   const mentionedVocabBlock =
     staticResult.entityMentions.length > 0
       ? staticResult.entityMentions
           .slice(0, 20)
-          .map(m => `  - "${m.canonicalTerm}" [${m.entityType ?? 'unknown'}] (${m.count}x)${m.docId ? ` → compiled at: ${m.docId}` : ' → NOT YET COMPILED'}`)
-          .join('\n')
-      : '  (none detected)'
+          .map(
+            (m) =>
+              ` - "${m.canonicalTerm}" [${m.entityType ?? "unknown"}] (${m.count}x)${m.docId ? ` → compiled at: ${m.docId}` : " → NOT YET COMPILED"}`,
+          )
+          .join("\n")
+      : " (none detected)";
 
   // Registry matches (already-compiled articles that match this source)
   const registryMatchBlock =
     staticResult.registryMatches.length > 0
       ? staticResult.registryMatches
-          .map(m => `  - "${m.canonicalTitle}" [${m.entityType}] docId=${m.docId} confidence=${(m.confidence * 100).toFixed(0)}%`)
-          .join('\n')
-      : '  (no strong matches — likely a new article)'
+          .map(
+            (m) =>
+              ` - "${m.canonicalTitle}" [${m.entityType}] docId=${m.docId} confidence=${(m.confidence * 100).toFixed(0)}%`,
+          )
+          .join("\n")
+      : " (no strong matches — likely a new article)";
 
   // Directory convention hint
   const directoryHint = staticResult.directoryHint
     ? `\nDirectory convention suggests entity type: **${staticResult.directoryHint}**`
-    : ''
+    : "";
 
   // Truncate source text to token budget
   const sourceText =
     content.text.length > SOURCE_TEXT_MAX_CHARS
       ? content.text.slice(0, SOURCE_TEXT_MAX_CHARS) +
         `\n\n[... truncated at ${SOURCE_TEXT_MAX_CHARS} chars — ${content.text.length - SOURCE_TEXT_MAX_CHARS} chars omitted ...]`
-      : content.text
+      : content.text;
 
   // Image summary (if any)
   const imageBlock =
     content.images.length > 0
-      ? `Images: ${content.images.length} local images found (${content.images.map(i => i.altText || 'untitled').join(', ')})`
-      : ''
+      ? `Images: ${content.images.length} local images found (${content.images.map((i) => i.altText || "untitled").join(", ")})`
+      : "";
 
   return [
     `# Source Document`,
     `File: ${content.sourceFile}`,
     `MIME type: ${content.mimeType}`,
-    content.title ? `Detected title: "${content.title}"` : '',
-    content.sourceUrl ? `Original URL: ${content.sourceUrl}` : '',
+    content.title ? `Detected title: "${content.title}"` : "",
+    content.sourceUrl ? `Original URL: ${content.sourceUrl}` : "",
     imageBlock,
     directoryHint,
     ``,
@@ -179,11 +180,13 @@ export function buildExtractionUserPrompt(
     JSON.stringify(EXTRACTION_RESPONSE_SCHEMA_EXAMPLE, null, 2),
     `\`\`\``,
     ``,
-    `IMPORTANT: entityType must be one of: ${Object.keys(ontology.entityTypes).join(', ')}`,
+    `IMPORTANT: entityType must be one of: ${Object.keys(ontology.entityTypes).join(", ")}`,
     `docId format: {entityType}s/{hyphen-slug} e.g., concepts/attention-mechanism`,
     `knownLinkDocIds: ONLY use docIds from the registry shown above.`,
     `Output ONLY valid JSON, no markdown, no explanation.`,
-  ].filter(l => l !== '').join('\n')
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
 }
 
 // ── Response schema example ───────────────────────────────────────────────────
@@ -195,29 +198,29 @@ export function buildExtractionUserPrompt(
 const EXTRACTION_RESPONSE_SCHEMA_EXAMPLE = {
   articles: [
     {
-      canonicalTitle: 'Attention Mechanism',
-      entityType: 'concept',
-      action: 'create',
+      canonicalTitle: "Attention Mechanism",
+      entityType: "concept",
+      action: "create",
       existingDocId: null,
-      docIdSuggestion: 'concepts/attention-mechanism',
-      knownLinkDocIds: ['concepts/transformer', 'tools/pytorch'],
+      docIdSuggestion: "concepts/attention-mechanism",
+      knownLinkDocIds: ["concepts/transformer", "tools/pytorch"],
       candidateNewConcepts: [
         {
-          name: 'Query-Key-Value Attention',
-          entityType: 'concept',
-          description: 'The specific formulation of attention using query, key, and value matrices',
+          name: "Query-Key-Value Attention",
+          entityType: "concept",
+          description: "The specific formulation of attention using query, key, and value matrices",
           mentionCount: 3,
         },
       ],
       suggestedFrontmatter: {
-        tags: ['nlp', 'transformers', 'deep-learning'],
-        year_introduced: '2017',
+        tags: ["nlp", "transformers", "deep-learning"],
+        year_introduced: "2017",
       },
       skipReason: null,
       confidence: 0.92,
     },
   ],
-}
+};
 
 // ── Registry selection ────────────────────────────────────────────────────────
 
@@ -232,34 +235,32 @@ function selectRelevantRegistryEntries(
 ): Array<{ docId: string; canonicalTitle: string; entityType: string }> {
   // Start with entries that directly match vocabulary mentions
   const mentionedDocIds = new Set(
-    staticResult.entityMentions
-      .filter(m => m.docId)
-      .map(m => m.docId!),
-  )
+    staticResult.entityMentions.filter((m) => m.docId).map((m) => m.docId!),
+  );
 
-  const prioritized: Array<{ docId: string; canonicalTitle: string; entityType: string }> = []
+  const prioritized: Array<{ docId: string; canonicalTitle: string; entityType: string }> = [];
 
   // First: add direct vocabulary matches
   for (const docId of mentionedDocIds) {
-    const entry = registry.get(docId)
+    const entry = registry.get(docId);
     if (entry) {
       prioritized.push({
         docId: entry.docId,
         canonicalTitle: entry.canonicalTitle,
         entityType: entry.entityType,
-      })
+      });
     }
   }
 
   // Then: fill up to the cap with remaining entries, sorted by title
   if (prioritized.length < MAX_REGISTRY_ENTRIES_IN_PROMPT) {
     const remaining = Array.from(registry.values())
-      .filter(e => !mentionedDocIds.has(e.docId))
+      .filter((e) => !mentionedDocIds.has(e.docId))
       .sort((a, b) => a.canonicalTitle.localeCompare(b.canonicalTitle))
-      .slice(0, MAX_REGISTRY_ENTRIES_IN_PROMPT - prioritized.length)
+      .slice(0, MAX_REGISTRY_ENTRIES_IN_PROMPT - prioritized.length);
 
-    prioritized.push(...remaining)
+    prioritized.push(...remaining);
   }
 
-  return prioritized.slice(0, MAX_REGISTRY_ENTRIES_IN_PROMPT)
+  return prioritized.slice(0, MAX_REGISTRY_ENTRIES_IN_PROMPT);
 }

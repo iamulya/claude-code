@@ -12,9 +12,9 @@
  * 2. Otherwise → fall back to basic pdf-parse text dump (low quality)
  */
 
-import { readFile } from 'fs/promises'
-import { detectMimeType } from './types.js'
-import type { Ingester, IngestedContent, IngesterOptions } from './types.js'
+import { readFile } from "fs/promises";
+import { detectMimeType } from "./types.js";
+import type { Ingester, IngestedContent, IngesterOptions } from "./types.js";
 
 // ── PDF extraction function type ──────────────────────────────────────────────
 
@@ -32,17 +32,17 @@ import type { Ingester, IngestedContent, IngesterOptions } from './types.js'
  * @example Custom extractor with any LLM:
  * ```ts
  * const extractFn: PdfExtractFn = async (pdfBase64) => {
- *   const response = await myLlm.generateContent({
- *     parts: [
- *       { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
- *       { text: 'Convert this PDF to Markdown. Preserve tables, equations, and figures.' },
- *     ],
- *   })
- *   return response.text()
+ * const response = await myLlm.generateContent({
+ * parts: [
+ * { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+ * { text: 'Convert this PDF to Markdown. Preserve tables, equations, and figures.' },
+ * ],
+ * })
+ * return response.text()
  * }
  * ```
  */
-export type PdfExtractFn = (pdfBase64: string, filename: string) => Promise<string>
+export type PdfExtractFn = (pdfBase64: string, filename: string) => Promise<string>;
 
 // ── System prompt for PDF-to-Markdown ─────────────────────────────────────────
 
@@ -60,20 +60,20 @@ Rules:
 9. Mark code blocks with appropriate language tags
 10. Include the paper's metadata (title, authors, abstract) at the top
 
-Output ONLY the markdown. No commentary.`
+Output ONLY the markdown. No commentary.`;
 
 // ── Built-in Gemini PDF extractor ─────────────────────────────────────────────
 
 export type GeminiPdfExtractorOptions = {
   /** Gemini API key. Falls back to GEMINI_API_KEY env var. */
-  apiKey?: string
+  apiKey?: string;
   /** Model to use. Default: 'gemini-3-flash-preview' */
-  model?: string
+  model?: string;
   /** Temperature for extraction (lower = more faithful). Default: 0.1 */
-  temperature?: number
+  temperature?: number;
   /** Max output tokens. Default: 65536 */
-  maxOutputTokens?: number
-}
+  maxOutputTokens?: number;
+};
 
 /**
  * Create a PdfExtractFn backed by the Gemini REST API.
@@ -85,86 +85,88 @@ export type GeminiPdfExtractorOptions = {
  * ```
  */
 export function makeGeminiPdfExtractor(options: GeminiPdfExtractorOptions = {}): PdfExtractFn {
-  const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY
+  const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'Gemini PDF extractor requires an API key.\n' +
-      'Set GEMINI_API_KEY environment variable or pass apiKey in options.',
-    )
+      "Gemini PDF extractor requires an API key.\n" +
+        "Set GEMINI_API_KEY environment variable or pass apiKey in options.",
+    );
   }
 
-  const model = options.model ?? 'gemini-3-flash-preview'
-  const temperature = options.temperature ?? 0.1
-  const maxOutputTokens = options.maxOutputTokens ?? 65536
+  const model = options.model ?? "gemini-3-flash-preview";
+  const temperature = options.temperature ?? 0.1;
+  const maxOutputTokens = options.maxOutputTokens ?? 65536;
 
   return async (pdfBase64: string, filename: string): Promise<string> => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: PDF_SYSTEM_PROMPT }] },
-        contents: [{
-          parts: [
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: pdfBase64,
+        contents: [
+          {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: pdfBase64,
+                },
               },
-            },
-            {
-              text: `Convert this PDF (${filename}) to clean, structured Markdown. Preserve all content including tables, equations, and figure captions.`,
-            },
-          ],
-        }],
+              {
+                text: `Convert this PDF (${filename}) to clean, structured Markdown. Preserve all content including tables, equations, and figure captions.`,
+              },
+            ],
+          },
+        ],
         generationConfig: {
           maxOutputTokens,
           temperature,
         },
       }),
-    })
+    });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '')
+      const body = await response.text().catch(() => "");
       throw new Error(
         `Gemini PDF extraction failed (${response.status}).\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}\n` +
-        `Response: ${body.slice(0, 300)}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}\n` +
+          `Response: ${body.slice(0, 300)}`,
+      );
     }
 
-    const json = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-      usageMetadata?: Record<string, unknown>
-    }
+    const json = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: Record<string, unknown>;
+    };
 
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
       throw new Error(
         `Gemini returned empty response for PDF extraction.\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}`,
+      );
     }
 
-    return text
-  }
+    return text;
+  };
 }
 
 // ── Built-in Claude (Anthropic) PDF extractor ─────────────────────────────────
 
 export type ClaudePdfExtractorOptions = {
   /** Anthropic API key. Falls back to ANTHROPIC_API_KEY env var. */
-  apiKey?: string
+  apiKey?: string;
   /** Model to use. Default: 'claude-sonnet-4-20250514' */
-  model?: string
+  model?: string;
   /** Temperature for extraction (lower = more faithful). Default: 0.1 */
-  temperature?: number
+  temperature?: number;
   /** Max output tokens. Default: 16384 */
-  maxTokens?: number
-}
+  maxTokens?: number;
+};
 
 /**
  * Create a PdfExtractFn backed by the Anthropic Messages API.
@@ -179,92 +181,94 @@ export type ClaudePdfExtractorOptions = {
  * ```
  */
 export function makeClaudePdfExtractor(options: ClaudePdfExtractorOptions = {}): PdfExtractFn {
-  const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY
+  const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'Claude PDF extractor requires an API key.\n' +
-      'Set ANTHROPIC_API_KEY environment variable or pass apiKey in options.',
-    )
+      "Claude PDF extractor requires an API key.\n" +
+        "Set ANTHROPIC_API_KEY environment variable or pass apiKey in options.",
+    );
   }
 
-  const model = options.model ?? 'claude-sonnet-4-20250514'
-  const temperature = options.temperature ?? 0.1
-  const maxTokens = options.maxTokens ?? 16384
+  const model = options.model ?? "claude-sonnet-4-20250514";
+  const temperature = options.temperature ?? 0.1;
+  const maxTokens = options.maxTokens ?? 16384;
 
   return async (pdfBase64: string, filename: string): Promise<string> => {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
         temperature,
         system: PDF_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdfBase64,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: pdfBase64,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: `Convert this PDF (${filename}) to clean, structured Markdown. Preserve all content including tables, equations, and figure captions.`,
-            },
-          ],
-        }],
+              {
+                type: "text",
+                text: `Convert this PDF (${filename}) to clean, structured Markdown. Preserve all content including tables, equations, and figure captions.`,
+              },
+            ],
+          },
+        ],
       }),
-    })
+    });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '')
+      const body = await response.text().catch(() => "");
       throw new Error(
         `Claude PDF extraction failed (${response.status}).\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}\n` +
-        `Response: ${body.slice(0, 300)}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}\n` +
+          `Response: ${body.slice(0, 300)}`,
+      );
     }
 
-    const json = await response.json() as {
-      content?: Array<{ type: string; text?: string }>
-    }
+    const json = (await response.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
 
-    const text = json.content?.find(block => block.type === 'text')?.text
+    const text = json.content?.find((block) => block.type === "text")?.text;
     if (!text) {
       throw new Error(
         `Claude returned empty response for PDF extraction.\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}`,
+      );
     }
 
-    return text
-  }
+    return text;
+  };
 }
 
 // ── Built-in OpenAI PDF extractor ─────────────────────────────────────────────
 
 export type OpenAIPdfExtractorOptions = {
   /** OpenAI API key. Falls back to OPENAI_API_KEY env var. */
-  apiKey?: string
+  apiKey?: string;
   /** Model to use. Default: 'gpt-4o' */
-  model?: string
+  model?: string;
   /** Temperature for extraction (lower = more faithful). Default: 0.1 */
-  temperature?: number
+  temperature?: number;
   /** Max output tokens. Default: 16384 */
-  maxTokens?: number
+  maxTokens?: number;
   /** Base URL for OpenAI-compatible APIs. Default: 'https://api.openai.com/v1' */
-  baseUrl?: string
-}
+  baseUrl?: string;
+};
 
 /**
  * Create a PdfExtractFn backed by the OpenAI Chat Completions API.
@@ -282,32 +286,32 @@ export type OpenAIPdfExtractorOptions = {
  * @example Azure OpenAI
  * ```ts
  * const extract = makeOpenAIPdfExtractor({
- *   apiKey: process.env.AZURE_OPENAI_API_KEY,
- *   baseUrl: 'https://my-resource.openai.azure.com/openai/deployments/gpt-4o',
- *   model: 'gpt-4o',
+ * apiKey: process.env.AZURE_OPENAI_API_KEY,
+ * baseUrl: 'https://my-resource.openai.azure.com/openai/deployments/gpt-4o',
+ * model: 'gpt-4o',
  * })
  * ```
  */
 export function makeOpenAIPdfExtractor(options: OpenAIPdfExtractorOptions = {}): PdfExtractFn {
-  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY
+  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'OpenAI PDF extractor requires an API key.\n' +
-      'Set OPENAI_API_KEY environment variable or pass apiKey in options.',
-    )
+      "OpenAI PDF extractor requires an API key.\n" +
+        "Set OPENAI_API_KEY environment variable or pass apiKey in options.",
+    );
   }
 
-  const model = options.model ?? 'gpt-4o'
-  const temperature = options.temperature ?? 0.1
-  const maxTokens = options.maxTokens ?? 16384
-  const baseUrl = (options.baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, '')
+  const model = options.model ?? "gpt-4o";
+  const temperature = options.temperature ?? 0.1;
+  const maxTokens = options.maxTokens ?? 16384;
+  const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
 
   return async (pdfBase64: string, filename: string): Promise<string> => {
     const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
@@ -315,54 +319,54 @@ export function makeOpenAIPdfExtractor(options: OpenAIPdfExtractorOptions = {}):
         max_tokens: maxTokens,
         messages: [
           {
-            role: 'system',
+            role: "system",
             content: PDF_SYSTEM_PROMPT,
           },
           {
-            role: 'user',
+            role: "user",
             content: [
               {
-                type: 'file',
+                type: "file",
                 file: {
                   filename,
                   file_data: `data:application/pdf;base64,${pdfBase64}`,
                 },
               },
               {
-                type: 'text',
+                type: "text",
                 text: `Convert this PDF (${filename}) to clean, structured Markdown. Preserve all content including tables, equations, and figure captions.`,
               },
             ],
           },
         ],
       }),
-    })
+    });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '')
+      const body = await response.text().catch(() => "");
       throw new Error(
         `OpenAI PDF extraction failed (${response.status}).\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}\n` +
-        `Response: ${body.slice(0, 300)}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}\n` +
+          `Response: ${body.slice(0, 300)}`,
+      );
     }
 
-    const json = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>
-    }
+    const json = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
 
-    const text = json.choices?.[0]?.message?.content
+    const text = json.choices?.[0]?.message?.content;
     if (!text) {
       throw new Error(
         `OpenAI returned empty response for PDF extraction.\n` +
-        `Model: ${model}\n` +
-        `File: ${filename}`,
-      )
+          `Model: ${model}\n` +
+          `File: ${filename}`,
+      );
     }
 
-    return text
-  }
+    return text;
+  };
 }
 
 // ── Auto-detect PDF extractor from environment ────────────────────────────────
@@ -382,72 +386,79 @@ export function makeOpenAIPdfExtractor(options: OpenAIPdfExtractorOptions = {}):
  * ```ts
  * const pdfExtractFn = autoDetectPdfExtractor()
  * if (pdfExtractFn) {
- *   console.log('Using LLM-based PDF extraction')
+ * console.log('Using LLM-based PDF extraction')
  * }
  * ```
  */
 export function autoDetectPdfExtractor(): PdfExtractFn | undefined {
   // 1. Gemini — cheapest and fastest for PDF extraction (~$0.002/paper)
   if (process.env.GEMINI_API_KEY) {
-    return makeGeminiPdfExtractor()
+    return makeGeminiPdfExtractor();
   }
 
   // 2. OpenAI — widely available, good quality
   if (process.env.OPENAI_API_KEY) {
-    return makeOpenAIPdfExtractor()
+    return makeOpenAIPdfExtractor();
   }
 
   // 3. Claude — excellent quality, supports native PDF document blocks
   if (process.env.ANTHROPIC_API_KEY) {
-    return makeClaudePdfExtractor()
+    return makeClaudePdfExtractor();
   }
 
   // No API key found — caller should fall back to pdf-parse
-  return undefined
+  return undefined;
 }
 
 // ── Fallback: basic pdf-parse text extraction ─────────────────────────────────
 
 function cleanPdfText(text: string): string {
-  return text
-    // Form feeds → paragraph breaks
-    .replace(/\f/g, '\n\n')
-    // Dehyphenation: "hyphen-\nated" → "hyphenated"
-    .replace(/([a-z])-\n([a-z])/gi, '$1$2')
-    // Collapse excessive whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    // Remove leading/trailing whitespace per line
-    .split('\n')
-    .map(l => l.trim())
-    .join('\n')
-    .trim()
+  return (
+    text
+      // Form feeds → paragraph breaks
+      .replace(/\f/g, "\n\n")
+      // Dehyphenation: "hyphen-\nated" → "hyphenated"
+      .replace(/([a-z])-\n([a-z])/gi, "$1$2")
+      // Collapse excessive whitespace
+      .replace(/\n{3,}/g, "\n\n")
+      // Remove leading/trailing whitespace per line
+      .split("\n")
+      .map((l) => l.trim())
+      .join("\n")
+      .trim()
+  );
 }
 
 function extractTitleFromText(text: string): string {
   // First non-empty, non-whitespace line
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   // Skip lines that look like headers/metadata
-  const titleLine = lines.find(l =>
-    l.length > 5 && l.length < 200 &&
-    !l.startsWith('http') &&
-    !l.match(/^\d+$/) &&
-    !l.match(/^page\s+\d+/i) &&
-    !l.match(/^copyright/i),
-  )
-  return titleLine?.slice(0, 120) ?? 'Untitled PDF'
+  const titleLine = lines.find(
+    (l) =>
+      l.length > 5 &&
+      l.length < 200 &&
+      !l.startsWith("http") &&
+      !l.match(/^\d+$/) &&
+      !l.match(/^page\s+\d+/i) &&
+      !l.match(/^copyright/i),
+  );
+  return titleLine?.slice(0, 120) ?? "Untitled PDF";
 }
 
 function extractTitleFromMarkdown(markdown: string): string {
   // Try to find a # heading
-  const h1Match = markdown.match(/^#\s+(.+)/m)
-  if (h1Match) return h1Match[1]!.trim().slice(0, 120)
+  const h1Match = markdown.match(/^#\s+(.+)/m);
+  if (h1Match) return h1Match[1]!.trim().slice(0, 120);
 
   // Try bold-text title
-  const boldMatch = markdown.match(/^\*\*(.{10,120})\*\*/m)
-  if (boldMatch) return boldMatch[1]!.trim()
+  const boldMatch = markdown.match(/^\*\*(.{10,120})\*\*/m);
+  if (boldMatch) return boldMatch[1]!.trim();
 
   // Fall back to first substantial line
-  return extractTitleFromText(markdown)
+  return extractTitleFromText(markdown);
 }
 
 // ── PDF ingester options extension ────────────────────────────────────────────
@@ -460,25 +471,25 @@ export type PdfIngesterOptions = IngesterOptions & {
    *
    * Create one with `makeGeminiPdfExtractor()` or provide your own.
    */
-  pdfExtractFn?: PdfExtractFn
-}
+  pdfExtractFn?: PdfExtractFn;
+};
 
 // ── Ingester ──────────────────────────────────────────────────────────────────
 
 export const pdfIngester: Ingester = {
-  supportedExtensions: ['pdf'],
-  supportedMimeTypes: ['application/pdf'],
+  supportedExtensions: ["pdf"],
+  supportedMimeTypes: ["application/pdf"],
   requiresOptionalDeps: false, // LLM extraction has no local deps
   optionalDeps: [],
 
   async ingest(filePath: string, options?: PdfIngesterOptions): Promise<IngestedContent> {
-    const buffer = await readFile(filePath)
-    const filename = filePath.split('/').pop() ?? 'document.pdf'
+    const buffer = await readFile(filePath);
+    const filename = filePath.split("/").pop() ?? "document.pdf";
 
     // ── Strategy 1: LLM-based extraction (high quality) ───────────────────
     if (options?.pdfExtractFn) {
-      const pdfBase64 = buffer.toString('base64')
-      const markdown = await options.pdfExtractFn(pdfBase64, filename)
+      const pdfBase64 = buffer.toString("base64");
+      const markdown = await options.pdfExtractFn(pdfBase64, filename);
 
       return {
         sourceFile: filePath,
@@ -488,60 +499,62 @@ export const pdfIngester: Ingester = {
         mimeType: detectMimeType(filePath),
         lossy: false, // LLM extraction preserves structure faithfully
         metadata: {
-          extractionMethod: 'llm',
-          extractionNote: 'Converted from PDF using multimodal LLM. Tables, equations, and figures preserved as Markdown.',
+          extractionMethod: "llm",
+          extractionNote:
+            "Converted from PDF using multimodal LLM. Tables, equations, and figures preserved as Markdown.",
         },
-      }
+      };
     }
 
     // ── Strategy 2: Fallback to pdf-parse (basic text dump) ───────────────
     let pdfParse: (buffer: Buffer) => Promise<{
-      text: string
-      numpages: number
-      info?: Record<string, unknown>
-    }>
+      text: string;
+      numpages: number;
+      info?: Record<string, unknown>;
+    }>;
 
     try {
       // Dynamic import — pdf-parse is an optional dependency
       // @ts-ignore — pdf-parse is an optional peer dep, may not be installed
-      const mod = await import('pdf-parse')
-      pdfParse = (mod.default ?? mod) as typeof pdfParse
+      const mod = await import("pdf-parse");
+      pdfParse = (mod.default ?? mod) as typeof pdfParse;
     } catch {
       throw new Error(
         `PDF ingestion requires either:\n` +
-        `  1. An LLM extractor (recommended): pass pdfExtractFn in options\n` +
-        `     Example: makeGeminiPdfExtractor({ apiKey: '...' })\n` +
-        `  2. The "pdf-parse" package: npm install pdf-parse\n` +
-        `\n` +
-        `LLM extraction is strongly recommended for research papers with\n` +
-        `tables, equations, and complex layouts.`,
-      )
+          ` 1. An LLM extractor (recommended): pass pdfExtractFn in options\n` +
+          ` Example: makeGeminiPdfExtractor({ apiKey: '...' })\n` +
+          ` 2. The "pdf-parse" package: npm install pdf-parse\n` +
+          `\n` +
+          `LLM extraction is strongly recommended for research papers with\n` +
+          `tables, equations, and complex layouts.`,
+      );
     }
 
-    const data = await pdfParse(buffer)
-    const cleanedText = cleanPdfText(data.text)
+    const data = await pdfParse(buffer);
+    const cleanedText = cleanPdfText(data.text);
 
     // Try to extract title from PDF metadata, fall back to text
     const metadataTitle =
-      typeof data.info?.['Title'] === 'string' && data.info['Title'].length > 2
-        ? data.info['Title']
-        : undefined
+      typeof data.info?.["Title"] === "string" && data.info["Title"].length > 2
+        ? data.info["Title"]
+        : undefined;
 
     return {
       sourceFile: filePath,
       title: metadataTitle ?? extractTitleFromText(cleanedText),
       text: cleanedText,
-      images: [],  // pdf-parse doesn't extract images
+      images: [], // pdf-parse doesn't extract images
       mimeType: detectMimeType(filePath),
       lossy: true, // PDF text extraction is always lossy (layout info lost)
       metadata: {
-        extractionMethod: 'pdf-parse',
+        extractionMethod: "pdf-parse",
         pages: data.numpages,
-        author: data.info?.['Author'] ?? undefined,
-        creationDate: data.info?.['CreationDate'] ?? undefined,
-        producer: data.info?.['Producer'] ?? undefined,
-        extractionNote: 'Basic text extraction only. Tables, equations, and figures may be garbled. Use LLM extraction for better results.',
+        author: data.info?.["Author"] ?? undefined,
+        creationDate: data.info?.["CreationDate"] ?? undefined,
+        producer: data.info?.["Producer"] ?? undefined,
+        extractionNote:
+          "Basic text extraction only. Tables, equations, and figures may be garbled. Use LLM extraction for better results.",
       },
-    }
+    };
   },
-}
+};

@@ -8,36 +8,36 @@
  * @example
  * ```ts
  * const summary = await generateToolUseSummary({
- *   tools: [
- *     { name: 'read_file', input: { path: 'src/auth.ts' }, output: '...' },
- *     { name: 'edit_file', input: { path: 'src/auth.ts', ... }, output: 'OK' },
- *   ],
- *   model: smallModel,
+ * tools: [
+ * { name: 'read_file', input: { path: 'src/auth.ts' }, output: '...' },
+ * { name: 'edit_file', input: { path: 'src/auth.ts', ... }, output: 'OK' },
+ * ],
+ * model: smallModel,
  * });
  * // → "Fixed auth validation in auth.ts"
  * ```
  */
 
-import type { ChatModel } from '../agents/runner.js'
+import type { ChatModel } from "../agents/runner.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ToolInfo = {
-  name: string
-  input: unknown
-  output: unknown
-}
+  name: string;
+  input: unknown;
+  output: unknown;
+};
 
 export type ToolSummaryConfig = {
   /** Tools executed in this batch. */
-  tools: ToolInfo[]
+  tools: ToolInfo[];
   /** The model to use for summarization (small/fast recommended). */
-  model: ChatModel
+  model: ChatModel;
   /** Abort signal. */
-  signal?: AbortSignal
+  signal?: AbortSignal;
   /** Most recent assistant text for context. */
-  lastAssistantText?: string
-}
+  lastAssistantText?: string;
+};
 
 // ── System Prompt ────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ Examples:
 - Fixed NPE in UserService
 - Created signup endpoint
 - Read config.json
-- Ran failing tests`
+- Ran failing tests`;
 
 // ── generateToolUseSummary ───────────────────────────────────────────────────
 
@@ -59,40 +59,38 @@ Examples:
  *
  * @returns A brief summary string, or null if generation fails.
  */
-export async function generateToolUseSummary(
-  config: ToolSummaryConfig,
-): Promise<string | null> {
-  const { tools, model, signal, lastAssistantText } = config
+export async function generateToolUseSummary(config: ToolSummaryConfig): Promise<string | null> {
+  const { tools, model, signal, lastAssistantText } = config;
 
-  if (tools.length === 0) return null
+  if (tools.length === 0) return null;
 
   try {
     const toolSummaries = tools
-      .map(tool => {
-        const inputStr = truncateJson(tool.input, 300)
-        const outputStr = truncateJson(tool.output, 300)
-        return `Tool: ${tool.name}\nInput: ${inputStr}\nOutput: ${outputStr}`
+      .map((tool) => {
+        const inputStr = truncateJson(tool.input, 300);
+        const outputStr = truncateJson(tool.output, 300);
+        return `Tool: ${tool.name}\nInput: ${inputStr}\nOutput: ${outputStr}`;
       })
-      .join('\n\n')
+      .join("\n\n");
 
     const contextPrefix = lastAssistantText
       ? `User's intent (from assistant's last message): ${lastAssistantText.slice(0, 200)}\n\n`
-      : ''
+      : "";
 
     const result = await model.complete({
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `${contextPrefix}Tools completed:\n\n${toolSummaries}\n\nLabel:` },
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: `${contextPrefix}Tools completed:\n\n${toolSummaries}\n\nLabel:` },
       ],
       tools: [],
       signal,
-    })
+    });
 
-    const text = typeof result.content === 'string' ? result.content.trim() : ''
-    return text || null
+    const text = typeof result.content === "string" ? result.content.trim() : "";
+    return text || null;
   } catch {
     // Summaries are non-critical — swallow errors
-    return null
+    return null;
   }
 }
 
@@ -100,10 +98,10 @@ export async function generateToolUseSummary(
 
 function truncateJson(value: unknown, maxLength: number): string {
   try {
-    const str = JSON.stringify(value)
-    if (str.length <= maxLength) return str
-    return str.slice(0, maxLength - 3) + '...'
+    const str = JSON.stringify(value);
+    if (str.length <= maxLength) return str;
+    return str.slice(0, maxLength - 3) + "...";
   } catch {
-    return '[unable to serialize]'
+    return "[unable to serialize]";
   }
 }

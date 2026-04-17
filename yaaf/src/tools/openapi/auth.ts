@@ -9,15 +9,15 @@
  * @module tools/openapi/auth
  */
 
-import type { SecurityScheme } from './parser.js'
+import type { SecurityScheme } from "./parser.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type AuthConfig =
-  | { type: 'apiKey'; in: 'header' | 'query'; name: string; value: string }
-  | { type: 'bearer'; token: string }
-  | { type: 'basic'; username: string; password: string }
-  | { type: 'custom'; headers: Record<string, string> }
+  | { type: "apiKey"; in: "header" | "query"; name: string; value: string }
+  | { type: "bearer"; token: string }
+  | { type: "basic"; username: string; password: string }
+  | { type: "custom"; headers: Record<string, string> };
 
 // ── Auth Application ─────────────────────────────────────────────────────────
 
@@ -34,30 +34,31 @@ export function applyAuth(
   auth: AuthConfig,
 ): void {
   switch (auth.type) {
-    case 'apiKey':
-      if (auth.in === 'header') {
-        headers[auth.name] = auth.value
+    case "apiKey":
+      if (auth.in === "header") {
+        headers[auth.name] = auth.value;
       } else {
-        query[auth.name] = auth.value
+        query[auth.name] = auth.value;
       }
-      break
+      break;
 
-    case 'bearer':
-      headers['Authorization'] = `Bearer ${auth.token}`
-      break
+    case "bearer":
+      headers["Authorization"] = `Bearer ${auth.token}`;
+      break;
 
-    case 'basic': {
+    case "basic": {
       // Use Buffer for Node.js, btoa for browser environments
-      const encoded = typeof Buffer !== 'undefined'
-        ? Buffer.from(`${auth.username}:${auth.password}`).toString('base64')
-        : btoa(`${auth.username}:${auth.password}`)
-      headers['Authorization'] = `Basic ${encoded}`
-      break
+      const encoded =
+        typeof Buffer !== "undefined"
+          ? Buffer.from(`${auth.username}:${auth.password}`).toString("base64")
+          : btoa(`${auth.username}:${auth.password}`);
+      headers["Authorization"] = `Basic ${encoded}`;
+      break;
     }
 
-    case 'custom':
-      Object.assign(headers, auth.headers)
-      break
+    case "custom":
+      Object.assign(headers, auth.headers);
+      break;
   }
 }
 
@@ -72,7 +73,7 @@ export function applyAuth(
  *
  * @example
  * // For an apiKey scheme:
- * //   { type: 'apiKey', name: 'X-API-Key', in: 'header' }
+ * // { type: 'apiKey', name: 'X-API-Key', in: 'header' }
  * // With credential: 'my-secret-key'
  * // → { type: 'apiKey', in: 'header', name: 'X-API-Key', value: 'my-secret-key' }
  */
@@ -81,41 +82,41 @@ export function schemeToAuthConfig(
   credential: string,
 ): AuthConfig | undefined {
   switch (scheme.type) {
-    case 'apiKey':
+    case "apiKey":
       return {
-        type: 'apiKey',
-        in: (scheme.in ?? 'header') as 'header' | 'query',
-        name: scheme.name ?? 'Authorization',
+        type: "apiKey",
+        in: (scheme.in ?? "header") as "header" | "query",
+        name: scheme.name ?? "Authorization",
         value: credential,
-      }
+      };
 
-    case 'http':
-      if (scheme.scheme === 'bearer') {
-        return { type: 'bearer', token: credential }
+    case "http":
+      if (scheme.scheme === "bearer") {
+        return { type: "bearer", token: credential };
       }
-      if (scheme.scheme === 'basic') {
+      if (scheme.scheme === "basic") {
         // Credential format: "username:password"
-        const colonIdx = credential.indexOf(':')
+        const colonIdx = credential.indexOf(":");
         if (colonIdx > 0) {
           return {
-            type: 'basic',
+            type: "basic",
             username: credential.slice(0, colonIdx),
             password: credential.slice(colonIdx + 1),
-          }
+          };
         }
         // If no colon, treat the whole string as a pre-encoded Basic token
-        return { type: 'custom', headers: { Authorization: `Basic ${credential}` } }
+        return { type: "custom", headers: { Authorization: `Basic ${credential}` } };
       }
       // Unknown HTTP scheme — pass as custom header
-      return { type: 'custom', headers: { Authorization: credential } }
+      return { type: "custom", headers: { Authorization: credential } };
 
-    case 'oauth2':
-    case 'openIdConnect':
+    case "oauth2":
+    case "openIdConnect":
       // For OAuth2/OIDC, the user provides the token directly (no flow execution)
-      return { type: 'bearer', token: credential }
+      return { type: "bearer", token: credential };
 
     default:
-      return undefined
+      return undefined;
   }
 }
 
@@ -139,21 +140,21 @@ export function resolveAuth(
 ): AuthConfig | undefined {
   // If no security requirements, use global auth if provided
   if (!requiredSchemes || requiredSchemes.length === 0) {
-    return globalAuth
+    return globalAuth;
   }
 
   // Try each required scheme
   for (const schemeName of requiredSchemes) {
-    const credential = credentials[schemeName]
-    if (!credential) continue
+    const credential = credentials[schemeName];
+    if (!credential) continue;
 
-    const scheme = allSchemes[schemeName]
-    if (!scheme) continue
+    const scheme = allSchemes[schemeName];
+    if (!scheme) continue;
 
-    const config = schemeToAuthConfig(scheme, credential)
-    if (config) return config
+    const config = schemeToAuthConfig(scheme, credential);
+    if (config) return config;
   }
 
   // Fall back to global auth
-  return globalAuth
+  return globalAuth;
 }

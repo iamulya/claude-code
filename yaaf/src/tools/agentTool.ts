@@ -11,65 +11,65 @@
  * @example
  * ```ts
  * const researcher = new AgentRunner({
- *   model: myModel,
- *   tools: [searchTool, readUrlTool],
- *   systemPrompt: 'You are a research assistant. Find accurate information.',
+ * model: myModel,
+ * tools: [searchTool, readUrlTool],
+ * systemPrompt: 'You are a research assistant. Find accurate information.',
  * });
  *
  * // Wrap the researcher as a tool for the coordinator
  * const researchTool = agentTool(researcher, {
- *   name: 'research',
- *   description: 'Research a topic using web search and URL reading',
+ * name: 'research',
+ * description: 'Research a topic using web search and URL reading',
  * });
  *
  * const coordinator = new AgentRunner({
- *   model: myModel,
- *   tools: [researchTool, writeTool, reviewTool],
- *   systemPrompt: 'You coordinate writing tasks. Use research for facts.',
+ * model: myModel,
+ * tools: [researchTool, writeTool, reviewTool],
+ * systemPrompt: 'You coordinate writing tasks. Use research for facts.',
  * });
  * ```
  *
  * @module tools/agentTool
  */
 
-import { buildTool, type Tool } from './tool.js'
-import type { WorkflowStep } from '../agents/workflow.js'
+import { buildTool, type Tool } from "./tool.js";
+import type { WorkflowStep } from "../agents/workflow.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type AgentToolConfig = {
   /** Tool name the parent agent will use to invoke this agent */
-  name: string
+  name: string;
   /**
    * Description sent to the parent LLM so it knows WHEN to invoke this agent.
    * Be specific — "Research a topic" is better than "Call an agent".
    */
-  description: string
+  description: string;
   /**
    * Maximum result length (characters) before truncation.
    * Default: 50,000.
    */
-  maxResultChars?: number
+  maxResultChars?: number;
   /**
    * Whether this agent-tool can run concurrently with other tools.
    * Default: true (agent invocations are self-contained).
    */
-  concurrent?: boolean
+  concurrent?: boolean;
   /**
    * Custom input schema. Default: `{ query: string }`.
    * Override if your agent expects structured input.
    */
   inputSchema?: {
-    type: 'object'
-    properties: Record<string, unknown>
-    required?: string[]
-  }
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
   /**
    * Transform the agent's raw output before returning to the parent.
    * Useful for summarization or extraction.
    */
-  transformResult?: (output: string) => string | Promise<string>
-}
+  transformResult?: (output: string) => string | Promise<string>;
+};
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
@@ -89,15 +89,15 @@ export function agentTool(
   config: AgentToolConfig,
 ): Tool<{ query: string }, { result: string }> {
   const inputSchema = config.inputSchema ?? {
-    type: 'object' as const,
+    type: "object" as const,
     properties: {
       query: {
-        type: 'string',
-        description: 'The query or instruction to send to the agent',
+        type: "string",
+        description: "The query or instruction to send to the agent",
       },
     },
-    required: ['query'],
-  }
+    required: ["query"],
+  };
 
   return buildTool({
     name: config.name,
@@ -106,38 +106,36 @@ export function agentTool(
     maxResultChars: config.maxResultChars ?? 50_000,
 
     describe(input: { query: string }) {
-      return `Invoking agent "${config.name}": ${input.query.slice(0, 100)}${input.query.length > 100 ? '...' : ''}`
+      return `Invoking agent "${config.name}": ${input.query.slice(0, 100)}${input.query.length > 100 ? "..." : ""}`;
     },
 
     async call(input: { query: string }, context) {
-      const output = await agent.run(input.query, context.signal)
+      const output = await agent.run(input.query, context.signal);
 
-      const result = config.transformResult
-        ? await config.transformResult(output)
-        : output
+      const result = config.transformResult ? await config.transformResult(output) : output;
 
-      return { data: { result } }
+      return { data: { result } };
     },
 
     isReadOnly: () => false,
     isConcurrencySafe: () => config.concurrent ?? true,
     isDestructive: () => false,
     isEnabled: () => true,
-    checkPermissions: async () => ({ behavior: 'allow' as const }),
+    checkPermissions: async () => ({ behavior: "allow" as const }),
     userFacingName: () => config.name,
 
     getActivityDescription(input) {
       if (input?.query) {
-        const q = input.query.slice(0, 60)
-        return `Running ${config.name}: ${q}${input.query.length > 60 ? '...' : ''}`
+        const q = input.query.slice(0, 60);
+        return `Running ${config.name}: ${q}${input.query.length > 60 ? "..." : ""}`;
       }
-      return `Running ${config.name}`
+      return `Running ${config.name}`;
     },
 
     prompt() {
-      return config.description
+      return config.description;
     },
-  })
+  });
 }
 
 /**
@@ -146,22 +144,22 @@ export function agentTool(
  * @example
  * ```ts
  * const tools = agentTools({
- *   research: { agent: researcher, description: 'Research a topic' },
- *   code: { agent: coder, description: 'Write or fix code' },
- *   review: { agent: reviewer, description: 'Review code quality' },
+ * research: { agent: researcher, description: 'Research a topic' },
+ * code: { agent: coder, description: 'Write or fix code' },
+ * review: { agent: reviewer, description: 'Review code quality' },
  * });
  *
  * const coordinator = new AgentRunner({
- *   model: myModel,
- *   tools: [...tools, ...directTools],
- *   systemPrompt: 'You coordinate tasks between specialists.',
+ * model: myModel,
+ * tools: [...tools, ...directTools],
+ * systemPrompt: 'You coordinate tasks between specialists.',
  * });
  * ```
  */
 export function agentTools(
-  registry: Record<string, { agent: WorkflowStep } & Omit<AgentToolConfig, 'name'>>,
+  registry: Record<string, { agent: WorkflowStep } & Omit<AgentToolConfig, "name">>,
 ): Tool[] {
   return Object.entries(registry).map(([name, { agent, ...config }]) =>
     agentTool(agent, { ...config, name }),
-  )
+  );
 }

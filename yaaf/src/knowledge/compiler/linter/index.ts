@@ -11,9 +11,9 @@ export type {
   LintOptions,
   AutoFixResult,
   FixedIssue,
-} from './types.js'
+} from "./types.js";
 
-export { KBLinter } from './linter.js'
+export { KBLinter } from "./linter.js";
 
 export {
   extractWikilinks,
@@ -31,13 +31,10 @@ export {
   checkDuplicateCandidates,
   checkStubWithSources,
   checkContradictoryClaims,
-} from './checks.js'
+} from "./checks.js";
 
-export {
-  readCompiledArticles,
-  parseCompiledArticle,
-} from './reader.js'
+export { readCompiledArticles, parseCompiledArticle } from "./reader.js";
 
-export type { ParsedCompiledArticle } from './reader.js'
+export type { ParsedCompiledArticle } from "./reader.js";
 
-export { applyFixes } from './fixer.js'
+export { applyFixes } from "./fixer.js";

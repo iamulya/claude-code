@@ -9,10 +9,10 @@
  * @example
  * ```ts
  * const summaryHandle = startAgentSummarization({
- *   agentId: 'worker-1',
- *   model: smallFastModel,
- *   getMessages: () => worker.messages,
- *   onSummary: (text) => updateUI(`Worker 1: ${text}`),
+ * agentId: 'worker-1',
+ * model: smallFastModel,
+ * getMessages: () => worker.messages,
+ * onSummary: (text) => updateUI(`Worker 1: ${text}`),
  * });
  *
  * // Later, when agent is done:
@@ -20,38 +20,36 @@
  * ```
  */
 
-import type { ChatModel } from './runner.js'
+import type { ChatModel } from "./runner.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type AgentSummarizationConfig = {
   /** Unique agent identifier */
-  agentId: string
+  agentId: string;
   /** A small/fast model for generating summaries (not the main model) */
-  model: ChatModel
+  model: ChatModel;
   /** Function that returns the agent's current message history */
-  getMessages: () => Array<{ role: string; content: string }>
+  getMessages: () => Array<{ role: string; content: string }>;
   /** Called with the summary text when generated */
-  onSummary: (summary: string) => void
+  onSummary: (summary: string) => void;
   /** Interval between summaries in ms. Default: 30_000 (30s). */
-  intervalMs?: number
+  intervalMs?: number;
   /** Minimum messages before generating a summary. Default: 3. */
-  minMessages?: number
-}
+  minMessages?: number;
+};
 
 export type SummarizationHandle = {
   /** Stop the periodic summarization loop. */
-  stop: () => void
+  stop: () => void;
   /** Get the most recent summary, or null if none generated yet. */
-  lastSummary: () => string | null
-}
+  lastSummary: () => string | null;
+};
 
 // ── Summary Prompt ───────────────────────────────────────────────────────────
 
 function buildSummaryPrompt(previousSummary: string | null): string {
-  const prevLine = previousSummary
-    ? `\nPrevious: "${previousSummary}" — say something NEW.\n`
-    : ''
+  const prevLine = previousSummary ? `\nPrevious: "${previousSummary}" — say something NEW.\n` : "";
 
   return `Describe your most recent action in 3-5 words using present tense (-ing). Name the file or function, not the branch. Do not use tools.
 ${prevLine}
@@ -62,7 +60,7 @@ Good: "Adding retry logic to fetchUser"
 
 Bad (past tense): "Analyzed the branch diff"
 Bad (too vague): "Investigating the issue"
-Bad (too long): "Reviewing full branch diff and integration"`
+Bad (too long): "Reviewing full branch diff and integration"`;
 }
 
 // ── startAgentSummarization ──────────────────────────────────────────────────
@@ -74,75 +72,71 @@ Bad (too long): "Reviewing full branch diff and integration"`
  * is non-overlapping — each summary waits for the previous to finish
  * before scheduling the next.
  */
-export function startAgentSummarization(
-  config: AgentSummarizationConfig,
-): SummarizationHandle {
-  const {
-    model,
-    getMessages,
-    onSummary,
-    intervalMs = 30_000,
-    minMessages = 3,
-  } = config
+export function startAgentSummarization(config: AgentSummarizationConfig): SummarizationHandle {
+  const { model, getMessages, onSummary, intervalMs = 30_000, minMessages = 3 } = config;
 
-  let stopped = false
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-  let previousSummary: string | null = null
-  let abortController: AbortController | null = null
+  let stopped = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let previousSummary: string | null = null;
+  let abortController: AbortController | null = null;
 
   async function runSummary(): Promise<void> {
-    if (stopped) return
+    if (stopped) return;
 
     try {
-      const messages = getMessages()
-      if (messages.length < minMessages) return
+      const messages = getMessages();
+      if (messages.length < minMessages) return;
 
       // Build request with the agent's messages + summary prompt
       const summaryMessages = [
         ...messages.slice(-20), // Last 20 messages for context
-        { role: 'user' as const, content: buildSummaryPrompt(previousSummary) },
-      ]
+        { role: "user" as const, content: buildSummaryPrompt(previousSummary) },
+      ];
 
-      abortController = new AbortController()
+      abortController = new AbortController();
       const result = await model.complete({
-        messages: summaryMessages.map(m => ({
-          role: m.role as 'user' | 'assistant',
+        messages: summaryMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
           content: m.content,
         })),
         tools: [], // No tools for summary
         signal: abortController.signal,
-      })
+      });
 
-      if (stopped) return
+      if (stopped) return;
 
-      const text = typeof result.content === 'string'
-        ? result.content.trim()
-        : ''
+      const text = typeof result.content === "string" ? result.content.trim() : "";
 
       if (text) {
-        previousSummary = text
-        onSummary(text)
+        previousSummary = text;
+        onSummary(text);
       }
     } catch {
       // Summarization is best-effort — swallow errors
     } finally {
-      abortController = null
+      abortController = null;
       // Schedule next only after this one completes (non-overlapping)
       if (!stopped) {
-        timeoutId = setTimeout(runSummary, intervalMs)
+        timeoutId = setTimeout(runSummary, intervalMs);
       }
     }
   }
 
   // Start the first timer
-  timeoutId = setTimeout(runSummary, intervalMs)
+  timeoutId = setTimeout(runSummary, intervalMs);
 
   return {
     stop: () => {
-      stopped = true
-      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
-      if (abortController) { abortController.abort(); abortController = null }
+      stopped = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+      }
     },
     lastSummary: () => previousSummary,
-  }
+  };
 }

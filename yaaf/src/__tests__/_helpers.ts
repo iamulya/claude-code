@@ -7,8 +7,8 @@
  * - `collectEvents` — subscribes to a runner event and collects all occurrences
  */
 
-import type { AgentRunner, ChatModel, ChatResult } from '../agents/runner.js'
-import type { RunnerEvents } from '../agents/runner.js'
+import type { AgentRunner, ChatModel, ChatResult } from "../agents/runner.js";
+import type { RunnerEvents } from "../agents/runner.js";
 
 // ── Mock Model ───────────────────────────────────────────────────────────────
 
@@ -17,21 +17,23 @@ import type { RunnerEvents } from '../agents/runner.js'
  * When the list is exhausted it returns `[no more responses]`.
  */
 export function createMockModel(responses: ChatResult[]): ChatModel & { model: string } {
-  let callIndex = 0
+  let callIndex = 0;
   return {
-    model: 'test-model',
+    model: "test-model",
     async complete() {
-      const result =
-        responses[callIndex] ?? { content: '[no more responses]', finishReason: 'stop' as const }
-      callIndex++
-      return result
+      const result = responses[callIndex] ?? {
+        content: "[no more responses]",
+        finishReason: "stop" as const,
+      };
+      callIndex++;
+      return result;
     },
-  }
+  };
 }
 
 // ── Spy Model ────────────────────────────────────────────────────────────────
 
-export type SpyCall = { messages: { role: string; content: string }[]; callIndex: number }
+export type SpyCall = { messages: { role: string; content: string }[]; callIndex: number };
 
 /**
  * Creates a mock ChatModel that records every prompt sent to it.
@@ -40,16 +42,16 @@ export type SpyCall = { messages: { role: string; content: string }[]; callIndex
  * @param response - The canned response to return on every call.
  * @returns `{ model, calls }` where `calls` is the recorded prompt array.
  */
-export function createSpyModel(response: string = 'Diagnosis complete.') {
-  const calls: SpyCall[] = []
+export function createSpyModel(response: string = "Diagnosis complete.") {
+  const calls: SpyCall[] = [];
   const model: ChatModel & { model: string } = {
-    model: 'spy-model',
+    model: "spy-model",
     async complete(params: any) {
-      calls.push({ messages: [...params.messages], callIndex: calls.length })
-      return { content: response, finishReason: 'stop' as const }
+      calls.push({ messages: [...params.messages], callIndex: calls.length });
+      return { content: response, finishReason: "stop" as const };
     },
-  }
-  return { model, calls }
+  };
+  return { model, calls };
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ export function createSpyModel(response: string = 'Diagnosis complete.') {
  * Async sleep helper — replaces `await new Promise(r => setTimeout(r, ms))`.
  */
 export function wait(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms))
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /**
@@ -69,7 +71,7 @@ export function collectEvents<K extends keyof RunnerEvents>(
   runner: AgentRunner,
   event: K,
 ): Array<RunnerEvents[K]> {
-  const collected: Array<RunnerEvents[K]> = []
-  runner.on(event, (data) => collected.push(data))
-  return collected
+  const collected: Array<RunnerEvents[K]> = [];
+  runner.on(event, (data) => collected.push(data));
+  return collected;
 }

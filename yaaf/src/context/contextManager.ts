@@ -1,7 +1,7 @@
 /**
  * Context Manager
  *
-  * the full lifecycle of what the LLM sees:
+ * the full lifecycle of what the LLM sees:
  *
  * 1. **System context** — Git status, date, environment info (cached per session)
  * 2. **User context** — CLAUDE.md / memory files (cached per session)
@@ -10,7 +10,7 @@
  * 5. **Auto-compaction** — Summarizes old messages when context gets full
  *
  * Design rationale:
-  * user context, and tool schemas consume a fixed overhead (~20-40K tokens).
+ * user context, and tool schemas consume a fixed overhead (~20-40K tokens).
  * As conversation messages accumulate, the system monitors total token usage
  * and triggers compaction before reaching the model's window limit.
  *
@@ -23,93 +23,93 @@
  * The auto-compact threshold is: contextWindow - maxOutputTokens - 13K buffer
  */
 
-import type { LLMAdapter, LLMMessage } from '../plugin/types.js'
-import { estimateTokens as rawEstimateTokens } from '../utils/tokens.js'
-import { randomUUID } from 'crypto'
+import type { LLMAdapter, LLMMessage } from "../plugin/types.js";
+import { estimateTokens as rawEstimateTokens } from "../utils/tokens.js";
+import { randomUUID } from "crypto";
 import type {
   CompactionStrategy as CompactionStrategyPlugin,
   CompactionContext,
   StrategyResult,
-} from './strategies.js'
+} from "./strategies.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────────────
 
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result'
+export type MessageRole = "system" | "user" | "assistant" | "tool_result";
 
 export type Message = {
-  uuid: string
-  role: MessageRole
-  content: string | Array<{ type: string; [key: string]: unknown }>
+  uuid: string;
+  role: MessageRole;
+  content: string | Array<{ type: string; [key: string]: unknown }>;
   /** Timestamp of message creation */
-  timestamp: number
+  timestamp: number;
   /** If true, this message is invisible to the user (system bookkeeping) */
-  isMeta?: boolean
+  isMeta?: boolean;
   /** If true, this is a compaction summary message */
-  isCompactSummary?: boolean
+  isCompactSummary?: boolean;
   /** Tool use ID (for tool_result messages) */
-  toolUseId?: string
+  toolUseId?: string;
   /** Custom metadata bag */
-  metadata?: Record<string, unknown>
-}
+  metadata?: Record<string, unknown>;
+};
 
 export type ContextSection = {
   /** Unique key for this section (e.g., 'git_status', 'memory') */
-  key: string
+  key: string;
   /** Content to inject. null = omit this section. */
-  content: string | null
+  content: string | null;
   /** Where to inject: 'system' (in system prompt) or 'user' (first user msg) */
-  placement: 'system' | 'user'
+  placement: "system" | "user";
   /** Priority — higher = injected first */
-  priority?: number
-}
+  priority?: number;
+};
 
 /** Legacy string-based strategy name (backward compat) */
-export type CompactionStrategyName = 'summarize' | 'truncate' | 'sliding_window'
+export type CompactionStrategyName = "summarize" | "truncate" | "sliding_window";
 /** @deprecated Use CompactionStrategyName or the strategy plugin interface */
-export type CompactionStrategy = CompactionStrategyName
+export type CompactionStrategy = CompactionStrategyName;
 
 export type CompactionResult = {
   /** The summary message that replaces older messages */
-  summary: string
+  summary: string;
   /** Number of messages removed */
-  messagesRemoved: number
+  messagesRemoved: number;
   /** Estimated tokens freed */
-  tokensFreed: number
+  tokensFreed: number;
   /** Estimated post-compaction token count */
-  postCompactTokens: number
+  postCompactTokens: number;
   /** Key facts extracted during compaction (for memory persistence) */
-  extractedFacts?: string[]
-}
+  extractedFacts?: string[];
+};
 
 /** Result of micro-compaction (tool result clearing) */
 export type MicroCompactionResult = {
   /** Number of tool results cleared */
-  toolResultsCleared: number
+  toolResultsCleared: number;
   /** Estimated tokens freed */
-  tokensFreed: number
+  tokensFreed: number;
   /** Tool names that were cleared */
-  clearedTools: string[]
-}
+  clearedTools: string[];
+};
 
 /**
  * Function signature for the LLM summarization call.
  * Consumers inject their own LLM adapter.
  */
 export type SummarizeFn = (params: {
-  messages: Message[]
-  systemPrompt: string
-  signal?: AbortSignal
-}) => Promise<string>
+  messages: Message[];
+  systemPrompt: string;
+  signal?: AbortSignal;
+}) => Promise<string>;
 
 export type ContextManagerConfig = {
   /** Model's total context window size in tokens */
-  contextWindowTokens: number
+  contextWindowTokens: number;
   /** Maximum output tokens reserved for the model's response */
-  maxOutputTokens: number
+  maxOutputTokens: number;
   /** Buffer tokens below the threshold (default: 13_000) */
-  autoCompactBuffer?: number
+  autoCompactBuffer?: number;
   /** Legacy strategy name for compaction (default: 'summarize') */
-  compactionStrategy?: CompactionStrategyName
+  compactionStrategy?: CompactionStrategyName;
   /**
    * Pluggable compaction strategy — takes priority over `compactionStrategy`.
    * Pass any object implementing `CompactionStrategy` from `yaaf/strategies`.
@@ -132,14 +132,14 @@ export type ContextManagerConfig = {
    * import { CompositeStrategy, MicroCompactStrategy, SummarizeStrategy } from 'yaaf/strategies';
    *
    * const ctx = new ContextManager({
-   *   strategy: new CompositeStrategy([
-   *     new MicroCompactStrategy({ keepRecent: 5 }),
-   *     new SummarizeStrategy(),
-   *   ], { continueAfterPartial: true }),
+   * strategy: new CompositeStrategy([
+   * new MicroCompactStrategy({ keepRecent: 5 }),
+   * new SummarizeStrategy(),
+   * ], { continueAfterPartial: true }),
    * });
    * ```
    */
-  strategy?: CompactionStrategyPlugin
+  strategy?: CompactionStrategyPlugin;
   /**
    * LLM adapter to use for summarization and token estimation.
    * When provided, `summarizeFn` and `estimateTokensFn` are auto-wired
@@ -147,45 +147,64 @@ export type ContextManagerConfig = {
    *
    * Takes priority over `summarizeFn` and `estimateTokensFn` if all are set.
    */
-  llmAdapter?: LLMAdapter
+  llmAdapter?: LLMAdapter;
   /** LLM function for generating summaries (ignored when llmAdapter is set) */
-  summarizeFn?: SummarizeFn
+  summarizeFn?: SummarizeFn;
   /** Token estimation function (ignored when llmAdapter is set) */
-  estimateTokensFn?: (text: string) => number
+  estimateTokensFn?: (text: string) => number;
   /**
    * Micro-compaction: how many recent tool results to keep (default: 5).
    * Older tool results are content-cleared to save tokens without
    * full compaction. Set to 0 to disable micro-compaction.
    */
-  microCompactKeepRecent?: number
+  microCompactKeepRecent?: number;
   /**
    * Set of tool names that are eligible for micro-compaction.
    * Default: all tool_result messages are eligible.
    */
-  microCompactableTools?: Set<string>
+  microCompactableTools?: Set<string>;
   /**
    * Hook called during compaction to extract key facts from messages
    * before they're replaced by a summary. Extracted facts can be
    * persisted to memory.
    */
-  onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[]
+  onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[];
 
   /**
-   * CRITIQUE #8 FIX: Estimated per-message framing token overhead.
+   * Estimated per-message framing token overhead.
    * Each message incurs overhead from role markers, separators, and
    * function call metadata that aren't in the message content itself.
    * Default: 4 tokens per message.
    */
-  perMessageOverheadTokens?: number
-}
+  perMessageOverheadTokens?: number;
+
+  /**
+   * TRUNCATION DATA-LOSS FIX: Called before messages are discarded by the
+   * `truncate` or `sliding_window` compaction strategies.
+   *
+   * This is the only opportunity to preserve dropped messages (e.g., write
+   * them to a log, persist to long-term memory, or surface a warning).
+   * Previously these strategies dropped messages silently with no notification.
+   *
+   * Not called for the `summarize` strategy (which preserves content as a summary)
+   * or for strategy plugins (which manage their own message lifecycle).
+   *
+   * @param dropped - The messages that are about to be removed from the context.
+   * @param strategy - The strategy that triggered the truncation ('truncate' | 'sliding_window').
+   */
+  onTruncate?: (
+    dropped: Message[],
+    strategy: "truncate" | "sliding_window",
+  ) => void | Promise<void>;
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_COMPACT_BUFFER = 13_000
+const DEFAULT_COMPACT_BUFFER = 13_000;
 /** Warning threshold: emit before auto-compact fires */
-const WARNING_BUFFER = 20_000
+const WARNING_BUFFER = 20_000;
 /** Sentinel text injected when tool results are micro-compacted */
-const TOOL_RESULT_CLEARED = '[Old tool result content cleared]'
+const TOOL_RESULT_CLEARED = "[Old tool result content cleared]";
 
 const COMPACT_PROMPT = `Summarize the conversation so far. Preserve:
 - Key decisions and their rationale
@@ -196,12 +215,12 @@ const COMPACT_PROMPT = `Summarize the conversation so far. Preserve:
 - Environment state (working directory, installed deps, running services)
 
 Be thorough but concise. This summary replaces the original messages.
-Output a structured summary with sections for each topic.`
+Output a structured summary with sections for each topic.`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function defaultEstimateTokens(text: string): number {
-  return rawEstimateTokens(text)
+  return rawEstimateTokens(text);
 }
 
 // ── Context Manager ──────────────────────────────────────────────────────────
@@ -213,11 +232,11 @@ function defaultEstimateTokens(text: string): number {
  * @example
  * ```ts
  * const ctx = new ContextManager({
- *   contextWindowTokens: 200_000,
- *   maxOutputTokens: 16_384,
- *   summarizeFn: async ({ messages, systemPrompt }) => {
- *     return await callLLM({ system: systemPrompt, messages });
- *   },
+ * contextWindowTokens: 200_000,
+ * maxOutputTokens: 16_384,
+ * summarizeFn: async ({ messages, systemPrompt }) => {
+ * return await callLLM({ system: systemPrompt, messages });
+ * },
  * });
  *
  * // Register context sections (injected into every turn)
@@ -230,62 +249,87 @@ function defaultEstimateTokens(text: string): number {
  *
  * // Check if compaction is needed
  * if (ctx.shouldCompact()) {
- *   const result = await ctx.compact();
- *   console.log(`Freed ${result.tokensFreed} tokens`);
+ * const result = await ctx.compact();
+ * console.log(`Freed ${result.tokensFreed} tokens`);
  * }
  * ```
  */
 export class ContextManager {
-  private readonly config: Required<Omit<ContextManagerConfig, 'llmAdapter' | 'microCompactableTools' | 'onExtractFacts' | 'strategy' | 'perMessageOverheadTokens'>> & {
-    microCompactableTools?: Set<string>
-    onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[]
-  }
-  private messages: Message[] = []
-  private sections: Map<string, ContextSection> = new Map()
-  private compactionCount = 0
+  private readonly config: Required<
+    Omit<
+      ContextManagerConfig,
+      | "llmAdapter"
+      | "microCompactableTools"
+      | "onExtractFacts"
+      | "onTruncate"
+      | "strategy"
+      | "perMessageOverheadTokens"
+    >
+  > & {
+    microCompactableTools?: Set<string>;
+    onExtractFacts?: (messages: Message[]) => Promise<string[]> | string[];
+  };
+  private messages: Message[] = [];
+  private sections: Map<string, ContextSection> = new Map();
+  private compactionCount = 0;
   /** Tracks the number of micro-compactions performed */
-  private microCompactionCount = 0
+  private microCompactionCount = 0;
   /** Pluggable strategy (takes priority over legacy string-based strategy) */
-  private readonly strategyPlugin?: CompactionStrategyPlugin
+  private readonly strategyPlugin?: CompactionStrategyPlugin;
   /**
-   * CRITIQUE #8 FIX: Track token overhead from tool schemas sent with
+   * Track token overhead from tool schemas sent with
    * every LLM call. Set by the runner via setToolSchemaOverhead().
    */
-  private _toolSchemaTokens = 0
+  private _toolSchemaTokens = 0;
   /**
-   * CRITIQUE #8 FIX: Track token overhead from system prompt override
+   * Track token overhead from system prompt override
    * (memory, plugin context) that's built dynamically by the runner.
    */
-  private _systemOverrideTokens = 0
+  private _systemOverrideTokens = 0;
+  private readonly _perMessageOverhead: number;
   /**
-   * CRITIQUE #8 FIX: Per-message framing token overhead.
+   * TRUNCATION DATA-LOSS FIX: Optional callback invoked before messages are
+   * discarded by the truncate / sliding_window strategies.
    */
-  private readonly _perMessageOverhead: number
+  private readonly _onTruncate?: (
+    dropped: Message[],
+    strategy: "truncate" | "sliding_window",
+  ) => void | Promise<void>;
+
+  /**
+   * Coalesce concurrent compact() calls so that if two async turns
+   * both detect shouldCompact()===true at the same time, only one LLM call is
+   * made and both callers receive the same CompactionResult.
+   * Without this, two concurrent callers both read this.messages, both fire the
+   * LLM, and both write this.messages — the second write discards messages
+   * added between the two write points.
+   */
+  private _compactionPromise: Promise<CompactionResult> | null = null;
 
   constructor(config: ContextManagerConfig) {
     // Auto-wire from LLMAdapter if provided
     const summarizeFn: SummarizeFn | null = config.llmAdapter
       ? async ({ messages, systemPrompt, signal }) => {
-          const llmMessages: LLMMessage[] = messages.map(m => ({
-            role: m.role === 'tool_result' ? 'user' : m.role as LLMMessage['role'],
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          }))
-          return config.llmAdapter!.summarize(llmMessages, systemPrompt)
+          const llmMessages: LLMMessage[] = messages.map((m) => ({
+            role: m.role === "tool_result" ? "user" : (m.role as LLMMessage["role"]),
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          }));
+          return config.llmAdapter!.summarize(llmMessages, systemPrompt);
         }
-      : config.summarizeFn ?? null
+      : (config.summarizeFn ?? null);
 
     const estimateTokensFn = config.llmAdapter
       ? (text: string) => config.llmAdapter!.estimateTokens(text)
-      : config.estimateTokensFn ?? defaultEstimateTokens
+      : (config.estimateTokensFn ?? defaultEstimateTokens);
 
-    const compactionStrategy = config.compactionStrategy ?? 'summarize'
+    const compactionStrategy = config.compactionStrategy ?? "summarize";
 
     // Fail fast: don't silently produce empty summaries
-    if (compactionStrategy === 'summarize' && !summarizeFn) {
+    if (compactionStrategy === "summarize" && !summarizeFn) {
       throw new Error(
         'ContextManager: compactionStrategy is "summarize" but no summarizer is configured.\n' +
-        'Either pass `llmAdapter` (recommended) or provide a `summarizeFn` callback.'
-      )
+          "Either pass `llmAdapter` (recommended) or provide a `summarizeFn` callback.",
+      );
     }
 
     this.config = {
@@ -297,45 +341,46 @@ export class ContextManager {
       microCompactableTools: config.microCompactableTools,
       onExtractFacts: config.onExtractFacts,
       // Safe: if strategy is not 'summarize', summarizeFn is never called
-      summarizeFn: (summarizeFn ?? (async () => '')) as SummarizeFn,
+      summarizeFn: (summarizeFn ?? (async () => "")) as SummarizeFn,
       estimateTokensFn,
-    }
+    };
 
-    // CRITIQUE #8 FIX: Store per-message overhead
-    this._perMessageOverhead = config.perMessageOverheadTokens ?? 4
+    // Store per-message overhead
+    this._perMessageOverhead = config.perMessageOverheadTokens ?? 4;
 
     // Store the strategy plugin separately
-    this.strategyPlugin = config.strategy
+    this.strategyPlugin = config.strategy;
+
+    // Store optional truncation data-loss callback
+    this._onTruncate = config.onTruncate;
   }
 
   // ── Context Sections ─────────────────────────────────────────────────────
 
   /** Add or update a context section */
   addSection(section: ContextSection): void {
-    this.sections.set(section.key, section)
+    this.sections.set(section.key, section);
   }
 
   /** Remove a context section */
   removeSection(key: string): void {
-    this.sections.delete(key)
+    this.sections.delete(key);
   }
 
   /** Get all sections, sorted by priority (descending) */
   getSections(): ContextSection[] {
-    return [...this.sections.values()].sort(
-      (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
-    )
+    return [...this.sections.values()].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   }
 
   /**
    * Build the full system prompt from system-placed sections.
    */
-  buildSystemPrompt(basePrompt: string = ''): string {
+  buildSystemPrompt(basePrompt: string = ""): string {
     const systemSections = this.getSections()
-      .filter(s => s.placement === 'system' && s.content !== null)
-      .map(s => s.content!)
+      .filter((s) => s.placement === "system" && s.content !== null)
+      .map((s) => s.content!);
 
-    return [basePrompt, ...systemSections].filter(Boolean).join('\n\n')
+    return [basePrompt, ...systemSections].filter(Boolean).join("\n\n");
   }
 
   /**
@@ -343,142 +388,152 @@ export class ContextManager {
    */
   buildUserContext(): string {
     return this.getSections()
-      .filter(s => s.placement === 'user' && s.content !== null)
-      .map(s => s.content!)
-      .join('\n\n')
+      .filter((s) => s.placement === "user" && s.content !== null)
+      .map((s) => s.content!)
+      .join("\n\n");
   }
 
   // ── Message Management ───────────────────────────────────────────────────
 
   /** Add a message to the conversation */
   addMessage(
-    msg: Omit<Message, 'uuid' | 'timestamp'> & { uuid?: string; timestamp?: number },
+    msg: Omit<Message, "uuid" | "timestamp"> & { uuid?: string; timestamp?: number },
   ): Message {
     const message: Message = {
       uuid: msg.uuid ?? randomUUID(),
       timestamp: msg.timestamp ?? Date.now(),
       ...msg,
-    }
-    this.messages.push(message)
-    return message
+    };
+    this.messages.push(message);
+    return message;
   }
 
   /** Get all messages */
   getMessages(): readonly Message[] {
-    return this.messages
+    return this.messages;
   }
 
   /** Get messages after the last compaction boundary */
   getMessagesAfterLastCompaction(): Message[] {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i]!.isCompactSummary) {
-        return this.messages.slice(i)
+        return this.messages.slice(i);
       }
     }
-    return this.messages
+    return this.messages;
   }
 
   /** Replace all messages (used after compaction) */
   setMessages(messages: Message[]): void {
-    this.messages = messages
+    this.messages = messages;
   }
 
   /** Get message count */
   get messageCount(): number {
-    return this.messages.length
+    return this.messages.length;
   }
 
   /** Get message count (method form — used by Agent integration) */
   getMessageCount(): number {
-    return this.messages.length
+    return this.messages.length;
   }
 
   // ── Token Accounting ─────────────────────────────────────────────────────
 
   /** Estimate tokens for a single message */
   private estimateMessageTokens(msg: Message): number {
-    const content =
-      typeof msg.content === 'string'
-        ? msg.content
-        : JSON.stringify(msg.content)
-    return this.config.estimateTokensFn(content)
+    const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+    return this.config.estimateTokensFn(content);
   }
 
   /** Estimate total tokens across all messages */
   estimateTotalTokens(): number {
-    let total = 0
+    let total = 0;
 
     // System prompt overhead
-    total += this.config.estimateTokensFn(this.buildSystemPrompt())
-    total += this.config.estimateTokensFn(this.buildUserContext())
+    total += this.config.estimateTokensFn(this.buildSystemPrompt());
+    total += this.config.estimateTokensFn(this.buildUserContext());
 
-    // CRITIQUE #8 FIX: Include tool schema overhead (sent with every LLM call
+    // Include tool schema overhead (sent with every LLM call
     // but previously invisible to the context manager)
-    total += this._toolSchemaTokens
+    total += this._toolSchemaTokens;
 
-    // CRITIQUE #8 FIX: Include system prompt override overhead (memory,
+    // Include system prompt override overhead (memory,
     // plugin context — built dynamically by the runner)
-    total += this._systemOverrideTokens
+    total += this._systemOverrideTokens;
 
     // Messages + per-message framing overhead
     for (const msg of this.messages) {
-      total += this.estimateMessageTokens(msg)
-      // CRITIQUE #8 FIX: Add per-message framing tokens (role markers,
+      total += this.estimateMessageTokens(msg);
+      // Add per-message framing tokens (role markers,
       // separators, function call metadata)
-      total += this._perMessageOverhead
+      total += this._perMessageOverhead;
     }
 
-    return total
+    return total;
   }
 
   /**
-   * CRITIQUE #8 FIX: Set the token overhead from tool schemas.
-   * Called by the runner/agent after tool schemas are built.
+   * Set both overhead values atomically in one call.
+   * Reading estimateTotalTokens() between two separate setter calls could
+   * observe a partially-updated state (old tool schema + new system override
+   * or vice versa), causing shouldCompact() to fire at the wrong time.
+   *
+   * Both legacy single-setter methods are kept as thin wrappers for backward
+   * compatibility but now delegate here.
+   *
+   * @param toolSchemaTokens - Tokens from tool schema JSON sent with every call
+   * @param systemOverrideTokens - Tokens from dynamically-built system prompt additions
+   */
+  setOverheadTokens(toolSchemaTokens: number, systemOverrideTokens: number): void {
+    this._toolSchemaTokens = toolSchemaTokens;
+    this._systemOverrideTokens = systemOverrideTokens;
+  }
+
+  /**
+   * @deprecated Use setOverheadTokens() to update both values atomically.
    */
   setToolSchemaOverhead(tokens: number): void {
-    this._toolSchemaTokens = tokens
+    this._toolSchemaTokens = tokens;
   }
 
   /**
-   * CRITIQUE #8 FIX: Set the token overhead from system prompt override.
-   * Called by the runner/agent when the override is updated.
+   * @deprecated Use setOverheadTokens() to update both values atomically.
    */
   setSystemOverrideTokens(tokens: number): void {
-    this._systemOverrideTokens = tokens
+    this._systemOverrideTokens = tokens;
   }
 
   /** The effective context limit (window - output reservation) */
   get effectiveContextLimit(): number {
-    return this.config.contextWindowTokens - this.config.maxOutputTokens
+    return this.config.contextWindowTokens - this.config.maxOutputTokens;
   }
 
   /** The auto-compact threshold */
   get autoCompactThreshold(): number {
-    return this.effectiveContextLimit - this.config.autoCompactBuffer
+    return this.effectiveContextLimit - this.config.autoCompactBuffer;
   }
 
   /** How much headroom remains before compaction triggers */
   get headroom(): number {
-    return this.autoCompactThreshold - this.estimateTotalTokens()
+    return this.autoCompactThreshold - this.estimateTotalTokens();
   }
 
   /** What percentage of context is used */
   get usagePercent(): number {
-    return Math.round(
-      (this.estimateTotalTokens() / this.effectiveContextLimit) * 100,
-    )
+    return Math.round((this.estimateTotalTokens() / this.effectiveContextLimit) * 100);
   }
 
   // ── Compaction ───────────────────────────────────────────────────────────
 
   /** Check if auto-compaction should trigger */
   shouldCompact(): boolean {
-    return this.estimateTotalTokens() >= this.autoCompactThreshold
+    return this.estimateTotalTokens() >= this.autoCompactThreshold;
   }
 
   /** Check if we're approaching the compaction threshold (warning zone) */
   isNearingLimit(): boolean {
-    return this.estimateTotalTokens() >= this.autoCompactThreshold - WARNING_BUFFER
+    return this.estimateTotalTokens() >= this.autoCompactThreshold - WARNING_BUFFER;
   }
 
   // ── Micro-Compaction ─────────────────────────────────────────────────────
@@ -494,59 +549,58 @@ export class ContextManager {
    * @returns MicroCompactionResult with stats, or null if nothing to clear
    */
   microCompact(): MicroCompactionResult | null {
-    const keepRecent = this.config.microCompactKeepRecent
-    if (keepRecent <= 0) return null
+    const keepRecent = this.config.microCompactKeepRecent;
+    if (keepRecent <= 0) return null;
 
     // Find all tool_result messages eligible for clearing
-    const toolMessages: Array<{ index: number; msg: Message; toolName?: string }> = []
+    const toolMessages: Array<{ index: number; msg: Message; toolName?: string }> = [];
 
     for (let i = 0; i < this.messages.length; i++) {
-      const msg = this.messages[i]!
-      if (msg.role !== 'tool_result') continue
+      const msg = this.messages[i]!;
+      if (msg.role !== "tool_result") continue;
 
       // Already cleared?
-      if (typeof msg.content === 'string' && msg.content === TOOL_RESULT_CLEARED) continue
+      if (typeof msg.content === "string" && msg.content === TOOL_RESULT_CLEARED) continue;
 
       // Check if this tool is eligible
-      const toolName = msg.metadata?.toolName as string | undefined
+      const toolName = msg.metadata?.toolName as string | undefined;
       if (this.config.microCompactableTools && toolName) {
-        if (!this.config.microCompactableTools.has(toolName)) continue
+        if (!this.config.microCompactableTools.has(toolName)) continue;
       }
 
-      toolMessages.push({ index: i, msg, toolName })
+      toolMessages.push({ index: i, msg, toolName });
     }
 
     // Keep the most recent N, clear the rest
-    const toClear = toolMessages.slice(0, -keepRecent)
-    if (toClear.length === 0) return null
+    const toClear = toolMessages.slice(0, -keepRecent);
+    if (toClear.length === 0) return null;
 
-    let tokensFreed = 0
-    const clearedTools: string[] = []
+    let tokensFreed = 0;
+    const clearedTools: string[] = [];
 
     for (const { index, msg, toolName } of toClear) {
-      const oldContent = typeof msg.content === 'string'
-        ? msg.content
-        : JSON.stringify(msg.content)
-      tokensFreed += this.config.estimateTokensFn(oldContent)
-      tokensFreed -= this.config.estimateTokensFn(TOOL_RESULT_CLEARED)
+      const oldContent =
+        typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+      tokensFreed += this.config.estimateTokensFn(oldContent);
+      tokensFreed -= this.config.estimateTokensFn(TOOL_RESULT_CLEARED);
 
       // Replace content but keep message structure
       this.messages[index] = {
         ...msg,
         content: TOOL_RESULT_CLEARED,
         metadata: { ...msg.metadata, microCompacted: true },
-      }
+      };
 
-      if (toolName) clearedTools.push(toolName)
+      if (toolName) clearedTools.push(toolName);
     }
 
-    this.microCompactionCount++
+    this.microCompactionCount++;
 
     return {
       toolResultsCleared: toClear.length,
       tokensFreed: Math.max(0, tokensFreed),
       clearedTools,
-    }
+    };
   }
 
   /**
@@ -554,9 +608,9 @@ export class ContextManager {
    * at the full compaction threshold. Returns null if not needed.
    */
   maybeAutoMicroCompact(): MicroCompactionResult | null {
-    if (!this.isNearingLimit()) return null
-    if (this.shouldCompact()) return null  // needs full compaction
-    return this.microCompact()
+    if (!this.isNearingLimit()) return null;
+    if (this.shouldCompact()) return null; // needs full compaction
+    return this.microCompact();
   }
 
   /**
@@ -565,15 +619,30 @@ export class ContextManager {
    * @param customInstructions - Additional instructions for the summarizer
    * @returns CompactionResult with stats about the compaction
    */
-  async compact(
+  async compact(customInstructions?: string, signal?: AbortSignal): Promise<CompactionResult> {
+    // Coalesce concurrent compact() calls.
+    // If a compaction is already in-flight, return the same promise so that
+    // the second caller doesn't fire a duplicate LLM call and doesn't
+    // overwrite this.messages with a stale snapshot.
+    if (this._compactionPromise) {
+      return this._compactionPromise;
+    }
+    this._compactionPromise = this._doCompact(customInstructions, signal).finally(() => {
+      this._compactionPromise = null;
+    });
+    return this._compactionPromise;
+  }
+
+  /** Internal implementation — called only through the compact() coalescing gate. */
+  private async _doCompact(
     customInstructions?: string,
     signal?: AbortSignal,
   ): Promise<CompactionResult> {
     if (this.messages.length < 2) {
-      throw new Error('Not enough messages to compact.')
+      throw new Error("Not enough messages to compact.");
     }
 
-    const preCompactTokens = this.estimateTotalTokens()
+    const preCompactTokens = this.estimateTotalTokens();
 
     // ── Strategy Plugin Path ──────────────────────────────────────────────
     // If a pluggable strategy was configured, delegate entirely to it.
@@ -589,76 +658,97 @@ export class ContextManager {
           : undefined,
         estimateTokens: this.config.estimateTokensFn,
         signal,
-      }
+      };
 
-      const result = await this.strategyPlugin.compact(compactionCtx)
+      const result = await this.strategyPlugin.compact(compactionCtx);
       if (!result) {
-        throw new Error(`Strategy "${this.strategyPlugin.name}" returned null — no compaction possible.`)
+        throw new Error(
+          `Strategy "${this.strategyPlugin.name}" returned null — no compaction possible.`,
+        );
       }
 
-      this.messages = result.messages
-      this.compactionCount++
+      this.messages = result.messages;
+      this.compactionCount++;
 
-      const postCompactTokens = this.estimateTotalTokens()
+      const postCompactTokens = this.estimateTotalTokens();
       return {
         summary: result.summary,
         messagesRemoved: result.messagesRemoved,
         tokensFreed: preCompactTokens - postCompactTokens,
         postCompactTokens,
         extractedFacts: result.extractedFacts,
-      }
+      };
     }
 
     // ── Legacy Path (string-based compactionStrategy) ─────────────────────
-    const strategy = this.config.compactionStrategy
+    const strategy = this.config.compactionStrategy;
 
-    let summary = ''
-    let messagesRemoved = 0
+    let summary = "";
+    let messagesRemoved = 0;
 
-    if (strategy === 'truncate') {
+    if (strategy === "truncate") {
       // Simple truncation: drop the oldest 50% of messages
-      const cutPoint = Math.floor(this.messages.length / 2)
-      messagesRemoved = cutPoint
-      summary = `[${messagesRemoved} earlier messages truncated]`
-      this.messages = this.messages.slice(cutPoint)
-    } else if (strategy === 'sliding_window') {
-      // Keep the most recent N messages that fit in 60% of the window
-      const target = this.effectiveContextLimit * 0.6
-      let kept: Message[] = []
-      let tokens = 0
-      for (let i = this.messages.length - 1; i >= 0; i--) {
-        const msgTokens = this.estimateMessageTokens(this.messages[i]!)
-        if (tokens + msgTokens > target) break
-        kept.unshift(this.messages[i]!)
-        tokens += msgTokens
+      const cutPoint = Math.floor(this.messages.length / 2);
+      const dropped = this.messages.slice(0, cutPoint);
+      messagesRemoved = cutPoint;
+      summary = `[${messagesRemoved} earlier messages truncated]`;
+      // TRUNCATION DATA-LOSS FIX: Notify caller before discarding messages.
+      // Previously truncated messages were silently dropped with no notification.
+      if (this._onTruncate && dropped.length > 0) {
+        try {
+          await this._onTruncate(dropped, "truncate");
+        } catch {
+          /* non-fatal */
+        }
       }
-      messagesRemoved = this.messages.length - kept.length
-      summary = `[Sliding window: ${messagesRemoved} earlier messages removed]`
-      this.messages = kept
+      this.messages = this.messages.slice(cutPoint);
+    } else if (strategy === "sliding_window") {
+      // Keep the most recent N messages that fit in 60% of the window
+      const target = this.effectiveContextLimit * 0.6;
+      let kept: Message[] = [];
+      let tokens = 0;
+      for (let i = this.messages.length - 1; i >= 0; i--) {
+        const msgTokens = this.estimateMessageTokens(this.messages[i]!);
+        if (tokens + msgTokens > target) break;
+        kept.unshift(this.messages[i]!);
+        tokens += msgTokens;
+      }
+      const dropped = this.messages.slice(0, this.messages.length - kept.length);
+      messagesRemoved = this.messages.length - kept.length;
+      summary = `[Sliding window: ${messagesRemoved} earlier messages removed]`;
+      // TRUNCATION DATA-LOSS FIX: Notify caller before discarding messages.
+      if (this._onTruncate && dropped.length > 0) {
+        try {
+          await this._onTruncate(dropped, "sliding_window");
+        } catch {
+          /* non-fatal */
+        }
+      }
+      this.messages = kept;
     }
 
     // Truncate / sliding_window return here
-    if (strategy !== 'summarize') {
-      this.compactionCount++
-      const postCompactTokens = this.estimateTotalTokens()
+    if (strategy !== "summarize") {
+      this.compactionCount++;
+      const postCompactTokens = this.estimateTotalTokens();
       return {
         summary,
         messagesRemoved,
         tokensFreed: preCompactTokens - postCompactTokens,
         postCompactTokens,
-      }
+      };
     }
 
     // Default: LLM summarization (strategy === 'summarize')
     const prompt = customInstructions
       ? `${COMPACT_PROMPT}\n\nAdditional instructions:\n${customInstructions}`
-      : COMPACT_PROMPT
+      : COMPACT_PROMPT;
 
     // Extract facts before compaction (for memory persistence)
-    let extractedFacts: string[] | undefined
+    let extractedFacts: string[] | undefined;
     if (this.config.onExtractFacts && this.messages.length > 0) {
       try {
-        extractedFacts = await this.config.onExtractFacts(this.messages)
+        extractedFacts = await this.config.onExtractFacts(this.messages);
       } catch {
         // Non-fatal: extraction failure shouldn't block compaction
       }
@@ -668,40 +758,40 @@ export class ContextManager {
       messages: this.messages,
       systemPrompt: prompt,
       signal,
-    })
+    });
 
     if (!summary) {
-      throw new Error('Summarization returned empty result')
+      throw new Error("Summarization returned empty result");
     }
 
-    messagesRemoved = this.messages.length
+    messagesRemoved = this.messages.length;
 
     // Replace all messages with the summary
     const boundaryMessage: Message = {
       uuid: randomUUID(),
-      role: 'system',
-      content: '[Conversation compacted]',
+      role: "system",
+      content: "[Conversation compacted]",
       timestamp: Date.now(),
       isMeta: true,
       metadata: {
-        type: 'compact_boundary',
+        type: "compact_boundary",
         preCompactTokens,
         compactionNumber: ++this.compactionCount,
       },
-    }
+    };
 
     const summaryMessage: Message = {
       uuid: randomUUID(),
-      role: 'user',
+      role: "user",
       content: `Here is a summary of the conversation so far:\n\n${summary}\n\nPlease continue from where we left off. Do NOT ask follow-up questions about the summary.`,
       timestamp: Date.now(),
       isCompactSummary: true,
       isMeta: true,
-    }
+    };
 
-    this.messages = [boundaryMessage, summaryMessage]
+    this.messages = [boundaryMessage, summaryMessage];
 
-    const postCompactTokens = this.estimateTotalTokens()
+    const postCompactTokens = this.estimateTotalTokens();
 
     return {
       summary,
@@ -709,22 +799,22 @@ export class ContextManager {
       tokensFreed: preCompactTokens - postCompactTokens,
       postCompactTokens,
       extractedFacts,
-    }
+    };
   }
 
   /**
    * Get a diagnostic snapshot of context state.
    */
   getStats(): {
-    messageCount: number
-    estimatedTokens: number
-    effectiveLimit: number
-    autoCompactThreshold: number
-    usagePercent: number
-    headroom: number
-    compactionCount: number
-    microCompactionCount: number
-    isNearingLimit: boolean
+    messageCount: number;
+    estimatedTokens: number;
+    effectiveLimit: number;
+    autoCompactThreshold: number;
+    usagePercent: number;
+    headroom: number;
+    compactionCount: number;
+    microCompactionCount: number;
+    isNearingLimit: boolean;
   } {
     return {
       messageCount: this.messages.length,
@@ -736,6 +826,6 @@ export class ContextManager {
       compactionCount: this.compactionCount,
       microCompactionCount: this.microCompactionCount,
       isNearingLimit: this.isNearingLimit(),
-    }
+    };
   }
 }

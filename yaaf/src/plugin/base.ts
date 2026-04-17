@@ -7,24 +7,24 @@
  * @example
  * ```ts
  * export class MyPlugin extends PluginBase implements MemoryAdapter {
- *   constructor() {
- *     super('my-plugin', ['memory'])
- *   }
- *   // implement MemoryAdapter methods...
+ * constructor() {
+ * super('my-plugin', ['memory'])
+ * }
+ * // implement MemoryAdapter methods...
  * }
  * ```
  */
 
-import type { Plugin, PluginCapability } from './types.js'
+import type { Plugin, PluginCapability } from "./types.js";
 
 export abstract class PluginBase implements Plugin {
-  readonly name: string
-  readonly version = '1.0.0'
-  readonly capabilities: readonly PluginCapability[]
+  readonly name: string;
+  readonly version = "1.0.0";
+  readonly capabilities: readonly PluginCapability[];
 
   constructor(name: string, capabilities: PluginCapability[]) {
-    this.name = name
-    this.capabilities = capabilities
+    this.name = name;
+    this.capabilities = capabilities;
   }
 
   /**
@@ -32,7 +32,7 @@ export abstract class PluginBase implements Plugin {
    * Override to probe real connectivity (HTTP ping, DB query, etc).
    */
   async healthCheck(): Promise<boolean> {
-    return true
+    return true;
   }
 
   /**

@@ -1,7 +1,7 @@
 /**
  * Token Estimation Utility
  *
-  * fast, approximate token counts without requiring a tokenizer.
+ * fast, approximate token counts without requiring a tokenizer.
  *
  * YAAF uses this for:
  * - Auto-compact threshold checks (needs to be fast, ~0.1ms)
@@ -24,8 +24,8 @@
  * @returns Estimated token count (always rounds up)
  */
 export function estimateTokens(text: string): number {
-  if (!text) return 0
-  return Math.ceil(text.length / 4)
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
 }
 
 /**
@@ -36,30 +36,30 @@ export function estimateTokens(text: string): number {
  * @returns Estimated token count
  */
 export function estimateMessageTokens(message: {
-  role: string
-  content: string | Array<{ type: string; [key: string]: unknown }>
+  role: string;
+  content: string | Array<{ type: string; [key: string]: unknown }>;
 }): number {
   // Base overhead for message envelope (~4 tokens for role, separators)
-  const overhead = 4
+  const overhead = 4;
 
-  if (typeof message.content === 'string') {
-    return overhead + estimateTokens(message.content)
+  if (typeof message.content === "string") {
+    return overhead + estimateTokens(message.content);
   }
 
   // Structured content (tool_use blocks, images, etc.)
-  let total = overhead
+  let total = overhead;
   for (const block of message.content) {
-    if (block.type === 'text' && typeof block['text'] === 'string') {
-      total += estimateTokens(block['text'] as string)
-    } else if (block.type === 'image') {
+    if (block.type === "text" && typeof block["text"] === "string") {
+      total += estimateTokens(block["text"] as string);
+    } else if (block.type === "image") {
       // Images are typically 1-2K tokens depending on resolution
-      total += 1500
+      total += 1500;
     } else {
       // Tool use, tool result, etc. — estimate from JSON
-      total += estimateTokens(JSON.stringify(block))
+      total += estimateTokens(JSON.stringify(block));
     }
   }
-  return total
+  return total;
 }
 
 /**
@@ -67,15 +67,15 @@ export function estimateMessageTokens(message: {
  */
 export function estimateConversationTokens(
   messages: Array<{
-    role: string
-    content: string | Array<{ type: string; [key: string]: unknown }>
+    role: string;
+    content: string | Array<{ type: string; [key: string]: unknown }>;
   }>,
 ): number {
-  let total = 0
+  let total = 0;
   for (const msg of messages) {
-    total += estimateMessageTokens(msg)
+    total += estimateMessageTokens(msg);
   }
-  return total
+  return total;
 }
 
 /**
@@ -84,7 +84,5 @@ export function estimateConversationTokens(
  */
 export function exceedsBudget(text: string, budgetTokens: number): boolean {
   // Early exit: if char count / 4 can't possibly exceed budget, skip
-  return text.length > budgetTokens * 4
-    ? estimateTokens(text) > budgetTokens
-    : false
+  return text.length > budgetTokens * 4 ? estimateTokens(text) > budgetTokens : false;
 }

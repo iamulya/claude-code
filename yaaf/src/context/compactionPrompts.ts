@@ -24,16 +24,16 @@ export type CompactionPromptConfig = {
    * (used when old messages are preserved and only the middle is compacted).
    * If false, generates a "full" prompt that summarizes the entire conversation.
    */
-  partial?: boolean
+  partial?: boolean;
   /**
    * Custom sections to include in the summary. If omitted, uses all 9 defaults.
    */
-  sections?: string[]
+  sections?: string[];
   /**
    * Extra instructions appended to the prompt.
    */
-  additionalInstructions?: string
-}
+  additionalInstructions?: string;
+};
 
 // ── No-Tools Preamble ────────────────────────────────────────────────────────
 
@@ -44,31 +44,31 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 - Tool calls will be REJECTED and will waste your only turn — you will fail the task.
 - Your entire response must be plain text: an <analysis> block followed by a <summary> block.
 
-`
+`;
 
 // ── Analysis Block Instructions ──────────────────────────────────────────────
 
 const ANALYSIS_FULL = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts. In your analysis:
 
 1. Chronologically analyze each message and section. For each section identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts and code patterns
-   - Specific details: file names, code snippets, function signatures, file edits
-   - Errors encountered and how they were fixed
-   - Specific user feedback, especially if the user told you to do something differently
-2. Double-check for technical accuracy and completeness.`
+ - The user's explicit requests and intents
+ - Your approach to addressing the user's requests
+ - Key decisions, technical concepts and code patterns
+ - Specific details: file names, code snippets, function signatures, file edits
+ - Errors encountered and how they were fixed
+ - Specific user feedback, especially if the user told you to do something differently
+2. Double-check for technical accuracy and completeness.`;
 
 const ANALYSIS_PARTIAL = `Before providing your final summary, wrap your analysis in <analysis> tags. In your analysis:
 
 1. Analyze the recent messages chronologically. For each section identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts and code patterns
-   - Specific details: file names, code snippets, function signatures
-   - Errors encountered and fixes applied
-   - User feedback (especially corrections)
-2. Double-check for accuracy and completeness.`
+ - The user's explicit requests and intents
+ - Your approach to addressing the user's requests
+ - Key decisions, technical concepts and code patterns
+ - Specific details: file names, code snippets, function signatures
+ - Errors encountered and fixes applied
+ - User feedback (especially corrections)
+2. Double-check for accuracy and completeness.`;
 
 // ── Default Section Prompts ──────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ const DEFAULT_SECTIONS = [
   `7. **Pending Tasks**: Outline any pending tasks that have explicitly been asked for.`,
   `8. **Current Work**: Describe in detail what was being worked on immediately before this summary. Include file names and code snippets.`,
   `9. **Next Step**: List the next step that is directly in line with the user's most recent explicit request. Include direct quotes showing exactly what task you were working on. If the last task was concluded, only list next steps if explicitly requested.`,
-]
+];
 
 // ── Prompt Builder ───────────────────────────────────────────────────────────
 
@@ -91,13 +91,13 @@ const DEFAULT_SECTIONS = [
  * anti-tool preamble, and 9 required sections.
  */
 export function buildCompactionPrompt(config: CompactionPromptConfig = {}): string {
-  const { partial = false, sections, additionalInstructions } = config
+  const { partial = false, sections, additionalInstructions } = config;
 
-  const analysisBlock = partial ? ANALYSIS_PARTIAL : ANALYSIS_FULL
-  const sectionList = sections ?? DEFAULT_SECTIONS
+  const analysisBlock = partial ? ANALYSIS_PARTIAL : ANALYSIS_FULL;
+  const sectionList = sections ?? DEFAULT_SECTIONS;
   const scope = partial
-    ? 'the recent messages (the older messages will be preserved)'
-    : 'the entire conversation so far'
+    ? "the recent messages (the older messages will be preserved)"
+    : "the entire conversation so far";
 
   return `${NO_TOOLS_PREAMBLE}Your task is to create a detailed summary of ${scope}, paying close attention to the user's explicit requests and your previous actions. This summary should be thorough in capturing technical details, code patterns, and architectural decisions essential for continuing development without losing context.
 
@@ -105,35 +105,47 @@ ${analysisBlock}
 
 Your summary should include the following sections:
 
-${sectionList.join('\n')}
+${sectionList.join("\n")}
 
-${additionalInstructions ?? ''}
+${additionalInstructions ?? ""}
 
-Wrap your final output in <summary></summary> tags. The <analysis> block is a scratchpad — only the <summary> block will be kept.`.trim()
+Wrap your final output in <summary></summary> tags. The <analysis> block is a scratchpad — only the <summary> block will be kept.`.trim();
 }
 
 // ── Output Parsing ───────────────────────────────────────────────────────────
 
+/** Maximum response size we'll feed to the regex parsers. */
+const MAX_PARSE_BYTES = 512 * 1024; // 512 KB
+
 /**
  * Extract the <summary> block from the model's output, stripping the
  * <analysis> scratchpad.
+ *
+ * Text is capped at 512 KB before regex application to prevent
+ * event-loop blocking when the LLM produces a giant response without the
+ * expected closing tag (the lazy [\s\S]*? then scans the entire string).
  */
 export function stripAnalysisBlock(text: string): string {
+  const safeText = text.length > MAX_PARSE_BYTES ? text.slice(0, MAX_PARSE_BYTES) : text;
+
   // Try to extract <summary> block
-  const summaryMatch = text.match(/<summary>([\s\S]*?)<\/summary>/i)
+  const summaryMatch = safeText.match(/<summary>([\s\S]*?)<\/summary>/i);
   if (summaryMatch) {
-    return summaryMatch[1]!.trim()
+    return summaryMatch[1]!.trim();
   }
 
   // If no <summary> tags, strip <analysis> block and return the rest
-  const stripped = text.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim()
-  return stripped || text
+  const stripped = safeText.replace(/<analysis>[\s\S]*?<\/analysis>/gi, "").trim();
+  return stripped || safeText;
 }
 
 /**
  * Extract the <analysis> block (useful for debugging compaction quality).
+ *
+ * Same size cap as stripAnalysisBlock().
  */
 export function extractAnalysisBlock(text: string): string | null {
-  const match = text.match(/<analysis>([\s\S]*?)<\/analysis>/i)
-  return match ? match[1]!.trim() : null
+  const safeText = text.length > MAX_PARSE_BYTES ? text.slice(0, MAX_PARSE_BYTES) : text;
+  const match = safeText.match(/<analysis>([\s\S]*?)<\/analysis>/i);
+  return match ? match[1]!.trim() : null;
 }

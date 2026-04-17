@@ -12,7 +12,7 @@
  * @module gateway
  */
 
-// ── Channel Gateway (OpenClaw Parity — O1 + O7) ─────────────────────────────
+// ── Channel Gateway ( + O7) ─────────────────────────────
 export {
   Gateway,
   ConsoleChannel,
@@ -25,9 +25,9 @@ export {
   type MessageHandler,
   type GatewayConfig,
   type ChannelLimits,
-} from './gateway/channel.js'
+} from "./gateway/channel.js";
 
-// ── Async Approvals (OpenClaw Parity — O5) ──────────────────────────────────
+// ── Async Approvals () ──────────────────────────────────
 export {
   ApprovalManager,
   type ApprovalRequest,
@@ -35,13 +35,7 @@ export {
   type ApprovalRecord,
   type ApprovalTransport,
   type ApprovalManagerConfig,
-} from './gateway/approvals.js'
+} from "./gateway/approvals.js";
 
-// ── SOUL.md Personality (OpenClaw Parity — O3) ──────────────────────────────
-export {
-  loadSoul,
-  parseSoulMd,
-  createSoul,
-  applySoul,
-  type Soul,
-} from './agents/soul.js'
+// ── SOUL.md Personality () ──────────────────────────────
+export { loadSoul, parseSoulMd, createSoul, applySoul, type Soul } from "./agents/soul.js";

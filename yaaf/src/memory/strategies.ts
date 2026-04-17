@@ -31,25 +31,56 @@
  * ```ts
  * // Session memory (like Claude Code)
  * const agent = new Agent({
- *   memory: new SessionMemoryExtractor({
- *     store: myStore,
- *     llm: myModel,
- *     template: DEFAULT_SESSION_MEMORY_TEMPLATE,
- *   }),
+ * memory: new SessionMemoryExtractor({
+ * store: myStore,
+ * llm: myModel,
+ * template: DEFAULT_SESSION_MEMORY_TEMPLATE,
+ * }),
  * });
  *
  * // Composite: extract to topic files, retrieve with LLM selection
  * const agent = new Agent({
- *   memory: new CompositeMemoryStrategy({
- *     extraction: new TopicFileExtractor({ store: myStore }),
- *     retrieval: new LLMRetrievalStrategy({ queryFn: myQueryFn }),
- *   }),
+ * memory: new CompositeMemoryStrategy({
+ * extraction: new TopicFileExtractor({ store: myStore }),
+ * retrieval: new LLMRetrievalStrategy({ queryFn: myQueryFn }),
+ * }),
  * });
  * ```
  */
 
-import type { MemoryStore, MemoryHeader, MemoryType, MemoryEntry } from './memoryStore.js'
-import { MemoryRelevanceEngine, type RelevanceQueryFn, type RelevantMemory } from './relevance.js'
+import type { MemoryStore, MemoryHeader, MemoryType, MemoryEntry } from "./memoryStore.js";
+import { MEMORY_TYPES } from "./memoryStore.js";
+import { MemoryRelevanceEngine, type RelevanceQueryFn, type RelevantMemory } from "./relevance.js";
+
+// ── W7-01 Helper: Memory Sanitizer ─────────────────────────────────────────────────────
+
+/**
+ * Strip known prompt-injection control tokens from memory content
+ * before injecting into the system prompt. This is a defence-in-depth measure
+ * against stored prompt injection where a rogue tool result writes
+ * system-prompt override instructions into a memory file.
+ *
+ * Strips:
+ * - ChatML control tokens: `<|im_start|>`, `<|im_end|>`, `<|system|>`
+ * - Anthropic Human/Assistant markers: `\n\nHuman:`, `\n\nAssistant:`
+ * - XML-style system/role overrides: `<system>`, `<instructions>`
+ * - Null bytes (can cause parser issues)
+ */
+function sanitizeMemoryContent(content: string): string {
+  return content
+    .replace(/<\|im_start\|>/gi, "[im_start]")
+    .replace(/<\|im_end\|>/gi, "[im_end]")
+    .replace(/<\|system\|>/gi, "[system]")
+    .replace(/<\|user\|>/gi, "[user]")
+    .replace(/<\|assistant\|>/gi, "[assistant]")
+    .replace(/\n\nHuman:/gi, "\n\n[Human:]")
+    .replace(/\n\nAssistant:/gi, "\n\n[Assistant:]")
+    .replace(/<system>/gi, "[system]")
+    .replace(/<\/system>/gi, "[/system]")
+    .replace(/<instructions>/gi, "[instructions]")
+    .replace(/<\/instructions>/gi, "[/instructions]")
+    .replace(/\0/g, ""); // strip null bytes
+}
 
 // ── Core Interfaces ──────────────────────────────────────────────────────────
 
@@ -60,18 +91,18 @@ import { MemoryRelevanceEngine, type RelevanceQueryFn, type RelevantMemory } fro
  */
 export type MemoryContext = {
   /** Current conversation messages (role + content) */
-  messages: ReadonlyArray<{ role: string; content: string; timestamp?: number }>
+  messages: ReadonlyArray<{ role: string; content: string; timestamp?: number }>;
   /** The user's most recent query */
-  currentQuery: string
+  currentQuery: string;
   /** Estimated total tokens in the conversation */
-  totalTokens: number
+  totalTokens: number;
   /** Number of tool calls since last extraction */
-  toolCallsSinceExtraction: number
+  toolCallsSinceExtraction: number;
   /** Tool names used recently (for relevance filtering) */
-  recentTools?: readonly string[]
+  recentTools?: readonly string[];
   /** Abort signal */
-  signal?: AbortSignal
-}
+  signal?: AbortSignal;
+};
 
 /**
  * Result of a memory extraction operation.
@@ -79,14 +110,14 @@ export type MemoryContext = {
  */
 export type ExtractionResult = {
   /** Whether extraction actually happened */
-  extracted: boolean
+  extracted: boolean;
   /** Human-readable summary of what was extracted */
-  summary?: string
+  summary?: string;
   /** Number of facts/entries extracted or updated */
-  factsExtracted?: number
+  factsExtracted?: number;
   /** Token cost of the extraction (input + output) */
-  tokenCost?: number
-}
+  tokenCost?: number;
+};
 
 /**
  * Result of a memory retrieval operation.
@@ -94,16 +125,16 @@ export type ExtractionResult = {
  */
 export type RetrievalResult = {
   /** Text to inject into the system prompt */
-  systemPromptSection: string
+  systemPromptSection: string;
   /** Individual memories that were selected */
   selectedMemories: Array<{
-    name: string
-    content: string
-    relevanceScore?: number
-  }>
+    name: string;
+    content: string;
+    relevanceScore?: number;
+  }>;
   /** Total tokens consumed by the returned content */
-  tokenEstimate: number
-}
+  tokenEstimate: number;
+};
 
 // ── Extraction Strategy ──────────────────────────────────────────────────────
 
@@ -116,24 +147,24 @@ export type RetrievalResult = {
  */
 export interface MemoryExtractionStrategy {
   /** Strategy name for logging */
-  readonly name: string
+  readonly name: string;
 
   /**
    * Check if extraction should run this turn.
    * Called before every LLM call. Return true to trigger `extract()`.
    */
-  shouldExtract(ctx: MemoryContext): boolean | Promise<boolean>
+  shouldExtract(ctx: MemoryContext): boolean | Promise<boolean>;
 
   /**
    * Extract knowledge from the conversation and persist it.
    * Only called when `shouldExtract()` returns true.
    */
-  extract(ctx: MemoryContext): Promise<ExtractionResult>
+  extract(ctx: MemoryContext): Promise<ExtractionResult>;
 
   /**
    * Reset extraction state (e.g., after compaction clears messages).
    */
-  reset?(): void
+  reset?(): void;
 }
 
 // ── Retrieval Strategy ───────────────────────────────────────────────────────
@@ -147,13 +178,13 @@ export interface MemoryExtractionStrategy {
  */
 export interface MemoryRetrievalStrategy {
   /** Strategy name for logging */
-  readonly name: string
+  readonly name: string;
 
   /**
    * Build the memory section for the current turn's system prompt.
    * Should be token-aware — stay within budget.
    */
-  retrieve(ctx: MemoryContext): Promise<RetrievalResult>
+  retrieve(ctx: MemoryContext): Promise<RetrievalResult>;
 }
 
 // ── Combined Interface ───────────────────────────────────────────────────────
@@ -164,9 +195,9 @@ export interface MemoryRetrievalStrategy {
  */
 export interface MemoryStrategy extends MemoryExtractionStrategy, MemoryRetrievalStrategy {
   /** Initialize the strategy (create dirs, load state, etc.) */
-  initialize?(): Promise<void>
+  initialize?(): Promise<void>;
   /** Shutdown (flush buffers, close connections) */
-  destroy?(): Promise<void>
+  destroy?(): Promise<void>;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -210,7 +241,7 @@ _If the user asked a specific output such as an answer to a question, a table, o
 
 # Worklog
 _Step by step, what was attempted, done? Very terse summary for each step_
-`
+`;
 
 /**
  * Session memory extraction strategy — the core of the main repo's
@@ -224,7 +255,7 @@ _Step by step, what was attempted, done? Very terse summary for each step_
  * Trigger policy (from main repo):
  * - Wait until `minimumTokensToInit` tokens accumulated (cold start)
  * - Then extract every `minimumTokensBetweenUpdate` tokens AND
- *   `toolCallsBetweenUpdates` tool calls
+ * `toolCallsBetweenUpdates` tool calls
  * - Also extract at natural breaks (no tool calls in last assistant turn)
  */
 export type SessionMemoryExtractorConfig = {
@@ -233,39 +264,39 @@ export type SessionMemoryExtractorConfig = {
    * Receives the conversation + current notes and should return updated notes.
    */
   extractFn: (params: {
-    messages: ReadonlyArray<{ role: string; content: string }>
-    currentNotes: string
-    systemPrompt: string
-    signal?: AbortSignal
-  }) => Promise<string>
+    messages: ReadonlyArray<{ role: string; content: string }>;
+    currentNotes: string;
+    systemPrompt: string;
+    signal?: AbortSignal;
+  }) => Promise<string>;
 
   /** Where to persist the session notes. Default: in-memory only. */
-  storagePath?: string
+  storagePath?: string;
 
   /** Custom template. Default: DEFAULT_SESSION_MEMORY_TEMPLATE */
-  template?: string
+  template?: string;
 
   /** Minimum tokens before first extraction. Default: 10_000 */
-  minimumTokensToInit?: number
+  minimumTokensToInit?: number;
 
   /** Minimum token growth between extractions. Default: 5_000 */
-  minimumTokensBetweenUpdate?: number
+  minimumTokensBetweenUpdate?: number;
 
   /** Minimum tool calls between extractions. Default: 3 */
-  toolCallsBetweenUpdates?: number
+  toolCallsBetweenUpdates?: number;
 
   /** Maximum tokens per section. Default: 2_000 */
-  maxSectionTokens?: number
+  maxSectionTokens?: number;
 
   /** Maximum total tokens for session notes. Default: 12_000 */
-  maxTotalTokens?: number
+  maxTotalTokens?: number;
 
   /** Custom extraction prompt (overrides the built-in). */
-  customPrompt?: string
+  customPrompt?: string;
 
   /** Token estimation function */
-  estimateTokens?: (text: string) => number
-}
+  estimateTokens?: (text: string) => number;
+};
 
 /**
  * The extraction prompt sent to the LLM to update session notes.
@@ -291,22 +322,24 @@ CRITICAL RULES:
 - Focus on actionable, specific information
 - Do NOT add filler content like "No info yet" — leave sections blank if no content
 
-Return the complete updated notes file with all sections.`
+Return the complete updated notes file with all sections.`;
 }
 
 export class SessionMemoryExtractor implements MemoryStrategy {
-  readonly name = 'session-memory'
+  readonly name = "session-memory";
 
-  private readonly config: Required<Omit<SessionMemoryExtractorConfig, 'storagePath' | 'customPrompt'>> & {
-    storagePath?: string
-    customPrompt?: string
-  }
+  private readonly config: Required<
+    Omit<SessionMemoryExtractorConfig, "storagePath" | "customPrompt">
+  > & {
+    storagePath?: string;
+    customPrompt?: string;
+  };
 
   // State
-  private initialized = false
-  private currentNotes: string
-  private tokensAtLastExtraction = 0
-  private toolCallsAtLastExtraction = 0
+  private initialized = false;
+  private currentNotes: string;
+  private tokensAtLastExtraction = 0;
+  private toolCallsAtLastExtraction = 0;
 
   constructor(config: SessionMemoryExtractorConfig) {
     this.config = {
@@ -320,19 +353,19 @@ export class SessionMemoryExtractor implements MemoryStrategy {
       maxTotalTokens: config.maxTotalTokens ?? 12_000,
       customPrompt: config.customPrompt,
       estimateTokens: config.estimateTokens ?? ((text: string) => Math.ceil(text.length / 4)),
-    }
-    this.currentNotes = this.config.template
+    };
+    this.currentNotes = this.config.template;
   }
 
   async initialize(): Promise<void> {
     if (this.config.storagePath) {
       try {
-        const fs = await import('fs/promises')
-        const content = await fs.readFile(this.config.storagePath, 'utf-8')
-        this.currentNotes = content
+        const fs = await import("fs/promises");
+        const content = await fs.readFile(this.config.storagePath, "utf-8");
+        this.currentNotes = content;
       } catch {
         // File doesn't exist yet — start from template
-        this.currentNotes = this.config.template
+        this.currentNotes = this.config.template;
       }
     }
   }
@@ -340,32 +373,32 @@ export class SessionMemoryExtractor implements MemoryStrategy {
   shouldExtract(ctx: MemoryContext): boolean {
     // Cold start: wait until enough tokens have accumulated
     if (!this.initialized) {
-      if (ctx.totalTokens < this.config.minimumTokensToInit) return false
-      this.initialized = true
-      return true
+      if (ctx.totalTokens < this.config.minimumTokensToInit) return false;
+      this.initialized = true;
+      return true;
     }
 
     // Token growth threshold
-    const tokenGrowth = ctx.totalTokens - this.tokensAtLastExtraction
-    const hasTokenThreshold = tokenGrowth >= this.config.minimumTokensBetweenUpdate
+    const tokenGrowth = ctx.totalTokens - this.tokensAtLastExtraction;
+    const hasTokenThreshold = tokenGrowth >= this.config.minimumTokensBetweenUpdate;
 
     // Tool call threshold
     const hasToolCallThreshold =
-      ctx.toolCallsSinceExtraction >= this.config.toolCallsBetweenUpdates
+      ctx.toolCallsSinceExtraction >= this.config.toolCallsBetweenUpdates;
 
     // Natural break: no tool calls in the current turn
-    const isNaturalBreak = ctx.toolCallsSinceExtraction === 0
+    const isNaturalBreak = ctx.toolCallsSinceExtraction === 0;
 
     // Trigger when:
     // 1. Both thresholds met, OR
     // 2. Token threshold met AND natural break
-    return (hasTokenThreshold && hasToolCallThreshold) ||
-      (hasTokenThreshold && isNaturalBreak)
+    return (hasTokenThreshold && hasToolCallThreshold) || (hasTokenThreshold && isNaturalBreak);
   }
 
   async extract(ctx: MemoryContext): Promise<ExtractionResult> {
-    const prompt = this.config.customPrompt ??
-      buildExtractionPrompt(this.currentNotes, this.config.storagePath ?? 'session-notes')
+    const prompt =
+      this.config.customPrompt ??
+      buildExtractionPrompt(this.currentNotes, this.config.storagePath ?? "session-notes");
 
     try {
       const updatedNotes = await this.config.extractFn({
@@ -373,61 +406,94 @@ export class SessionMemoryExtractor implements MemoryStrategy {
         currentNotes: this.currentNotes,
         systemPrompt: prompt,
         signal: ctx.signal,
-      })
+      });
 
       if (updatedNotes && updatedNotes.trim().length > 0) {
-        this.currentNotes = updatedNotes
+        // Guard against unbounded note growth.
+        // A misbehaving extraction LLM could return a 200 KB blob which would
+        // then be injected into every subsequent system prompt, exhausting the
+        // context window. We cap at maxTotalTokens and emit a warning.
+        const noteTokens = this.config.estimateTokens(updatedNotes);
+        if (noteTokens > this.config.maxTotalTokens) {
+          console.warn(
+            `[yaaf/session-memory] Extraction returned ${noteTokens} tokens ` +
+              `(max: ${this.config.maxTotalTokens}). Truncating to keep the last section boundary.`,
+          );
+          // Truncate at the last '# ' section boundary within the token budget.
+          // Approximate: 1 token ≈ 4 chars.
+          const maxChars = this.config.maxTotalTokens * 4;
+          let truncated = updatedNotes.slice(0, maxChars);
+          // Trim to last complete section heading if possible
+          const lastHeading = truncated.lastIndexOf("\n# ");
+          if (lastHeading > 0) truncated = truncated.slice(0, lastHeading);
+          this.currentNotes = truncated;
+        } else {
+          this.currentNotes = updatedNotes;
+        }
 
         // Persist to disk if configured
         if (this.config.storagePath) {
           try {
-            const fs = await import('fs/promises')
-            const path = await import('path')
-            await fs.mkdir(path.dirname(this.config.storagePath), { recursive: true })
-            await fs.writeFile(this.config.storagePath, updatedNotes, 'utf-8')
+            const fs = await import("fs/promises");
+            const path = await import("path");
+            await fs.mkdir(path.dirname(this.config.storagePath), { recursive: true });
+            await fs.writeFile(this.config.storagePath, this.currentNotes, "utf-8");
           } catch {
             // Non-fatal: in-memory copy is still updated
           }
         }
       }
 
-      this.tokensAtLastExtraction = ctx.totalTokens
-      this.toolCallsAtLastExtraction = ctx.toolCallsSinceExtraction
+      this.tokensAtLastExtraction = ctx.totalTokens;
+      this.toolCallsAtLastExtraction = ctx.toolCallsSinceExtraction;
 
-      const factCount = (updatedNotes.match(/^#\s/gm) ?? []).length
+      const factCount = (updatedNotes.match(/^#\s/gm) ?? []).length;
       return {
         extracted: true,
         summary: `Session notes updated (${factCount} sections)`,
         factsExtracted: factCount,
-      }
+      };
     } catch {
-      return { extracted: false }
+      return { extracted: false };
     }
   }
 
   async retrieve(_ctx: MemoryContext): Promise<RetrievalResult> {
-    const tokens = this.config.estimateTokens(this.currentNotes)
+    // Wrap memory content in UNTRUSTED-MEMORY delimiters before
+    // injecting into the system prompt. This defends against stored prompt
+    // injection where a rogue tool writes control-flow instructions into a
+    // memory file. The delimiters signal to the model that the enclosed content
+    // is user data, not model instructions.
+    const safeNotes = sanitizeMemoryContent(this.currentNotes);
+    const tokens = this.config.estimateTokens(safeNotes);
     return {
-      systemPromptSection: this.currentNotes.trim().length > 0
-        ? `## Session Memory\n\n${this.currentNotes}`
-        : '',
-      selectedMemories: [{
-        name: 'Session Notes',
-        content: this.currentNotes,
-      }],
+      systemPromptSection:
+        safeNotes.trim().length > 0
+          ? `## Session Memory\n\n<!-- BEGIN UNTRUSTED-MEMORY -->\n${safeNotes}\n<!-- END UNTRUSTED-MEMORY -->`
+          : "",
+      selectedMemories: [
+        {
+          name: "Session Notes",
+          content: safeNotes,
+        },
+      ],
       tokenEstimate: tokens,
-    }
+    };
   }
 
   /** Get the current session notes content (for external use) */
-  getNotes(): string { return this.currentNotes }
+  getNotes(): string {
+    return this.currentNotes;
+  }
 
   /** Set notes manually (e.g., loading from a session resume) */
-  setNotes(notes: string): void { this.currentNotes = notes }
+  setNotes(notes: string): void {
+    this.currentNotes = notes;
+  }
 
   reset(): void {
-    this.tokensAtLastExtraction = 0
-    this.toolCallsAtLastExtraction = 0
+    this.tokensAtLastExtraction = 0;
+    this.toolCallsAtLastExtraction = 0;
     // Don't reset currentNotes — they survive compaction
   }
 }
@@ -447,18 +513,18 @@ export class SessionMemoryExtractor implements MemoryStrategy {
  */
 export type TopicFileExtractorConfig = {
   /** The MemoryStore to write to */
-  store: MemoryStore
+  store: MemoryStore;
   /** LLM function for deciding what to save */
   extractFn: (params: {
-    messages: ReadonlyArray<{ role: string; content: string }>
-    systemPrompt: string
-    signal?: AbortSignal
-  }) => Promise<string>
+    messages: ReadonlyArray<{ role: string; content: string }>;
+    systemPrompt: string;
+    signal?: AbortSignal;
+  }) => Promise<string>;
   /** Minimum tokens before first extraction. Default: 15_000 */
-  minimumTokensToInit?: number
+  minimumTokensToInit?: number;
   /** Minimum token growth between extractions. Default: 8_000 */
-  minimumTokensBetweenUpdate?: number
-}
+  minimumTokensBetweenUpdate?: number;
+};
 
 const TOPIC_EXTRACT_PROMPT = `Analyze the conversation and identify any knowledge that should be saved as persistent memory.
 
@@ -474,33 +540,33 @@ Rules:
 - DO NOT save: code patterns (in the code), architecture (in the docs), git history
 - Return [] if nothing should be saved
 
-Respond ONLY with valid JSON: [{"name": "...", "description": "...", "type": "...", "content": "..."}, ...]`
+Respond ONLY with valid JSON: [{"name": "...", "description": "...", "type": "...", "content": "..."}, ...]`;
 
 export class TopicFileExtractor implements MemoryExtractionStrategy {
-  readonly name = 'topic-file'
+  readonly name = "topic-file";
 
-  private readonly store: MemoryStore
-  private readonly extractFn: TopicFileExtractorConfig['extractFn']
-  private readonly minimumTokensToInit: number
-  private readonly minimumTokensBetweenUpdate: number
+  private readonly store: MemoryStore;
+  private readonly extractFn: TopicFileExtractorConfig["extractFn"];
+  private readonly minimumTokensToInit: number;
+  private readonly minimumTokensBetweenUpdate: number;
 
-  private initialized = false
-  private tokensAtLastExtraction = 0
+  private initialized = false;
+  private tokensAtLastExtraction = 0;
 
   constructor(config: TopicFileExtractorConfig) {
-    this.store = config.store
-    this.extractFn = config.extractFn
-    this.minimumTokensToInit = config.minimumTokensToInit ?? 15_000
-    this.minimumTokensBetweenUpdate = config.minimumTokensBetweenUpdate ?? 8_000
+    this.store = config.store;
+    this.extractFn = config.extractFn;
+    this.minimumTokensToInit = config.minimumTokensToInit ?? 15_000;
+    this.minimumTokensBetweenUpdate = config.minimumTokensBetweenUpdate ?? 8_000;
   }
 
   shouldExtract(ctx: MemoryContext): boolean {
     if (!this.initialized) {
-      if (ctx.totalTokens < this.minimumTokensToInit) return false
-      this.initialized = true
-      return true
+      if (ctx.totalTokens < this.minimumTokensToInit) return false;
+      this.initialized = true;
+      return true;
     }
-    return (ctx.totalTokens - this.tokensAtLastExtraction) >= this.minimumTokensBetweenUpdate
+    return ctx.totalTokens - this.tokensAtLastExtraction >= this.minimumTokensBetweenUpdate;
   }
 
   async extract(ctx: MemoryContext): Promise<ExtractionResult> {
@@ -509,32 +575,48 @@ export class TopicFileExtractor implements MemoryExtractionStrategy {
         messages: ctx.messages,
         systemPrompt: TOPIC_EXTRACT_PROMPT,
         signal: ctx.signal,
-      })
+      });
 
       const entries = JSON.parse(result) as Array<{
-        name: string; description: string; type: MemoryType; content: string
-      }>
+        name: string;
+        description: string;
+        type: string;
+        content: string;
+      }>;
 
-      let saved = 0
+      let saved = 0;
       for (const entry of entries) {
+        // Validate LLM-returned type against the MEMORY_TYPES allowlist.
+        // The TypeScript `as {..., type: MemoryType}` cast is compile-time only.
+        // The runtime value comes from JSON.parse() which trusts the LLM output.
+        // An LLM returning type: "__proto__" or "system" would produce invalid
+        // YAML frontmatter or, in future schema variants, a path traversal.
+        const VALID_TYPES = new Set(["user", "feedback", "project", "reference"]);
+        if (!VALID_TYPES.has(entry.type)) {
+          console.warn(
+            `[yaaf/topic-file] Skipping entry "${entry.name}" with unrecognized type: "${entry.type}". ` +
+              `Valid types: ${[...VALID_TYPES].join(", ")}.`,
+          );
+          continue;
+        }
         await this.store.save({
           name: entry.name,
           description: entry.description,
-          type: entry.type,
+          type: entry.type as import("./memoryStore.js").MemoryType,
           content: entry.content,
-        })
-        saved++
+        });
+        saved++;
       }
 
-      this.tokensAtLastExtraction = ctx.totalTokens
-      return { extracted: true, factsExtracted: saved, summary: `${saved} topic files saved` }
+      this.tokensAtLastExtraction = ctx.totalTokens;
+      return { extracted: true, factsExtracted: saved, summary: `${saved} topic files saved` };
     } catch {
-      return { extracted: false }
+      return { extracted: false };
     }
   }
 
   reset(): void {
-    this.tokensAtLastExtraction = 0
+    this.tokensAtLastExtraction = 0;
   }
 }
 
@@ -547,62 +629,66 @@ export class TopicFileExtractor implements MemoryExtractionStrategy {
  */
 export type EphemeralBufferConfig = {
   /** Maximum number of facts to keep. Default: 50 */
-  maxFacts?: number
+  maxFacts?: number;
   /** Maximum total characters. Default: 10_000 */
-  maxChars?: number
-}
+  maxChars?: number;
+};
 
 export class EphemeralBufferStrategy implements MemoryStrategy {
-  readonly name = 'ephemeral-buffer'
-  private facts: Array<{ timestamp: number; content: string }> = []
-  private readonly maxFacts: number
-  private readonly maxChars: number
+  readonly name = "ephemeral-buffer";
+  private facts: Array<{ timestamp: number; content: string }> = [];
+  private readonly maxFacts: number;
+  private readonly maxChars: number;
 
   constructor(config?: EphemeralBufferConfig) {
-    this.maxFacts = config?.maxFacts ?? 50
-    this.maxChars = config?.maxChars ?? 10_000
+    this.maxFacts = config?.maxFacts ?? 50;
+    this.maxChars = config?.maxChars ?? 10_000;
   }
 
-  shouldExtract(): boolean { return false }
+  shouldExtract(): boolean {
+    return false;
+  }
 
   async extract(): Promise<ExtractionResult> {
-    return { extracted: false }
+    return { extracted: false };
   }
 
   /** Manually add a fact to the buffer */
   addFact(content: string): void {
-    this.facts.push({ timestamp: Date.now(), content })
+    this.facts.push({ timestamp: Date.now(), content });
 
     // Prune by count
     while (this.facts.length > this.maxFacts) {
-      this.facts.shift()
+      this.facts.shift();
     }
 
     // Prune by total size
-    let totalChars = this.facts.reduce((sum, f) => sum + f.content.length, 0)
+    let totalChars = this.facts.reduce((sum, f) => sum + f.content.length, 0);
     while (totalChars > this.maxChars && this.facts.length > 1) {
-      const removed = this.facts.shift()
-      if (removed) totalChars -= removed.content.length
+      const removed = this.facts.shift();
+      if (removed) totalChars -= removed.content.length;
     }
   }
 
   async retrieve(): Promise<RetrievalResult> {
     if (this.facts.length === 0) {
-      return { systemPromptSection: '', selectedMemories: [], tokenEstimate: 0 }
+      return { systemPromptSection: "", selectedMemories: [], tokenEstimate: 0 };
     }
 
-    const lines = this.facts.map(f => `- ${f.content}`)
-    const section = `## Working Memory\n\n${lines.join('\n')}`
-    const tokens = Math.ceil(section.length / 4)
+    const lines = this.facts.map((f) => `- ${f.content}`);
+    const section = `## Working Memory\n\n${lines.join("\n")}`;
+    const tokens = Math.ceil(section.length / 4);
 
     return {
       systemPromptSection: section,
-      selectedMemories: this.facts.map(f => ({ name: 'fact', content: f.content })),
+      selectedMemories: this.facts.map((f) => ({ name: "fact", content: f.content })),
       tokenEstimate: tokens,
-    }
+    };
   }
 
-  reset(): void { this.facts = [] }
+  reset(): void {
+    this.facts = [];
+  }
 }
 
 // ── 4. LLM Retrieval Strategy ────────────────────────────────────────────────
@@ -615,43 +701,43 @@ export class EphemeralBufferStrategy implements MemoryStrategy {
  */
 export type LLMRetrievalConfig = {
   /** The MemoryStore to read from */
-  store: MemoryStore
+  store: MemoryStore;
   /** Query function for the relevance LLM */
-  queryFn: RelevanceQueryFn
+  queryFn: RelevanceQueryFn;
   /** Maximum memories to retrieve per turn. Default: 5 */
-  maxMemories?: number
+  maxMemories?: number;
   /** Token budget for retrieved memories. Default: 4_000 */
-  tokenBudget?: number
-}
+  tokenBudget?: number;
+};
 
 export class LLMRetrievalStrategy implements MemoryRetrievalStrategy {
-  readonly name = 'llm-retrieval'
+  readonly name = "llm-retrieval";
 
-  private readonly store: MemoryStore
-  private readonly engine: MemoryRelevanceEngine
-  private readonly maxMemories: number
-  private readonly tokenBudget: number
-  private surfacedPaths = new Set<string>()
+  private readonly store: MemoryStore;
+  private readonly engine: MemoryRelevanceEngine;
+  private readonly maxMemories: number;
+  private readonly tokenBudget: number;
+  private surfacedPaths = new Set<string>();
 
   constructor(config: LLMRetrievalConfig) {
-    this.store = config.store
-    this.engine = new MemoryRelevanceEngine(config.queryFn)
-    this.maxMemories = config.maxMemories ?? 5
-    this.tokenBudget = config.tokenBudget ?? 4_000
+    this.store = config.store;
+    this.engine = new MemoryRelevanceEngine(config.queryFn);
+    this.maxMemories = config.maxMemories ?? 5;
+    this.tokenBudget = config.tokenBudget ?? 4_000;
   }
 
   async retrieve(ctx: MemoryContext): Promise<RetrievalResult> {
     // 1. Always include MEMORY.md index
-    const { content: indexContent } = await this.store.getIndex()
+    const { content: indexContent } = await this.store.getIndex();
 
     // 2. Scan all memory headers
-    const headers = await this.store.scanAll()
+    const headers = await this.store.scanAll();
     if (headers.length === 0) {
       return {
-        systemPromptSection: indexContent ? `## Memory Index\n\n${indexContent}` : '',
+        systemPromptSection: indexContent ? `## Memory Index\n\n${indexContent}` : "",
         selectedMemories: [],
         tokenEstimate: Math.ceil((indexContent?.length ?? 0) / 4),
-      }
+      };
     }
 
     // 3. Use LLM to select relevant memories
@@ -661,38 +747,43 @@ export class LLMRetrievalStrategy implements MemoryRetrievalStrategy {
       ctx.signal,
       ctx.recentTools ? [...ctx.recentTools] : [],
       this.surfacedPaths,
-    )
+    );
 
     // 4. Load full content for selected memories (within budget)
-    const memories: Array<{ name: string; content: string; relevanceScore?: number }> = []
-    let tokens = Math.ceil((indexContent?.length ?? 0) / 4)
+    const memories: Array<{ name: string; content: string; relevanceScore?: number }> = [];
+    let tokens = Math.ceil((indexContent?.length ?? 0) / 4);
 
     for (const rel of relevant.slice(0, this.maxMemories)) {
-      const entry = await this.store.read(rel.filename)
-      if (!entry) continue
+      const entry = await this.store.read(rel.filename);
+      if (!entry) continue;
 
-      const entryTokens = Math.ceil(entry.content.length / 4)
-      if (tokens + entryTokens > this.tokenBudget) break
+      const entryTokens = Math.ceil(entry.content.length / 4);
+      if (tokens + entryTokens > this.tokenBudget) break;
 
-      memories.push({ name: entry.name, content: entry.content })
-      tokens += entryTokens
-      this.surfacedPaths.add(rel.path)
+      memories.push({ name: entry.name, content: entry.content });
+      tokens += entryTokens;
+      this.surfacedPaths.add(rel.path);
     }
 
     // 5. Build system prompt section
-    const parts: string[] = []
-    if (indexContent) parts.push(`## Memory Index\n\n${indexContent}`)
+    const parts: string[] = [];
+    if (indexContent) parts.push(`## Memory Index\n\n${indexContent}`);
     if (memories.length > 0) {
-      parts.push(`## Relevant Memories\n\n${memories.map(m =>
-        `### ${m.name}\n${m.content}`
-      ).join('\n\n')}`)
+      // Wrap retrieved memory content in UNTRUSTED-MEMORY delimiters
+      // to signal to the model that this content is user/agent data, not instructions.
+      const memorySections = memories
+        .map((m) => `### ${sanitizeMemoryContent(m.name)}\n${sanitizeMemoryContent(m.content)}`)
+        .join("\n\n");
+      parts.push(
+        `## Relevant Memories\n\n<!-- BEGIN UNTRUSTED-MEMORY -->\n${memorySections}\n<!-- END UNTRUSTED-MEMORY -->`,
+      );
     }
 
     return {
-      systemPromptSection: parts.join('\n\n'),
+      systemPromptSection: parts.join("\n\n"),
       selectedMemories: memories,
       tokenEstimate: tokens,
-    }
+    };
   }
 }
 
@@ -705,53 +796,54 @@ export class LLMRetrievalStrategy implements MemoryRetrievalStrategy {
  */
 export type RecencyRetrievalConfig = {
   /** The MemoryStore to read from */
-  store: MemoryStore
+  store: MemoryStore;
   /** Max memories to include. Default: 5 */
-  maxMemories?: number
+  maxMemories?: number;
   /** Token budget. Default: 3_000 */
-  tokenBudget?: number
-}
+  tokenBudget?: number;
+};
 
 export class RecencyRetrievalStrategy implements MemoryRetrievalStrategy {
-  readonly name = 'recency-retrieval'
+  readonly name = "recency-retrieval";
 
-  private readonly store: MemoryStore
-  private readonly maxMemories: number
-  private readonly tokenBudget: number
+  private readonly store: MemoryStore;
+  private readonly maxMemories: number;
+  private readonly tokenBudget: number;
 
   constructor(config: RecencyRetrievalConfig) {
-    this.store = config.store
-    this.maxMemories = config.maxMemories ?? 5
-    this.tokenBudget = config.tokenBudget ?? 3_000
+    this.store = config.store;
+    this.maxMemories = config.maxMemories ?? 5;
+    this.tokenBudget = config.tokenBudget ?? 3_000;
   }
 
   async retrieve(_ctx: MemoryContext): Promise<RetrievalResult> {
-    const headers = await this.store.scanAll()
+    const headers = await this.store.scanAll();
     if (headers.length === 0) {
-      return { systemPromptSection: '', selectedMemories: [], tokenEstimate: 0 }
+      return { systemPromptSection: "", selectedMemories: [], tokenEstimate: 0 };
     }
 
     // Sort by recency
-    const sorted = headers.sort((a, b) => b.mtimeMs - a.mtimeMs)
-    const memories: Array<{ name: string; content: string }> = []
-    let tokens = 0
+    const sorted = headers.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const memories: Array<{ name: string; content: string }> = [];
+    let tokens = 0;
 
     for (const header of sorted.slice(0, this.maxMemories)) {
-      const entry = await this.store.read(header.filename)
-      if (!entry) continue
+      const entry = await this.store.read(header.filename);
+      if (!entry) continue;
 
-      const entryTokens = Math.ceil(entry.content.length / 4)
-      if (tokens + entryTokens > this.tokenBudget) break
+      const entryTokens = Math.ceil(entry.content.length / 4);
+      if (tokens + entryTokens > this.tokenBudget) break;
 
-      memories.push({ name: entry.name, content: entry.content })
-      tokens += entryTokens
+      memories.push({ name: entry.name, content: entry.content });
+      tokens += entryTokens;
     }
 
-    const section = memories.length > 0
-      ? `## Recent Memories\n\n${memories.map(m => `### ${m.name}\n${m.content}`).join('\n\n')}`
-      : ''
+    const section =
+      memories.length > 0
+        ? `## Recent Memories\n\n${memories.map((m) => `### ${m.name}\n${m.content}`).join("\n\n")}`
+        : "";
 
-    return { systemPromptSection: section, selectedMemories: memories, tokenEstimate: tokens }
+    return { systemPromptSection: section, selectedMemories: memories, tokenEstimate: tokens };
   }
 }
 
@@ -764,60 +856,60 @@ export class RecencyRetrievalStrategy implements MemoryRetrievalStrategy {
  * @example
  * ```ts
  * const strategy = new CompositeMemoryStrategy({
- *   extraction: new SessionMemoryExtractor({ extractFn: myLLM }),
- *   retrieval: new LLMRetrievalStrategy({ store: myStore, queryFn: myQuery }),
+ * extraction: new SessionMemoryExtractor({ extractFn: myLLM }),
+ * retrieval: new LLMRetrievalStrategy({ store: myStore, queryFn: myQuery }),
  * });
  * ```
  */
 export type CompositeMemoryConfig = {
   /** How to extract (optional — some agents are read-only) */
-  extraction?: MemoryExtractionStrategy
+  extraction?: MemoryExtractionStrategy;
   /** How to retrieve (required) */
-  retrieval: MemoryRetrievalStrategy
-}
+  retrieval: MemoryRetrievalStrategy;
+};
 
 export class CompositeMemoryStrategy implements MemoryStrategy {
-  readonly name = 'composite'
-  private readonly extraction?: MemoryExtractionStrategy
-  private readonly retrieval: MemoryRetrievalStrategy
+  readonly name = "composite";
+  private readonly extraction?: MemoryExtractionStrategy;
+  private readonly retrieval: MemoryRetrievalStrategy;
 
   constructor(config: CompositeMemoryConfig) {
-    this.extraction = config.extraction
-    this.retrieval = config.retrieval
+    this.extraction = config.extraction;
+    this.retrieval = config.retrieval;
   }
 
   shouldExtract(ctx: MemoryContext): boolean | Promise<boolean> {
-    return this.extraction?.shouldExtract(ctx) ?? false
+    return this.extraction?.shouldExtract(ctx) ?? false;
   }
 
   async extract(ctx: MemoryContext): Promise<ExtractionResult> {
-    if (!this.extraction) return { extracted: false }
-    return this.extraction.extract(ctx)
+    if (!this.extraction) return { extracted: false };
+    return this.extraction.extract(ctx);
   }
 
   async retrieve(ctx: MemoryContext): Promise<RetrievalResult> {
-    return this.retrieval.retrieve(ctx)
+    return this.retrieval.retrieve(ctx);
   }
 
   reset(): void {
-    this.extraction?.reset?.()
+    this.extraction?.reset?.();
   }
 
   async initialize(): Promise<void> {
-    if (this.extraction && 'initialize' in this.extraction) {
-      await (this.extraction as MemoryStrategy).initialize?.()
+    if (this.extraction && "initialize" in this.extraction) {
+      await (this.extraction as MemoryStrategy).initialize?.();
     }
-    if ('initialize' in this.retrieval) {
-      await (this.retrieval as MemoryStrategy).initialize?.()
+    if ("initialize" in this.retrieval) {
+      await (this.retrieval as MemoryStrategy).initialize?.();
     }
   }
 
   async destroy(): Promise<void> {
-    if (this.extraction && 'destroy' in this.extraction) {
-      await (this.extraction as MemoryStrategy).destroy?.()
+    if (this.extraction && "destroy" in this.extraction) {
+      await (this.extraction as MemoryStrategy).destroy?.();
     }
-    if ('destroy' in this.retrieval) {
-      await (this.retrieval as MemoryStrategy).destroy?.()
+    if ("destroy" in this.retrieval) {
+      await (this.retrieval as MemoryStrategy).destroy?.();
     }
   }
 }
@@ -832,17 +924,17 @@ export class CompositeMemoryStrategy implements MemoryStrategy {
  */
 export function sessionMemoryStrategy(opts: {
   /** LLM function for extraction */
-  extractFn: SessionMemoryExtractorConfig['extractFn']
+  extractFn: SessionMemoryExtractorConfig["extractFn"];
   /** Persist to disk at this path */
-  storagePath?: string
+  storagePath?: string;
   /** Custom template */
-  template?: string
+  template?: string;
 }): MemoryStrategy {
   return new SessionMemoryExtractor({
     extractFn: opts.extractFn,
     storagePath: opts.storagePath,
     template: opts.template,
-  })
+  });
 }
 
 /**
@@ -853,13 +945,13 @@ export function sessionMemoryStrategy(opts: {
  */
 export function topicMemoryStrategy(opts: {
   /** The MemoryStore */
-  store: MemoryStore
+  store: MemoryStore;
   /** LLM function for extraction decisions */
-  extractFn: TopicFileExtractorConfig['extractFn']
+  extractFn: TopicFileExtractorConfig["extractFn"];
   /** LLM function for relevance selection */
-  queryFn: RelevanceQueryFn
+  queryFn: RelevanceQueryFn;
   /** Max memories per turn. Default: 5 */
-  maxMemories?: number
+  maxMemories?: number;
 }): MemoryStrategy {
   return new CompositeMemoryStrategy({
     extraction: new TopicFileExtractor({
@@ -871,7 +963,7 @@ export function topicMemoryStrategy(opts: {
       queryFn: opts.queryFn,
       maxMemories: opts.maxMemories,
     }),
-  })
+  });
 }
 
 /**
@@ -881,9 +973,9 @@ export function topicMemoryStrategy(opts: {
  * Best for cost-sensitive deployments.
  */
 export function lightweightMemoryStrategy(opts: {
-  store: MemoryStore
-  extractFn: TopicFileExtractorConfig['extractFn']
-  maxMemories?: number
+  store: MemoryStore;
+  extractFn: TopicFileExtractorConfig["extractFn"];
+  maxMemories?: number;
 }): MemoryStrategy {
   return new CompositeMemoryStrategy({
     extraction: new TopicFileExtractor({
@@ -894,7 +986,7 @@ export function lightweightMemoryStrategy(opts: {
       store: opts.store,
       maxMemories: opts.maxMemories,
     }),
-  })
+  });
 }
 
 // ── 7. Honcho Memory Strategy ─────────────────────────────────────────────────
@@ -911,28 +1003,39 @@ export type HonchoMemoryStrategyConfig = {
    * surface). Import from `yaaf/integrations/honcho`.
    */
   plugin: {
-    save(entry: { name: string; description: string; type: string; content: string; metadata?: Record<string, unknown> }): Promise<string>
-    search(query: string, limit?: number): Promise<Array<{ entry: { name: string }; score: number; snippet?: string }>>
-    getIndex(): Promise<string>
-    buildPrompt(): string
-    getContextSections(query: string): Promise<Array<{ key: string; content: string; placement: string; priority?: number }>>
-  }
+    save(entry: {
+      name: string;
+      description: string;
+      type: string;
+      content: string;
+      metadata?: Record<string, unknown>;
+    }): Promise<string>;
+    search(
+      query: string,
+      limit?: number,
+    ): Promise<Array<{ entry: { name: string }; score: number; snippet?: string }>>;
+    getIndex(): Promise<string>;
+    buildPrompt(): string;
+    getContextSections(
+      query: string,
+    ): Promise<Array<{ key: string; content: string; placement: string; priority?: number }>>;
+  };
   /**
    * Whether to sync conversation messages to Honcho after each turn.
    * When true, calls `plugin.save()` with each new assistant message
    * so Honcho can build its user/agent model.
    * Default: false (only extract when `shouldExtract` triggers)
    */
-  syncMessages?: boolean
+  syncMessages?: boolean;
   /**
    * Token budget for retrieved Honcho context. Default: 4_000
    */
-  tokenBudget?: number
+  tokenBudget?: number;
   /**
    * Maximum search results for retrieval. Default: 5
    */
-  maxResults?: number
-}
+  maxResults?: number;
+};
 
 /**
  * Honcho memory strategy — bridges `HonchoPlugin` into the `MemoryStrategy`
@@ -955,32 +1058,32 @@ export type HonchoMemoryStrategyConfig = {
  * import { HonchoMemoryStrategy } from 'yaaf';
  *
  * const plugin = new HonchoPlugin({
- *   apiKey: process.env.HONCHO_API_KEY!,
- *   workspaceId: 'my-app',
- *   defaultPeerId: userId,
+ * apiKey: process.env.HONCHO_API_KEY!,
+ * workspaceId: 'my-app',
+ * defaultPeerId: userId,
  * });
  *
  * const agent = new Agent({
- *   memoryStrategy: new HonchoMemoryStrategy({ plugin }),
+ * memoryStrategy: new HonchoMemoryStrategy({ plugin }),
  * });
  * ```
  */
 export class HonchoMemoryStrategy implements MemoryStrategy {
-  readonly name = 'honcho'
+  readonly name = "honcho";
 
-  private readonly plugin: HonchoMemoryStrategyConfig['plugin']
-  private readonly syncMessages: boolean
-  private readonly tokenBudget: number
-  private readonly maxResults: number
+  private readonly plugin: HonchoMemoryStrategyConfig["plugin"];
+  private readonly syncMessages: boolean;
+  private readonly tokenBudget: number;
+  private readonly maxResults: number;
 
   /** Track messages already saved to Honcho to avoid duplicates */
-  private savedMessageCount = 0
+  private savedMessageCount = 0;
 
   constructor(config: HonchoMemoryStrategyConfig) {
-    this.plugin = config.plugin
-    this.syncMessages = config.syncMessages ?? false
-    this.tokenBudget = config.tokenBudget ?? 4_000
-    this.maxResults = config.maxResults ?? 5
+    this.plugin = config.plugin;
+    this.syncMessages = config.syncMessages ?? false;
+    this.tokenBudget = config.tokenBudget ?? 4_000;
+    this.maxResults = config.maxResults ?? 5;
   }
 
   /**
@@ -988,10 +1091,10 @@ export class HonchoMemoryStrategy implements MemoryStrategy {
    * conversation has new messages since the last extraction.
    */
   shouldExtract(ctx: MemoryContext): boolean {
-    if (this.syncMessages) return true
+    if (this.syncMessages) return true;
     // Only extract if there are new assistant messages
-    const assistantMessages = ctx.messages.filter(m => m.role === 'assistant')
-    return assistantMessages.length > this.savedMessageCount
+    const assistantMessages = ctx.messages.filter((m) => m.role === "assistant");
+    return assistantMessages.length > this.savedMessageCount;
   }
 
   /**
@@ -999,33 +1102,33 @@ export class HonchoMemoryStrategy implements MemoryStrategy {
    * its user and agent representations.
    */
   async extract(ctx: MemoryContext): Promise<ExtractionResult> {
-    const assistantMessages = ctx.messages.filter(m => m.role === 'assistant')
-    const newMessages = assistantMessages.slice(this.savedMessageCount)
+    const assistantMessages = ctx.messages.filter((m) => m.role === "assistant");
+    const newMessages = assistantMessages.slice(this.savedMessageCount);
 
-    if (newMessages.length === 0) return { extracted: false }
+    if (newMessages.length === 0) return { extracted: false };
 
-    let saved = 0
+    let saved = 0;
     for (const msg of newMessages) {
       try {
-        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+        const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
         await this.plugin.save({
           name: `Assistant turn ${this.savedMessageCount + saved + 1}`,
           description: content.slice(0, 100),
-          type: 'reference',
+          type: "reference",
           content,
-        })
-        saved++
+        });
+        saved++;
       } catch {
         // Non-fatal — continue with remaining messages
       }
     }
 
-    this.savedMessageCount += saved
+    this.savedMessageCount += saved;
     return {
       extracted: saved > 0,
       factsExtracted: saved,
       summary: `${saved} messages synced to Honcho`,
-    }
+    };
   }
 
   /**
@@ -1036,58 +1139,62 @@ export class HonchoMemoryStrategy implements MemoryStrategy {
    * 3. The Honcho memory prompt instructions
    */
   async retrieve(ctx: MemoryContext): Promise<RetrievalResult> {
-    const parts: string[] = []
-    const memories: Array<{ name: string; content: string; relevanceScore?: number }> = []
-    let tokens = 0
+    const parts: string[] = [];
+    const memories: Array<{ name: string; content: string; relevanceScore?: number }> = [];
+    let tokens = 0;
 
     // 1. Get Honcho context sections (peer representation + session summary)
     try {
-      const sections = await this.plugin.getContextSections(ctx.currentQuery)
+      const sections = await this.plugin.getContextSections(ctx.currentQuery);
       for (const section of sections) {
-        const sectionTokens = Math.ceil(section.content.length / 4)
-        if (tokens + sectionTokens > this.tokenBudget) break
-        parts.push(section.content)
-        tokens += sectionTokens
-        memories.push({ name: section.key, content: section.content })
+        const sectionTokens = Math.ceil(section.content.length / 4);
+        if (tokens + sectionTokens > this.tokenBudget) break;
+        parts.push(section.content);
+        tokens += sectionTokens;
+        memories.push({ name: section.key, content: section.content });
       }
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // 2. Semantic search for query-relevant memories
     if (ctx.currentQuery && tokens < this.tokenBudget) {
       try {
-        const results = await this.plugin.search(ctx.currentQuery, this.maxResults)
-        const snippets: string[] = []
+        const results = await this.plugin.search(ctx.currentQuery, this.maxResults);
+        const snippets: string[] = [];
         for (const result of results) {
-          if (!result.snippet) continue
-          const snippetTokens = Math.ceil(result.snippet.length / 4)
-          if (tokens + snippetTokens > this.tokenBudget) break
-          snippets.push(`- ${result.entry.name}: ${result.snippet}`)
-          tokens += snippetTokens
+          if (!result.snippet) continue;
+          const snippetTokens = Math.ceil(result.snippet.length / 4);
+          if (tokens + snippetTokens > this.tokenBudget) break;
+          snippets.push(`- ${result.entry.name}: ${result.snippet}`);
+          tokens += snippetTokens;
           memories.push({
             name: result.entry.name,
             content: result.snippet,
             relevanceScore: result.score,
-          })
+          });
         }
         if (snippets.length > 0) {
-          parts.push(`## Relevant Memory\n\n${snippets.join('\n')}`)
+          parts.push(`## Relevant Memory\n\n${snippets.join("\n")}`);
         }
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
     }
 
     // 3. Memory prompt instructions
-    const promptSection = this.plugin.buildPrompt()
-    parts.push(promptSection)
+    const promptSection = this.plugin.buildPrompt();
+    parts.push(promptSection);
 
     return {
-      systemPromptSection: parts.join('\n\n'),
+      systemPromptSection: parts.join("\n\n"),
       selectedMemories: memories,
       tokenEstimate: tokens,
-    }
+    };
   }
 
   reset(): void {
-    this.savedMessageCount = 0
+    this.savedMessageCount = 0;
   }
 }
 
@@ -1102,33 +1209,33 @@ export class HonchoMemoryStrategy implements MemoryStrategy {
  * import { HonchoPlugin, honchoMemoryStrategy } from 'yaaf';
  *
  * const honcho = new HonchoPlugin({
- *   apiKey: process.env.HONCHO_API_KEY!,
- *   workspaceId: 'my-app',
- *   defaultPeerId: userId,
+ * apiKey: process.env.HONCHO_API_KEY!,
+ * workspaceId: 'my-app',
+ * defaultPeerId: userId,
  * });
  *
  * // Optionally also register with PluginHost for health-checks
  * await host.register(honcho);
  *
  * const agent = new Agent({
- *   memoryStrategy: honchoMemoryStrategy({
- *     plugin: honcho,
- *     syncMessages: true,
- *   }),
+ * memoryStrategy: honchoMemoryStrategy({
+ * plugin: honcho,
+ * syncMessages: true,
+ * }),
  * });
  * ```
  */
 export function honchoMemoryStrategy(opts: {
   /** Constructed HonchoPlugin (or any object satisfying HonchoMemoryStrategyConfig['plugin']) */
-  plugin: HonchoMemoryStrategyConfig['plugin']
-  syncMessages?: boolean
-  tokenBudget?: number
-  maxResults?: number
+  plugin: HonchoMemoryStrategyConfig["plugin"];
+  syncMessages?: boolean;
+  tokenBudget?: number;
+  maxResults?: number;
 }): MemoryStrategy {
   return new HonchoMemoryStrategy({
     plugin: opts.plugin,
     syncMessages: opts.syncMessages,
     tokenBudget: opts.tokenBudget,
     maxResults: opts.maxResults,
-  })
+  });
 }

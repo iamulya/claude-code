@@ -8,12 +8,9 @@ export type {
   ArticleAction,
   StaticAnalysisResult,
   CandidateConcept,
-} from './types.js'
+} from "./types.js";
 
-export { ConceptExtractor, makeGenerateFn } from './extractor.js'
-export type { GenerateFn } from './extractor.js'
+export { ConceptExtractor, makeGenerateFn } from "./extractor.js";
+export type { GenerateFn } from "./extractor.js";
 
-export {
-  buildExtractionSystemPrompt,
-  buildExtractionUserPrompt,
-} from './prompt.js'
+export { buildExtractionSystemPrompt, buildExtractionUserPrompt } from "./prompt.js";

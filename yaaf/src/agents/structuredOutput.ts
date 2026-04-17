@@ -17,17 +17,17 @@
  * @example Schema-Only Agent (no tools)
  * ```ts
  * const evaluator = structuredAgent(model, {
- *   name: 'evaluator',
- *   systemPrompt: 'Evaluate the code quality. Return a structured grade.',
- *   schema: {
- *     type: 'object',
- *     properties: {
- *       grade: { type: 'string', enum: ['pass', 'fail'] },
- *       score: { type: 'number', minimum: 0, maximum: 100 },
- *       issues: { type: 'array', items: { type: 'string' } },
- *     },
- *     required: ['grade', 'score', 'issues'],
- *   },
+ * name: 'evaluator',
+ * systemPrompt: 'Evaluate the code quality. Return a structured grade.',
+ * schema: {
+ * type: 'object',
+ * properties: {
+ * grade: { type: 'string', enum: ['pass', 'fail'] },
+ * score: { type: 'number', minimum: 0, maximum: 100 },
+ * issues: { type: 'array', items: { type: 'string' } },
+ * },
+ * required: ['grade', 'score', 'issues'],
+ * },
  * });
  *
  * const result = await evaluator.run('function add(a, b) { return a + b; }');
@@ -39,54 +39,54 @@
  * const response = await agent.run('Classify this email');
  * const parsed = parseStructuredOutput(response, classificationSchema);
  * if (parsed.ok) {
- *   console.log(parsed.data.category); // Type-safe
+ * console.log(parsed.data.category); // Type-safe
  * }
  * ```
  *
  * @module agents/structuredOutput
  */
 
-import type { ChatModel, ChatMessage, ChatResult } from './runner.js'
+import type { ChatModel, ChatMessage, ChatResult } from "./runner.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** JSON Schema for the expected output shape */
 export type OutputSchema = {
-  type: 'object'
-  properties: Record<string, unknown>
-  required?: string[]
-  [key: string]: unknown
-}
+  type: "object";
+  properties: Record<string, unknown>;
+  required?: string[];
+  [key: string]: unknown;
+};
 
 /** Successful parse result */
 export type ParseSuccess<T = Record<string, unknown>> = {
-  ok: true
-  data: T
-}
+  ok: true;
+  data: T;
+};
 
 /** Failed parse result */
 export type ParseFailure = {
-  ok: false
-  error: string
-  raw: string
-}
+  ok: false;
+  error: string;
+  raw: string;
+};
 
 /** Union result type */
-export type ParseResult<T = Record<string, unknown>> = ParseSuccess<T> | ParseFailure
+export type ParseResult<T = Record<string, unknown>> = ParseSuccess<T> | ParseFailure;
 
 /** Config for the structured agent */
 export type StructuredAgentConfig = {
   /** Agent name (for tracing) */
-  name?: string
+  name?: string;
   /** System prompt explaining what the agent should do */
-  systemPrompt: string
+  systemPrompt: string;
   /** JSON Schema the model's response must conform to */
-  schema: OutputSchema
+  schema: OutputSchema;
   /** Temperature for LLM sampling (default: 0) */
-  temperature?: number
+  temperature?: number;
   /** Maximum output tokens (default: 4096) */
-  maxTokens?: number
-}
+  maxTokens?: number;
+};
 
 // ── Schema Injection ─────────────────────────────────────────────────────────
 
@@ -97,16 +97,16 @@ export type StructuredAgentConfig = {
  */
 export function buildSchemaPromptSection(schema: OutputSchema): string {
   return [
-    '',
-    '## Response Format',
-    '',
-    'You MUST respond with a valid JSON object matching this schema.',
-    'Do NOT include any text before or after the JSON. Do NOT use markdown code fences.',
-    '',
-    '```json',
+    "",
+    "## Response Format",
+    "",
+    "You MUST respond with a valid JSON object matching this schema.",
+    "Do NOT include any text before or after the JSON. Do NOT use markdown code fences.",
+    "",
+    "```json",
     JSON.stringify(schema, null, 2),
-    '```',
-  ].join('\n')
+    "```",
+  ].join("\n");
 }
 
 // ── Structured Agent ─────────────────────────────────────────────────────────
@@ -128,20 +128,20 @@ export function structuredAgent<T extends Record<string, unknown> = Record<strin
   model: ChatModel,
   config: StructuredAgentConfig,
 ): {
-  readonly name: string
-  run(input: string, signal?: AbortSignal): Promise<T>
+  readonly name: string;
+  run(input: string, signal?: AbortSignal): Promise<T>;
 } {
-  const fullSystemPrompt = config.systemPrompt + buildSchemaPromptSection(config.schema)
-  const name = config.name ?? 'structured_agent'
+  const fullSystemPrompt = config.systemPrompt + buildSchemaPromptSection(config.schema);
+  const name = config.name ?? "structured_agent";
 
   return {
     name,
 
     async run(input: string, signal?: AbortSignal): Promise<T> {
       const messages: ChatMessage[] = [
-        { role: 'system', content: fullSystemPrompt },
-        { role: 'user', content: input },
-      ]
+        { role: "system", content: fullSystemPrompt },
+        { role: "user", content: input },
+      ];
 
       const result: ChatResult = await model.complete({
         messages,
@@ -149,18 +149,18 @@ export function structuredAgent<T extends Record<string, unknown> = Record<strin
         temperature: config.temperature ?? 0,
         maxTokens: config.maxTokens ?? 4096,
         signal,
-      })
+      });
 
-      const content = result.content ?? ''
-      const parsed = parseStructuredOutput<T>(content, config.schema)
+      const content = result.content ?? "";
+      const parsed = parseStructuredOutput<T>(content, config.schema);
 
       if (!parsed.ok) {
-        throw new Error(`Structured output parse failed: ${parsed.error}\nRaw: ${parsed.raw}`)
+        throw new Error(`Structured output parse failed: ${parsed.error}\nRaw: ${parsed.raw}`);
       }
 
-      return parsed.data
+      return parsed.data;
     },
-  }
+  };
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -182,81 +182,80 @@ export function parseStructuredOutput<T extends Record<string, unknown> = Record
   schema: OutputSchema,
 ): ParseResult<T> {
   if (!output.trim()) {
-    return { ok: false, error: 'Empty output', raw: output }
+    return { ok: false, error: "Empty output", raw: output };
   }
 
   // Strip markdown code fences
-  let cleaned = output.trim()
-  const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/m)
+  let cleaned = output.trim();
+  const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/m);
   if (fenceMatch) {
-    cleaned = fenceMatch[1]!.trim()
+    cleaned = fenceMatch[1]!.trim();
   }
 
   // If it doesn't start with {, try to extract JSON from prose
-  if (!cleaned.startsWith('{')) {
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+  if (!cleaned.startsWith("{")) {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      cleaned = jsonMatch[0]
+      cleaned = jsonMatch[0];
     }
   }
 
   // Parse JSON
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned)
+    parsed = JSON.parse(cleaned);
   } catch (e) {
     return {
       ok: false,
       error: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
       raw: output,
-    }
+    };
   }
 
   // Type check: must be an object
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, error: 'Output is not a JSON object', raw: output }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "Output is not a JSON object", raw: output };
   }
 
   // Validate required fields
   if (schema.required) {
-    const obj = parsed as Record<string, unknown>
-    const missing = schema.required.filter(key => !(key in obj))
+    const obj = parsed as Record<string, unknown>;
+    const missing = schema.required.filter((key) => !(key in obj));
     if (missing.length > 0) {
       return {
         ok: false,
-        error: `Missing required fields: ${missing.join(', ')}`,
+        error: `Missing required fields: ${missing.join(", ")}`,
         raw: output,
-      }
+      };
     }
   }
 
   // Validate property types (basic type checking)
   if (schema.properties) {
-    const obj = parsed as Record<string, unknown>
+    const obj = parsed as Record<string, unknown>;
     for (const [key, schemaDef] of Object.entries(schema.properties)) {
-      if (key in obj && typeof schemaDef === 'object' && schemaDef !== null) {
-        const propSchema = schemaDef as Record<string, unknown>
-        const value = obj[key]
-        const expectedType = propSchema.type as string | undefined
+      if (key in obj && typeof schemaDef === "object" && schemaDef !== null) {
+        const propSchema = schemaDef as Record<string, unknown>;
+        const value = obj[key];
+        const expectedType = propSchema.type as string | undefined;
 
         if (expectedType && value !== null && value !== undefined) {
-          const actualType = Array.isArray(value) ? 'array' : typeof value
+          const actualType = Array.isArray(value) ? "array" : typeof value;
           if (
-            expectedType === 'integer' && (typeof value !== 'number' || !Number.isInteger(value))
+            expectedType === "integer" &&
+            (typeof value !== "number" || !Number.isInteger(value))
           ) {
             return {
               ok: false,
               error: `Field "${key}" expected integer, got ${typeof value}`,
               raw: output,
-            }
-          } else if (
-            expectedType !== 'integer' && actualType !== expectedType
-          ) {
+            };
+          } else if (expectedType !== "integer" && actualType !== expectedType) {
             return {
               ok: false,
               error: `Field "${key}" expected ${expectedType}, got ${actualType}`,
               raw: output,
-            }
+            };
           }
         }
 
@@ -265,14 +264,14 @@ export function parseStructuredOutput<T extends Record<string, unknown> = Record
           if (!propSchema.enum.includes(value)) {
             return {
               ok: false,
-              error: `Field "${key}" value "${value}" not in enum: [${propSchema.enum.join(', ')}]`,
+              error: `Field "${key}" value "${value}" not in enum: [${propSchema.enum.join(", ")}]`,
               raw: output,
-            }
+            };
           }
         }
       }
     }
   }
 
-  return { ok: true, data: parsed as T }
+  return { ok: true, data: parsed as T };
 }

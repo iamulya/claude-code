@@ -11,15 +11,15 @@
  * // In the agent loop:
  * detector.record(toolName, toolArgs);
  * if (detector.isLooping()) {
- *   // Break out of the loop, inject a warning message
- *   const warning = detector.getWarning();
+ * // Break out of the loop, inject a warning message
+ * const warning = detector.getWarning();
  * }
  * ```
  *
  * @module tools/loopDetector
  */
 
-import { createHash } from 'crypto'
+import { createHash } from "crypto";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,57 +28,57 @@ export type LoopDetectorConfig = {
    * Number of consecutive identical calls before flagging a loop.
    * Default: 3
    */
-  threshold?: number
+  threshold?: number;
   /**
    * Rolling window size for pattern detection.
    * Default: 20
    */
-  windowSize?: number
+  windowSize?: number;
   /**
    * Also detect alternating patterns (A→B→A→B)?
    * Default: true
    */
-  detectAlternating?: boolean
-}
+  detectAlternating?: boolean;
+};
 
 export type ToolCallRecord = {
-  name: string
-  argsHash: string
-  timestamp: number
-}
+  name: string;
+  argsHash: string;
+  timestamp: number;
+};
 
 export type LoopInfo = {
-  type: 'exact-repeat' | 'alternating' | 'none'
+  type: "exact-repeat" | "alternating" | "none";
   /** Tool(s) involved */
-  tools: string[]
+  tools: string[];
   /** Number of repetitions detected */
-  count: number
-}
+  count: number;
+};
 
 // ── Detector ─────────────────────────────────────────────────────────────────
 
 export class ToolLoopDetector {
-  private history: ToolCallRecord[] = []
-  private readonly threshold: number
-  private readonly windowSize: number
-  private readonly detectAlternating: boolean
+  private history: ToolCallRecord[] = [];
+  private readonly threshold: number;
+  private readonly windowSize: number;
+  private readonly detectAlternating: boolean;
 
   constructor(config?: LoopDetectorConfig) {
-    this.threshold = config?.threshold ?? 3
-    this.windowSize = config?.windowSize ?? 20
-    this.detectAlternating = config?.detectAlternating ?? true
+    this.threshold = config?.threshold ?? 3;
+    this.windowSize = config?.windowSize ?? 20;
+    this.detectAlternating = config?.detectAlternating ?? true;
   }
 
   /**
    * Record a tool call. Call this after each tool execution.
    */
   record(name: string, args: unknown): void {
-    const argsHash = hashArgs(args)
-    this.history.push({ name, argsHash, timestamp: Date.now() })
+    const argsHash = hashArgs(args);
+    this.history.push({ name, argsHash, timestamp: Date.now() });
 
     // Trim to window size
     if (this.history.length > this.windowSize) {
-      this.history = this.history.slice(-this.windowSize)
+      this.history = this.history.slice(-this.windowSize);
     }
   }
 
@@ -86,7 +86,7 @@ export class ToolLoopDetector {
    * Check if the agent is stuck in a loop.
    */
   isLooping(): boolean {
-    return this.detect().type !== 'none'
+    return this.detect().type !== "none";
   }
 
   /**
@@ -94,33 +94,31 @@ export class ToolLoopDetector {
    */
   detect(): LoopInfo {
     if (this.history.length < this.threshold) {
-      return { type: 'none', tools: [], count: 0 }
+      return { type: "none", tools: [], count: 0 };
     }
 
     // Check exact repeats: same tool + same args N times in a row
-    const recent = this.history.slice(-this.threshold)
-    const first = recent[0]!
-    const allSame = recent.every(
-      r => r.name === first.name && r.argsHash === first.argsHash,
-    )
+    const recent = this.history.slice(-this.threshold);
+    const first = recent[0]!;
+    const allSame = recent.every((r) => r.name === first.name && r.argsHash === first.argsHash);
     if (allSame) {
-      return { type: 'exact-repeat', tools: [first.name], count: this.threshold }
+      return { type: "exact-repeat", tools: [first.name], count: this.threshold };
     }
 
     // Check alternating pattern: A→B→A→B (needs 2x threshold minimum)
     if (this.detectAlternating && this.history.length >= this.threshold * 2) {
-      const window = this.history.slice(-this.threshold * 2)
-      const pattern = detectAlternatingPattern(window)
+      const window = this.history.slice(-this.threshold * 2);
+      const pattern = detectAlternatingPattern(window);
       if (pattern) {
         return {
-          type: 'alternating',
+          type: "alternating",
           tools: pattern.tools,
           count: pattern.count,
-        }
+        };
       }
     }
 
-    return { type: 'none', tools: [], count: 0 }
+    return { type: "none", tools: [], count: 0 };
   }
 
   /**
@@ -128,68 +126,86 @@ export class ToolLoopDetector {
    * Tells the model it's stuck in a loop.
    */
   getWarning(): string {
-    const info = this.detect()
-    if (info.type === 'none') return ''
+    const info = this.detect();
+    if (info.type === "none") return "";
 
-    if (info.type === 'exact-repeat') {
+    if (info.type === "exact-repeat") {
       return (
         `⚠️ Loop detected: You have called "${info.tools[0]}" with the same arguments ` +
         `${info.count} times in a row. This appears to be a loop. ` +
         `Please try a different approach or explain why this repetition is necessary.`
-      )
+      );
     }
 
     return (
       `⚠️ Alternating loop detected: You are cycling between ` +
-      `${info.tools.map(t => `"${t}"`).join(' and ')} repeatedly. ` +
+      `${info.tools.map((t) => `"${t}"`).join(" and ")} repeatedly. ` +
       `This appears to be a loop. Please try a different approach.`
-    )
+    );
   }
 
   /**
    * Reset the detector (e.g., on new conversation turn).
    */
   reset(): void {
-    this.history = []
+    this.history = [];
   }
 
   /** Get the current history length */
   get length(): number {
-    return this.history.length
+    return this.history.length;
   }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function hashArgs(args: unknown): string {
-  const str = typeof args === 'string' ? args : JSON.stringify(args ?? {})
-  return createHash('sha256').update(str).digest('hex').slice(0, 16)
+  // Sort object keys recursively before stringifying.
+  // JSON.stringify() preserves insertion order, but LLMs frequently produce
+  // semantically identical tool calls with keys in different order across
+  // turns (e.g., { b: 2, a: 1 } vs { a: 1, b: 2 }). Without sorting, the
+  // loop detector misses these repeated calls because their hashes differ.
+  const str = typeof args === "string" ? args : JSON.stringify(sortedKeys(args ?? {}));
+  return createHash("sha256").update(str).digest("hex").slice(0, 16);
+}
+
+/** Recursively sort object keys for deterministic JSON serialization. */
+function sortedKeys(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    sorted[key] = sortedKeys((value as Record<string, unknown>)[key]);
+  }
+  return sorted;
 }
 
 function detectAlternatingPattern(
   window: ToolCallRecord[],
 ): { tools: string[]; count: number } | null {
-  if (window.length < 4) return null
+  if (window.length < 4) return null;
 
   // Check A→B→A→B pattern
-  const a = window[window.length - 1]!
-  const b = window[window.length - 2]!
+  const a = window[window.length - 1]!;
+  const b = window[window.length - 2]!;
 
-  if (a.name === b.name && a.argsHash === b.argsHash) return null // Same, not alternating
+  if (a.name === b.name && a.argsHash === b.argsHash) return null; // Same, not alternating
 
-  let count = 0
+  let count = 0;
   for (let i = window.length - 1; i >= 1; i -= 2) {
-    const cur = window[i]!
-    const prev = window[i - 1]!
+    const cur = window[i]!;
+    const prev = window[i - 1]!;
     if (
-      cur.name === a.name && cur.argsHash === a.argsHash &&
-      prev.name === b.name && prev.argsHash === b.argsHash
+      cur.name === a.name &&
+      cur.argsHash === a.argsHash &&
+      prev.name === b.name &&
+      prev.argsHash === b.argsHash
     ) {
-      count++
+      count++;
     } else {
-      break
+      break;
     }
   }
 
-  return count >= 2 ? { tools: [b.name, a.name], count: count * 2 } : null
+  return count >= 2 ? { tools: [b.name, a.name], count: count * 2 } : null;
 }

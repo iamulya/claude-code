@@ -1,10 +1,10 @@
 /**
  * Memory Relevance Engine
  *
-  * to select the most relevant memories from the store for a given user query.
+ * to select the most relevant memories from the store for a given user query.
  *
  * Design rationale:
-  * 1. Always loads MEMORY.md (the index) into the system prompt
+ * 1. Always loads MEMORY.md (the index) into the system prompt
  * 2. Scans all memory file headers (name + description from frontmatter)
  * 3. Asks a fast model (Sonnet) to select ≤5 relevant memories
  * 4. Injects only those as attachments to the current turn
@@ -13,26 +13,26 @@
  * of memories. The selection step costs ~1-2 cents and adds ~200ms latency.
  */
 
-import type { MemoryHeader } from './memoryStore.js'
+import type { MemoryHeader } from "./memoryStore.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type RelevantMemory = {
-  path: string
-  mtimeMs: number
-  filename: string
-}
+  path: string;
+  mtimeMs: number;
+  filename: string;
+};
 
 /**
  * Function signature for the LLM call used by the relevance engine.
  * Consumers inject their own LLM adapter to keep the framework model-agnostic.
  */
 export type RelevanceQueryFn = (params: {
-  system: string
-  userMessage: string
-  maxTokens: number
-  signal?: AbortSignal
-}) => Promise<string>
+  system: string;
+  userMessage: string;
+  maxTokens: number;
+  signal?: AbortSignal;
+}) => Promise<string>;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ Return a JSON object with a "selected_memories" array of filenames for the memor
 - If no memories are relevant, return an empty array.
 - If recently-used tools are listed, skip reference/API docs for those tools — but DO select warnings, gotchas, or known issues about those tools.
 
-Respond ONLY with valid JSON: {"selected_memories": ["file1.md", "file2.md"]}`
+Respond ONLY with valid JSON: {"selected_memories": ["file1.md", "file2.md"]}`;
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -53,22 +53,30 @@ Respond ONLY with valid JSON: {"selected_memories": ["file1.md", "file2.md"]}`
  * @example
  * ```ts
  * const engine = new MemoryRelevanceEngine(async ({ system, userMessage, maxTokens }) => {
- *   const response = await callSonnet({ system, messages: [{ role: 'user', content: userMessage }], maxTokens });
- *   return response.text;
+ * const response = await callSonnet({ system, messages: [{ role: 'user', content: userMessage }], maxTokens });
+ * return response.text;
  * });
  *
  * const memories = await engine.findRelevant(
- *   'How do I configure the build system?',
- *   allHeaders,
- *   signal,
+ * 'How do I configure the build system?',
+ * allHeaders,
+ * signal,
  * );
  * ```
  */
 export class MemoryRelevanceEngine {
-  private readonly queryFn: RelevanceQueryFn
+  private readonly queryFn: RelevanceQueryFn;
+  /**
+   * Maximum number of memory headers included in the manifest
+   * sent to the relevance LLM. Without this cap, a store with 1,000 entries
+   * × 60 chars/line = 60 KB per query, burning thousands of tokens every turn.
+   * Default: 200 entries.
+   */
+  private readonly maxManifestEntries: number;
 
-  constructor(queryFn: RelevanceQueryFn) {
-    this.queryFn = queryFn
+  constructor(queryFn: RelevanceQueryFn, maxManifestEntries = 200) {
+    this.queryFn = queryFn;
+    this.maxManifestEntries = maxManifestEntries;
   }
 
   /**
@@ -89,18 +97,24 @@ export class MemoryRelevanceEngine {
     alreadySurfaced: ReadonlySet<string> = new Set(),
   ): Promise<RelevantMemory[]> {
     // Filter out already-surfaced memories
-    const candidates = memories.filter(m => !alreadySurfaced.has(m.filePath))
-    if (candidates.length === 0) return []
+    const candidates = memories.filter((m) => !alreadySurfaced.has(m.filePath));
+    if (candidates.length === 0) return [];
+
+    // Cap manifest size to prevent cost amplification.
+    // With hundreds of candidates, the LLM call would burn tokens proportional
+    // to the store size on every agent turn.
+    const cappedCandidates =
+      candidates.length > this.maxManifestEntries
+        ? candidates.slice(0, this.maxManifestEntries)
+        : candidates;
 
     // Build manifest of available memories
-    const manifest = candidates
-      .map(m => `- ${m.filename}: ${m.description || m.name}`)
-      .join('\n')
+    const manifest = cappedCandidates
+      .map((m) => `- ${m.filename}: ${m.description || m.name}`)
+      .join("\n");
 
     const toolsSection =
-      recentTools.length > 0
-        ? `\n\nRecently used tools: ${recentTools.join(', ')}`
-        : ''
+      recentTools.length > 0 ? `\n\nRecently used tools: ${recentTools.join(", ")}` : "";
 
     try {
       const result = await this.queryFn({
@@ -108,29 +122,27 @@ export class MemoryRelevanceEngine {
         userMessage: `Query: ${query}\n\nAvailable memories:\n${manifest}${toolsSection}`,
         maxTokens: 256,
         signal,
-      })
+      });
 
       const parsed = JSON.parse(result) as {
-        selected_memories: string[]
-      }
+        selected_memories: string[];
+      };
 
-      const validFilenames = new Set(candidates.map(m => m.filename))
-      const selected = parsed.selected_memories
-        .filter(f => validFilenames.has(f))
-        .slice(0, 5)
+      const validFilenames = new Set(cappedCandidates.map((m) => m.filename));
+      const selected = parsed.selected_memories.filter((f) => validFilenames.has(f)).slice(0, 5);
 
-      const byFilename = new Map(candidates.map(m => [m.filename, m]))
+      const byFilename = new Map(cappedCandidates.map((m) => [m.filename, m]));
       return selected
-        .map(filename => byFilename.get(filename))
+        .map((filename) => byFilename.get(filename))
         .filter((m): m is MemoryHeader => m !== undefined)
-        .map(m => ({
+        .map((m) => ({
           path: m.filePath,
           mtimeMs: m.mtimeMs,
           filename: m.filename,
-        }))
+        }));
     } catch {
       // Selection failure is non-fatal — agent works without extra memories
-      return []
+      return [];
     }
   }
 }

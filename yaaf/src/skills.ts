@@ -3,11 +3,11 @@
  *
  * A Skill is a markdown file that extends an agent's instructions at runtime
  * without code changes. Skills can:
- *  - Add domain knowledge and constraints to the system prompt
- *  - Define reusable workflows and procedures
- *  - Provide examples and few-shot demonstrations
+ * - Add domain knowledge and constraints to the system prompt
+ * - Define reusable workflows and procedures
+ * - Provide examples and few-shot demonstrations
  *
-  * skills like /dream, /review, /commit) and the SKILL.md format.
+ * skills like /dream, /review, /commit) and the SKILL.md format.
  *
  * @example
  * ```ts
@@ -15,8 +15,8 @@
  * const skills = await loadSkills('./skills');
  *
  * const agent = new Agent({
- *   systemPrompt: 'You are a coding assistant.',
- *   skills,
+ * systemPrompt: 'You are a coding assistant.',
+ * skills,
  * });
  *
  * // The agent's effective system prompt = base + all skill injections
@@ -26,9 +26,9 @@
  * ```ts
  * // Inline skill definition
  * const securitySkill = defineSkill({
- *   name: 'security-review',
- *   description: 'OWASP security review checklist',
- *   instructions: `
+ * name: 'security-review',
+ * description: 'OWASP security review checklist',
+ * instructions: `
  * ## Security Review Protocol
  * When reviewing code, always check for:
  * 1. SQL injection vulnerabilities
@@ -38,30 +38,30 @@
  * ```
  */
 
-import * as fsp from 'fs/promises'
-import * as path from 'path'
+import * as fsp from "fs/promises";
+import * as path from "path";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SkillFrontmatter = {
   /** Display name for the skill */
-  name: string
+  name: string;
   /** Short description shown in skill listings */
-  description?: string
+  description?: string;
   /** Version string */
-  version?: string
+  version?: string;
   /** Whether this skill is always injected (default: true) */
-  always?: boolean
+  always?: boolean;
   /** List of tags for filtering/search */
-  tags?: string[]
-}
+  tags?: string[];
+};
 
 export type Skill = SkillFrontmatter & {
   /** The full instruction content (after frontmatter) */
-  instructions: string
+  instructions: string;
   /** Source file path, if loaded from disk */
-  filePath?: string
-}
+  filePath?: string;
+};
 
 // ── Frontmatter parser ────────────────────────────────────────────────────────
 
@@ -77,91 +77,121 @@ export type Skill = SkillFrontmatter & {
  * ```
  */
 function parseFrontmatter(content: string): { meta: Partial<SkillFrontmatter>; body: string } {
-  const fm = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-  if (!fm) return { meta: {}, body: content }
+  const fm = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!fm) return { meta: {}, body: content };
 
-  const meta: Partial<SkillFrontmatter> = {}
-  const yamlBlock = fm[1]!
+  const meta: Partial<SkillFrontmatter> = {};
+  const yamlBlock = fm[1]!;
 
-  for (const line of yamlBlock.split('\n')) {
-    const match = line.match(/^(\w+):\s*(.+)$/)
-    if (!match) continue
-    const [, key, value] = match
+  for (const line of yamlBlock.split("\n")) {
+    const match = line.match(/^(\w+):\s*(.+)$/);
+    if (!match) continue;
+    const [, key, value] = match;
     switch (key) {
-      case 'name': meta.name = value!.trim().replace(/^['"]|['"]$/g, ''); break
-      case 'description': meta.description = value!.trim().replace(/^['"]|['"]$/g, ''); break
-      case 'version': meta.version = value!.trim().replace(/^['"]|['"]$/g, ''); break
-      case 'always': meta.always = value!.trim() !== 'false'; break
-      case 'tags': meta.tags = value!.split(',').map(t => t.trim()); break
+      case "name":
+        meta.name = value!.trim().replace(/^['"]|['"]$/g, "");
+        break;
+      case "description":
+        meta.description = value!.trim().replace(/^['"]|['"]$/g, "");
+        break;
+      case "version":
+        meta.version = value!.trim().replace(/^['"]|['"]$/g, "");
+        break;
+      case "always":
+        meta.always = value!.trim() !== "false";
+        break;
+      case "tags":
+        meta.tags = value!.split(",").map((t) => t.trim());
+        break;
     }
   }
 
-  return { meta, body: fm[2]!.trim() }
+  return { meta, body: fm[2]!.trim() };
 }
 
 // ── Skill loader ──────────────────────────────────────────────────────────────
+
+/**
+ * Maximum individual skill file size (bytes).
+ * Files exceeding this limit are silently truncated at the
+ * instructions level. A 256 KB skill is already an absurdly large
+ * system-prompt injection; anything larger is almost certainly a
+ * mistake or attack.
+ */
+const MAX_SKILL_BYTES = 256 * 1024; // 256 KB
 
 /**
  * Load all `.md` skill files from a directory (non-recursive).
  * Files without a `name` frontmatter field use the filename as name.
  */
 export async function loadSkills(dir: string): Promise<Skill[]> {
-  let files: string[]
+  let files: string[];
   try {
-    files = await fsp.readdir(dir)
+    files = await fsp.readdir(dir);
   } catch {
-    return []
+    return [];
   }
 
-  const skills: Skill[] = []
+  const skills: Skill[] = [];
   for (const file of files) {
-    if (!file.endsWith('.md') && !file.endsWith('.mdx')) continue
-    if (file.startsWith('_') || file.startsWith('.')) continue
+    if (!file.endsWith(".md") && !file.endsWith(".mdx")) continue;
+    if (file.startsWith("_") || file.startsWith(".")) continue;
 
-    const filePath = path.join(dir, file)
+    const filePath = path.join(dir, file);
     try {
-      const raw = await fsp.readFile(filePath, 'utf8')
-      const { meta, body } = parseFrontmatter(raw)
+      const raw = await fsp.readFile(filePath, "utf8");
+      const { meta, body } = parseFrontmatter(raw);
+
+      // Truncate oversized skill instructions.
+      const instructions =
+        Buffer.byteLength(body, "utf8") > MAX_SKILL_BYTES
+          ? body.slice(0, MAX_SKILL_BYTES) + "\n\n[...skill truncated: exceeded 256 KB limit]"
+          : body;
 
       skills.push({
-        name: meta.name ?? file.replace(/\.(md|mdx)$/, ''),
+        name: meta.name ?? file.replace(/\.(md|mdx)$/, ""),
         description: meta.description,
         version: meta.version,
         always: meta.always ?? true,
         tags: meta.tags ?? [],
-        instructions: body,
+        instructions,
         filePath,
-      })
+      });
     } catch {
       // Skip unreadable files
     }
   }
 
-  return skills
+  return skills;
 }
 
 /**
  * Load a single skill from a file path.
  */
 export async function loadSkill(filePath: string): Promise<Skill> {
-  const raw = await fsp.readFile(filePath, 'utf8')
-  const { meta, body } = parseFrontmatter(raw)
+  const raw = await fsp.readFile(filePath, "utf8");
+  const { meta, body } = parseFrontmatter(raw);
+  // Cap individual skill instructions at MAX_SKILL_BYTES.
+  const instructions =
+    Buffer.byteLength(body, "utf8") > MAX_SKILL_BYTES
+      ? body.slice(0, MAX_SKILL_BYTES) + "\n\n[...skill truncated: exceeded 256 KB limit]"
+      : body;
   return {
     name: meta.name ?? path.basename(filePath, path.extname(filePath)),
     description: meta.description,
     version: meta.version,
     always: meta.always ?? true,
     tags: meta.tags ?? [],
-    instructions: body,
+    instructions,
     filePath,
-  }
+  };
 }
 
 /**
  * Define a skill inline (no file required).
  */
 export function defineSkill(skill: Skill): Skill {
-  return { always: true, ...skill }
+  return { always: true, ...skill };
 }
 
 // ── Skill injection ───────────────────────────────────────────────────────────
@@ -169,72 +199,90 @@ export function defineSkill(skill: Skill): Skill {
 /**
  * Build the skill injection block to append to a system prompt.
  * Only includes skills where `always === true` unless `forcedNames` is provided.
+ *
+ * Total injected skill block is capped at 64 KB to prevent
+ * runaway context consumption when many large skills are registered.
  */
 export function buildSkillSection(skills: Skill[], forcedNames?: string[]): string {
-  const active = skills.filter(s => {
-    if (s.always) return true
-    if (forcedNames?.includes(s.name)) return true
-    return false
-  })
+  const MAX_SECTION_BYTES = 64 * 1024; // 64 KB total
+  const active = skills.filter((s) => {
+    if (s.always) return true;
+    if (forcedNames?.includes(s.name)) return true;
+    return false;
+  });
 
-  if (active.length === 0) return ''
+  if (active.length === 0) return "";
 
-  const blocks = active.map(s => {
-    const header = `## Skill: ${s.name}${s.description ? ` — ${s.description}` : ''}`
-    return `${header}\n\n${s.instructions}`
-  })
+  const blocks: string[] = [];
+  let totalBytes = 0;
+  let truncated = false;
 
-  return `\n\n---\n# Active Skills\n\n${blocks.join('\n\n---\n\n')}`
+  for (const s of active) {
+    const header = `## Skill: ${s.name}${s.description ? ` — ${s.description}` : ""}`;
+    const block = `${header}\n\n${s.instructions}`;
+    const blockBytes = Buffer.byteLength(block, "utf8");
+    if (totalBytes + blockBytes > MAX_SECTION_BYTES) {
+      truncated = true;
+      break;
+    }
+    blocks.push(block);
+    totalBytes += blockBytes;
+  }
+
+  const suffix = truncated
+    ? "\n\n---\n\n⚠️ Additional skills were omitted (total skill section exceeded 64 KB)."
+    : "";
+  return `\n\n---\n# Active Skills\n\n${blocks.join("\n\n---\n\n")}${suffix}`;
 }
 
 // ── Skill registry (in-memory, with hot-reload) ─────────────────────────────
 
 export type SkillRegistryEvents = {
   /** Called when a skill is loaded or updated */
-  onLoad?: (skill: Skill) => void
+  onLoad?: (skill: Skill) => void;
   /** Called when a skill is removed */
-  onRemove?: (name: string) => void
+  onRemove?: (name: string) => void;
   /** Called when an error occurs during watch/reload */
-  onError?: (error: Error, filePath: string) => void
-}
+  onError?: (error: Error, filePath: string) => void;
+};
 
 export class SkillRegistry {
-  private skills = new Map<string, Skill>()
-  private watchers: Array<{ close(): void }> = []
-  private events: SkillRegistryEvents = {}
+  private skills = new Map<string, Skill>();
+  private watchers: Array<{ close(): void }> = [];
+  private events: SkillRegistryEvents = {};
 
   constructor(events?: SkillRegistryEvents) {
-    if (events) this.events = events
+    if (events) this.events = events;
   }
 
   register(skill: Skill): this {
-    this.skills.set(skill.name, skill)
-    this.events.onLoad?.(skill)
-    return this
+    this.skills.set(skill.name, skill);
+    this.events.onLoad?.(skill);
+    return this;
   }
 
   unregister(name: string): boolean {
-    const removed = this.skills.delete(name)
-    if (removed) this.events.onRemove?.(name)
-    return removed
+    const removed = this.skills.delete(name);
+    if (removed) this.events.onRemove?.(name);
+    return removed;
   }
 
   get(name: string): Skill | undefined {
-    return this.skills.get(name)
+    return this.skills.get(name);
   }
 
   list(): Skill[] {
-    return Array.from(this.skills.values())
+    return Array.from(this.skills.values());
   }
 
   async loadDir(dir: string): Promise<this> {
-    const loaded = await loadSkills(dir)
-    for (const skill of loaded) this.register(skill)
-    return this
+    const loaded = await loadSkills(dir);
+    for (const skill of loaded) this.register(skill);
+    return this;
   }
 
   buildSection(forcedNames?: string[]): string {
-    return buildSkillSection(this.list(), forcedNames)
+    return buildSkillSection(this.list(), forcedNames);
   }
 
   /**
@@ -246,7 +294,7 @@ export class SkillRegistry {
    * @param sourcePath - Optional virtual path for this skill
    */
   registerDynamic(markdown: string, sourcePath?: string): Skill {
-    const { meta, body } = parseFrontmatter(markdown)
+    const { meta, body } = parseFrontmatter(markdown);
     const skill: Skill = {
       name: meta.name ?? `dynamic-${Date.now()}`,
       description: meta.description,
@@ -255,9 +303,9 @@ export class SkillRegistry {
       tags: meta.tags ?? [],
       instructions: body,
       filePath: sourcePath,
-    }
-    this.register(skill)
-    return skill
+    };
+    this.register(skill);
+    return skill;
   }
 
   /**
@@ -270,45 +318,47 @@ export class SkillRegistry {
    */
   async watch(dirs: string[]): Promise<void> {
     // Dynamic import since fs.watch may not be available in all envs
-    const { watch } = await import('fs')
+    const { watch } = await import("fs");
 
     for (const dir of dirs) {
       try {
         const watcher = watch(dir, { persistent: false }, async (eventType, filename) => {
-          if (!filename) return
-          if (!filename.endsWith('.md') && !filename.endsWith('.mdx')) return
-          if (filename.startsWith('_') || filename.startsWith('.')) return
+          if (!filename) return;
+          if (!filename.endsWith(".md") && !filename.endsWith(".mdx")) return;
+          if (filename.startsWith("_") || filename.startsWith(".")) return;
 
-          const filePath = path.join(dir, filename)
+          const filePath = path.join(dir, filename);
 
-          if (eventType === 'rename') {
-            // Could be create or delete — try to read
-            try {
-              const skill = await loadSkill(filePath)
-              this.register(skill)
-            } catch {
-              // File was deleted — find and remove skill with this path
-              for (const [name, skill] of this.skills) {
-                if (skill.filePath === filePath) {
-                  this.unregister(name)
-                  break
-                }
+          if (eventType === "rename") {
+            // Could be create or delete — try to read.
+            // Always unregister any previously-registered skill at
+            // this path BEFORE attempting to load the new one. This prevents the
+            // TOCTOU race where rapid create-then-rename events leave both the
+            // old and the new skill registered simultaneously, causing double
+            // injection of the same instructions into the system prompt.
+            for (const [name, skill] of this.skills) {
+              if (skill.filePath === filePath) {
+                this.unregister(name);
+                break;
               }
             }
-          } else if (eventType === 'change') {
             try {
-              const skill = await loadSkill(filePath)
-              this.register(skill)
+              const skill = await loadSkill(filePath);
+              this.register(skill);
+            } catch {
+              // File was deleted — already unregistered above
+            }
+          } else if (eventType === "change") {
+            try {
+              const skill = await loadSkill(filePath);
+              this.register(skill);
             } catch (err) {
-              this.events.onError?.(
-                err instanceof Error ? err : new Error(String(err)),
-                filePath,
-              )
+              this.events.onError?.(err instanceof Error ? err : new Error(String(err)), filePath);
             }
           }
-        })
+        });
 
-        this.watchers.push(watcher)
+        this.watchers.push(watcher);
       } catch {
         // Directory doesn't exist or watcher not supported — skip
       }
@@ -320,16 +370,16 @@ export class SkillRegistry {
    */
   stopWatching(): void {
     for (const watcher of this.watchers) {
-      watcher.close()
+      watcher.close();
     }
-    this.watchers = []
+    this.watchers = [];
   }
 
   /**
    * Clear all skills and stop watching.
    */
   clear(): void {
-    this.stopWatching()
-    this.skills.clear()
+    this.stopWatching();
+    this.skills.clear();
   }
 }

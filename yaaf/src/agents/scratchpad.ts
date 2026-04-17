@@ -23,155 +23,191 @@
  * ```
  */
 
-import * as fs from 'fs/promises'
-import * as path from 'path'
+import * as fs from "fs/promises";
+import * as path from "path";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ScratchpadConfig = {
   /** Base directory for scratchpad files. Default: OS tmpdir + random suffix. */
-  baseDir?: string
+  baseDir?: string;
   /** Maximum total size in bytes. Default: 50MB. */
-  maxTotalBytes?: number
+  maxTotalBytes?: number;
   /** Maximum number of files. Default: 100. */
-  maxFiles?: number
-}
+  maxFiles?: number;
+};
 
 export type ScratchpadEntry = {
-  name: string
-  size: number
-  lastModified: Date
-}
+  name: string;
+  size: number;
+  lastModified: Date;
+};
 
 // ── Scratchpad ───────────────────────────────────────────────────────────────
 
 export class Scratchpad {
-  readonly dir: string
-  private readonly maxTotalBytes: number
-  private readonly maxFiles: number
-  private initialized = false
+  readonly dir: string;
+  private readonly maxTotalBytes: number;
+  private readonly maxFiles: number;
+  private initialized = false;
+  /**
+   * Serialize all writes through a promise chain to eliminate the
+   * TOCTOU race between the size/count check and the actual fs.writeFile call.
+   * Without this, two concurrent write() calls can both pass the limit check
+   * and together exceed the configured limits.
+   */
+  private _writeQueue: Promise<void> = Promise.resolve();
 
   constructor(config: ScratchpadConfig = {}) {
-    this.dir = config.baseDir ?? path.join(
-      process.env.TMPDIR ?? '/tmp',
-      `yaaf-scratch-${Date.now().toString(36)}`,
-    )
-    this.maxTotalBytes = config.maxTotalBytes ?? 50 * 1024 * 1024
-    this.maxFiles = config.maxFiles ?? 100
+    this.dir =
+      config.baseDir ??
+      path.join(process.env.TMPDIR ?? "/tmp", `yaaf-scratch-${Date.now().toString(36)}`);
+    this.maxTotalBytes = config.maxTotalBytes ?? 50 * 1024 * 1024;
+    this.maxFiles = config.maxFiles ?? 100;
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
   /** Ensure the scratchpad directory exists. */
   async init(): Promise<void> {
-    if (this.initialized) return
-    await fs.mkdir(this.dir, { recursive: true })
-    this.initialized = true
+    if (this.initialized) return;
+    await fs.mkdir(this.dir, { recursive: true });
+    this.initialized = true;
   }
 
   /** Remove the entire scratchpad directory. */
   async destroy(): Promise<void> {
     try {
-      await fs.rm(this.dir, { recursive: true, force: true })
+      await fs.rm(this.dir, { recursive: true, force: true });
     } catch {
       // Best-effort
     }
-    this.initialized = false
+    this.initialized = false;
   }
 
   // ── File Operations ────────────────────────────────────────────────────
 
   /** Write a file to the scratchpad. */
   async write(filename: string, content: string | Buffer): Promise<string> {
-    await this.init()
-    this.validateFilename(filename)
+    await this.init();
+    this.validateFilename(filename);
 
-    // Check limits
-    const entries = await this.list()
-    if (entries.length >= this.maxFiles) {
-      throw new Error(`Scratchpad file limit reached (${this.maxFiles})`)
-    }
+    // Serialize writes so the check+write is atomic
+    const result = this._writeQueue.then(async (): Promise<string> => {
+      // Check limits inside the serialized queue
+      const entries = await this.list();
+      if (entries.length >= this.maxFiles) {
+        throw new Error(`Scratchpad file limit reached (${this.maxFiles})`);
+      }
 
-    const totalSize = entries.reduce((sum, e) => sum + e.size, 0)
-    const newSize = typeof content === 'string' ? Buffer.byteLength(content) : content.length
-    if (totalSize + newSize > this.maxTotalBytes) {
-      throw new Error(`Scratchpad size limit reached (${this.maxTotalBytes} bytes)`)
-    }
+      const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+      const newSize = typeof content === "string" ? Buffer.byteLength(content) : content.length;
+      if (totalSize + newSize > this.maxTotalBytes) {
+        throw new Error(`Scratchpad size limit reached (${this.maxTotalBytes} bytes)`);
+      }
 
-    const filePath = path.join(this.dir, filename)
-    // Ensure subdirectories exist
-    await fs.mkdir(path.dirname(filePath), { recursive: true })
-    await fs.writeFile(filePath, content, 'utf-8')
-    return filePath
+      const filePath = path.join(this.dir, filename);
+      // Ensure subdirectories exist
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, content, "utf-8");
+      return filePath;
+    });
+    // Keep _writeQueue at the tail of the chain (swallow error so chain stays alive)
+    this._writeQueue = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
   }
 
   /** Read a file from the scratchpad. */
   async read(filename: string): Promise<string> {
-    await this.init()
-    const filePath = path.join(this.dir, filename)
-    return fs.readFile(filePath, 'utf-8')
+    await this.init();
+    const filePath = path.join(this.dir, filename);
+    return fs.readFile(filePath, "utf-8");
   }
 
   /** Check if a file exists in the scratchpad. */
   async exists(filename: string): Promise<boolean> {
     try {
-      const filePath = path.join(this.dir, filename)
-      await fs.access(filePath)
-      return true
+      const filePath = path.join(this.dir, filename);
+      await fs.access(filePath);
+      return true;
     } catch {
-      return false
+      return false;
     }
   }
 
   /** Delete a file from the scratchpad. */
   async remove(filename: string): Promise<void> {
-    const filePath = path.join(this.dir, filename)
-    await fs.unlink(filePath)
+    const filePath = path.join(this.dir, filename);
+    await fs.unlink(filePath);
   }
 
   /** List all files in the scratchpad. */
   async list(): Promise<ScratchpadEntry[]> {
-    await this.init()
-    const entries: ScratchpadEntry[] = []
+    await this.init();
+    const entries: ScratchpadEntry[] = [];
 
     try {
-      await this.walkDir(this.dir, '', entries)
+      await this.walkDir(this.dir, "", entries);
     } catch {
       // Empty directory
     }
 
-    return entries
+    return entries;
   }
 
-  /** Get the full path for a scratchpad file. */
+  /**
+   * Get the full path for a scratchpad file.
+   * Apply validateFilename() so callers cannot use resolve() to
+   * bypass the path-traversal guard that write() and read() apply.
+   */
   resolve(filename: string): string {
-    return path.join(this.dir, filename)
+    this.validateFilename(filename);
+    return path.join(this.dir, filename);
   }
 
   // ── Internal ───────────────────────────────────────────────────────────
 
   private async walkDir(base: string, prefix: string, entries: ScratchpadEntry[]): Promise<void> {
-    const items = await fs.readdir(base, { withFileTypes: true })
+    const items = await fs.readdir(base, { withFileTypes: true });
     for (const item of items) {
-      const relative = prefix ? `${prefix}/${item.name}` : item.name
+      const relative = prefix ? `${prefix}/${item.name}` : item.name;
       if (item.isDirectory()) {
-        await this.walkDir(path.join(base, item.name), relative, entries)
+        await this.walkDir(path.join(base, item.name), relative, entries);
       } else {
-        const stat = await fs.stat(path.join(base, item.name))
-        entries.push({
-          name: relative,
-          size: stat.size,
-          lastModified: stat.mtime,
-        })
+        try {
+          const stat = await fs.stat(path.join(base, item.name));
+          entries.push({
+            name: relative,
+            size: stat.size,
+            lastModified: stat.mtime,
+          });
+        } catch (err) {
+          // Only swallow ENOENT (file deleted between readdir and stat).
+          // Re-throw permission and other errors so size-limit enforcement is reliable.
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") throw err;
+        }
       }
     }
   }
 
   private validateFilename(filename: string): void {
+    // Reject null bytes (can truncate paths on some OSes)
+    if (filename.includes("\0")) {
+      throw new Error(`Invalid scratchpad filename: contains null byte`);
+    }
     // Prevent path traversal
-    const normalized = path.normalize(filename)
-    if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
-      throw new Error(`Invalid scratchpad filename: ${filename}`)
+    const normalized = path.normalize(filename);
+    if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
+      throw new Error(`Invalid scratchpad filename: ${filename}`);
+    }
+    // After join, confirm the resolved path is still inside this.dir
+    const resolved = path.join(this.dir, normalized);
+    if (!resolved.startsWith(this.dir + path.sep) && resolved !== this.dir) {
+      throw new Error(`Invalid scratchpad filename: resolves outside scratchpad dir`);
     }
   }
 }

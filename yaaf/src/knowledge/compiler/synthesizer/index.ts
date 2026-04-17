@@ -9,19 +9,19 @@ export type {
   SynthesisProgressEvent,
   FrontmatterValidationResult,
   ParsedArticle,
-} from './types.js'
+} from "./types.js";
 
-export { KnowledgeSynthesizer } from './synthesizer.js'
+export { KnowledgeSynthesizer } from "./synthesizer.js";
 
 export {
   serializeFrontmatter,
   validateFrontmatter,
   buildCompleteFrontmatter,
   parseArticleOutput,
-} from './frontmatter.js'
+} from "./frontmatter.js";
 
 export {
   buildSynthesisSystemPrompt,
   buildSynthesisUserPrompt,
   generateStubArticle,
-} from './prompt.js'
+} from "./prompt.js";

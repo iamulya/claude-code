@@ -3,16 +3,16 @@
  *
  * The KB module implements a Karpathy-style "compile your knowledge" pipeline:
  *
- *   raw/ (messy sources) → [LLM compilation] → compiled/ (structured wiki)
+ * raw/ (messy sources) → [LLM compilation] → compiled/ (structured wiki)
  *
  * Quick start:
  * ```ts
  * import { KBCompiler, makeGenerateFn } from 'yaaf/knowledge'
  *
  * const compiler = await KBCompiler.create({
- *   kbDir: './my-kb',
- *   extractionModel: makeGenerateFn(myFastModel),
- *   synthesisModel:  makeGenerateFn(myCapableModel),
+ * kbDir: './my-kb',
+ * extractionModel: makeGenerateFn(myFastModel),
+ * synthesisModel: makeGenerateFn(myCapableModel),
  * })
  *
  * const result = await compiler.compile()
@@ -33,7 +33,7 @@ export {
   autoDetectPdfExtractor,
   // Web clipper (programmatic Obsidian Web Clipper equivalent)
   KBClipper,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
 export type {
   KBCompilerOptions,
@@ -47,7 +47,7 @@ export type {
   GeminiPdfExtractorOptions,
   ClaudePdfExtractorOptions,
   OpenAIPdfExtractorOptions,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
 // ── Ontology types ─────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ export type {
   ConceptRegistry,
   ConceptRegistryEntry,
   OntologyValidationResult,
-} from './ontology/index.js'
+} from "./ontology/index.js";
 
 export {
   OntologyLoader,
@@ -82,17 +82,17 @@ export {
   ONTOLOGY_FILENAME,
   // LLM-powered ontology generator
   OntologyGenerator,
-} from './ontology/index.js'
+} from "./ontology/index.js";
 
 export type {
   OntologyGeneratorOptions,
   GenerateOntologyOptions,
   GenerateOntologyResult,
-} from './ontology/index.js'
+} from "./ontology/index.js";
 
 // ── Ingester types and utilities ───────────────────────────────────────────────
 
-export type { IngestedContent, ImageRef, IngesterOptions } from './compiler/index.js'
+export type { IngestedContent, ImageRef, IngesterOptions } from "./compiler/index.js";
 
 export {
   ingestFile,
@@ -101,7 +101,7 @@ export {
   detectMimeType,
   extractMarkdownImageRefs,
   downloadImage,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
 // ── Compilation plan types ─────────────────────────────────────────────────────
 
@@ -110,9 +110,9 @@ export type {
   ArticlePlan,
   ArticleAction,
   CandidateConcept,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
-export { ConceptExtractor } from './compiler/index.js'
+export { ConceptExtractor } from "./compiler/index.js";
 
 // ── Synthesis types ─────────────────────────────────────────────────────────────
 
@@ -121,9 +121,13 @@ export type {
   SynthesisOptions,
   SynthesisProgressEvent,
   FrontmatterValidationResult,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
-export { KnowledgeSynthesizer, serializeFrontmatter, validateFrontmatter } from './compiler/index.js'
+export {
+  KnowledgeSynthesizer,
+  serializeFrontmatter,
+  validateFrontmatter,
+} from "./compiler/index.js";
 
 // ── Linter types ───────────────────────────────────────────────────────────────
 
@@ -133,13 +137,13 @@ export type {
   LintCode,
   LintOptions,
   AutoFixResult,
-} from './compiler/index.js'
+} from "./compiler/index.js";
 
-export { KBLinter, extractWikilinks, buildLinkGraph } from './compiler/index.js'
+export { KBLinter, extractWikilinks, buildLinkGraph } from "./compiler/index.js";
 
 // ── Runtime (Store + Tools + KnowledgeBase) ────────────────────────────────────
 
-export { KnowledgeBase, KBStore, createKBTools } from './store/index.js'
+export { KnowledgeBase, KBStore, createKBTools } from "./store/index.js";
 
 export type {
   KnowledgeBaseOptions,
@@ -148,11 +152,11 @@ export type {
   KBIndexEntry,
   SearchResult,
   KBToolOptions,
-} from './store/index.js'
+} from "./store/index.js";
 
 // ── Federation ────────────────────────────────────────────────────────────────
 
-export { FederatedKnowledgeBase } from './store/index.js'
+export { FederatedKnowledgeBase } from "./store/index.js";
 
 export type {
   FederatedKBConfig,
@@ -162,5 +166,4 @@ export type {
   NamespacedDocument,
   NamespacedSearchResult,
   NamespacedIndexEntry,
-} from './store/index.js'
-
+} from "./store/index.js";

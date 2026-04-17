@@ -5,67 +5,63 @@
  * text replacement. Opt-in — requires explicit `--heal` flag.
  *
  * What heal mode fixes:
- * - BROKEN_WIKILINK:       Finds the best matching article or removes the link
- * - STUB_WITH_SOURCES:     Triggers re-synthesis of the stub into a full article
- * - LOW_ARTICLE_QUALITY:   Asks LLM to expand thin sections with more detail
- * - ORPHANED_ARTICLE:      Identifies related articles and suggests crosslinks
+ * - BROKEN_WIKILINK: Finds the best matching article or removes the link
+ * - STUB_WITH_SOURCES: Triggers re-synthesis of the stub into a full article
+ * - LOW_ARTICLE_QUALITY: Asks LLM to expand thin sections with more detail
+ * - ORPHANED_ARTICLE: Identifies related articles and suggests crosslinks
  *
  * What it does NOT fix (deferred to C2 Discovery):
  * - Missing articles (no source material)
  * - Contradictory claims (needs human review)
  */
 
-import { readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
-import type { LLMCallFn } from './llmClient.js'
-import type { LintReport, LintIssue } from './linter/index.js'
-import type { ConceptRegistry } from '../ontology/index.js'
+import { readFile, writeFile } from "fs/promises";
+import { join } from "path";
+import type { LLMCallFn } from "./llmClient.js";
+import type { LintReport, LintIssue } from "./linter/index.js";
+import type { ConceptRegistry } from "../ontology/index.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type HealOptions = {
   /** Maximum LLM calls per heal run. Default: 20 */
-  maxCalls?: number
+  maxCalls?: number;
   /** Only report what would be healed — don't write changes. Default: false */
-  dryRun?: boolean
+  dryRun?: boolean;
   /** Progress callback */
-  onProgress?: (event: HealProgressEvent) => void
-}
+  onProgress?: (event: HealProgressEvent) => void;
+};
 
 export type HealProgressEvent =
-  | { type: 'heal:start'; totalIssues: number; healable: number }
-  | { type: 'heal:fixing'; docId: string; code: string; attempt: number; total: number }
-  | { type: 'heal:fixed'; docId: string; code: string }
-  | { type: 'heal:skipped'; docId: string; code: string; reason: string }
-  | { type: 'heal:complete'; result: HealResult }
+  | { type: "heal:start"; totalIssues: number; healable: number }
+  | { type: "heal:fixing"; docId: string; code: string; attempt: number; total: number }
+  | { type: "heal:fixed"; docId: string; code: string }
+  | { type: "heal:skipped"; docId: string; code: string; reason: string }
+  | { type: "heal:complete"; result: HealResult };
 
 export type HealResult = {
   /** Number of issues successfully healed */
-  healed: number
+  healed: number;
   /** Number of issues skipped (no action possible) */
-  skipped: number
+  skipped: number;
   /** Number of LLM calls made */
-  llmCalls: number
+  llmCalls: number;
   /** Per-issue details */
-  details: HealDetail[]
+  details: HealDetail[];
   /** Total elapsed time (ms) */
-  durationMs: number
-}
+  durationMs: number;
+};
 
 export type HealDetail = {
-  docId: string
-  code: string
-  action: 'healed' | 'skipped' | 'failed'
-  message: string
-}
+  docId: string;
+  code: string;
+  action: "healed" | "skipped" | "failed";
+  message: string;
+};
 
 // ── Healable lint codes ───────────────────────────────────────────────────────
 
-const HEALABLE_CODES = new Set([
-  'BROKEN_WIKILINK',
-  'LOW_ARTICLE_QUALITY',
-  'ORPHANED_ARTICLE',
-])
+const HEALABLE_CODES = new Set(["BROKEN_WIKILINK", "LOW_ARTICLE_QUALITY", "ORPHANED_ARTICLE"]);
 
 // ── Heal Engine ───────────────────────────────────────────────────────────────
 
@@ -86,90 +82,100 @@ export async function healLintIssues(
   registry: ConceptRegistry,
   options: HealOptions = {},
 ): Promise<HealResult> {
-  const startMs = Date.now()
-  const maxCalls = options.maxCalls ?? 20
-  const emit = options.onProgress ?? (() => {})
+  const startMs = Date.now();
+  const maxCalls = options.maxCalls ?? 20;
+  const emit = options.onProgress ?? (() => {});
 
-  const healable = report.issues.filter(i => HEALABLE_CODES.has(i.code))
+  const healable = report.issues.filter((i) => HEALABLE_CODES.has(i.code));
 
-  emit({ type: 'heal:start', totalIssues: report.issues.length, healable: healable.length })
+  emit({ type: "heal:start", totalIssues: report.issues.length, healable: healable.length });
 
-  const details: HealDetail[] = []
-  let llmCalls = 0
-  let attempt = 0
+  const details: HealDetail[] = [];
+  let llmCalls = 0;
+  let attempt = 0;
 
   // Group issues by docId to batch file reads
-  const byDocId = new Map<string, LintIssue[]>()
+  const byDocId = new Map<string, LintIssue[]>();
   for (const issue of healable) {
-    const group = byDocId.get(issue.docId) ?? []
-    group.push(issue)
-    byDocId.set(issue.docId, group)
+    const group = byDocId.get(issue.docId) ?? [];
+    group.push(issue);
+    byDocId.set(issue.docId, group);
   }
 
   for (const [docId, issues] of byDocId) {
     if (llmCalls >= maxCalls) {
       for (const issue of issues) {
-        details.push({ docId, code: issue.code, action: 'skipped', message: 'Max LLM call budget reached' })
+        details.push({
+          docId,
+          code: issue.code,
+          action: "skipped",
+          message: "Max LLM call budget reached",
+        });
       }
-      continue
+      continue;
     }
 
-    const filePath = join(compiledDir, `${docId}.md`)
-    let content: string
+    const filePath = join(compiledDir, `${docId}.md`);
+    let content: string;
     try {
-      content = await readFile(filePath, 'utf-8')
+      content = await readFile(filePath, "utf-8");
     } catch {
       for (const issue of issues) {
-        details.push({ docId, code: issue.code, action: 'skipped', message: 'File not found on disk' })
+        details.push({
+          docId,
+          code: issue.code,
+          action: "skipped",
+          message: "File not found on disk",
+        });
       }
-      continue
+      continue;
     }
 
-    let modified = content
-    let fileChanged = false
+    let modified = content;
+    let fileChanged = false;
 
     for (const issue of issues) {
-      attempt++
-      emit({ type: 'heal:fixing', docId, code: issue.code, attempt, total: healable.length })
+      attempt++;
+      emit({ type: "heal:fixing", docId, code: issue.code, attempt, total: healable.length });
 
       try {
-        const result = await healSingleIssue(llm, issue, modified, registry)
-        llmCalls++
+        const result = await healSingleIssue(llm, issue, modified, registry);
+        llmCalls++;
 
         if (result.healed && result.newContent) {
-          modified = result.newContent
-          fileChanged = true
-          details.push({ docId, code: issue.code, action: 'healed', message: result.message })
-          emit({ type: 'heal:fixed', docId, code: issue.code })
+          modified = result.newContent;
+          fileChanged = true;
+          details.push({ docId, code: issue.code, action: "healed", message: result.message });
+          emit({ type: "heal:fixed", docId, code: issue.code });
         } else {
-          details.push({ docId, code: issue.code, action: 'skipped', message: result.message })
-          emit({ type: 'heal:skipped', docId, code: issue.code, reason: result.message })
+          details.push({ docId, code: issue.code, action: "skipped", message: result.message });
+          emit({ type: "heal:skipped", docId, code: issue.code, reason: result.message });
         }
       } catch (err) {
         details.push({
           docId,
           code: issue.code,
-          action: 'failed',
+          action: "failed",
           message: err instanceof Error ? err.message : String(err),
-        })
+        });
       }
     }
 
     if (fileChanged && !options.dryRun) {
-      await writeFile(filePath, modified, 'utf-8')
+      await writeFile(filePath, modified, "utf-8");
     }
   }
 
   const result: HealResult = {
-    healed: details.filter(d => d.action === 'healed').length,
-    skipped: details.filter(d => d.action === 'skipped').length,
+    healed: details.filter((d) => d.action === "healed").length,
+    skipped: details.filter((d) => d.action === "skipped").length,
     llmCalls,
     details,
     durationMs: Date.now() - startMs,
-  }
+  };
 
-  emit({ type: 'heal:complete', result })
-  return result
+  emit({ type: "heal:complete", result });
+  return result;
 }
 
 // ── Per-issue heal logic ──────────────────────────────────────────────────────
@@ -181,14 +187,14 @@ async function healSingleIssue(
   registry: ConceptRegistry,
 ): Promise<{ healed: boolean; newContent?: string; message: string }> {
   switch (issue.code) {
-    case 'BROKEN_WIKILINK':
-      return healBrokenWikilink(llm, issue, articleContent, registry)
-    case 'LOW_ARTICLE_QUALITY':
-      return healLowQuality(llm, issue, articleContent)
-    case 'ORPHANED_ARTICLE':
-      return healOrphanedArticle(llm, issue, articleContent, registry)
+    case "BROKEN_WIKILINK":
+      return healBrokenWikilink(llm, issue, articleContent, registry);
+    case "LOW_ARTICLE_QUALITY":
+      return healLowQuality(llm, issue, articleContent);
+    case "ORPHANED_ARTICLE":
+      return healOrphanedArticle(llm, issue, articleContent, registry);
     default:
-      return { healed: false, message: `No heal strategy for ${issue.code}` }
+      return { healed: false, message: `No heal strategy for ${issue.code}` };
   }
 }
 
@@ -200,13 +206,13 @@ async function healBrokenWikilink(
   content: string,
   registry: ConceptRegistry,
 ): Promise<{ healed: boolean; newContent?: string; message: string }> {
-  const brokenTarget = issue.relatedTarget
-  if (!brokenTarget) return { healed: false, message: 'No target info in lint issue' }
+  const brokenTarget = issue.relatedTarget;
+  if (!brokenTarget) return { healed: false, message: "No target info in lint issue" };
 
   // Build list of available articles
   const available = Array.from(registry.values())
-    .map(e => `- "${e.canonicalTitle}" (${e.docId})`)
-    .join('\n')
+    .map((e) => `- "${e.canonicalTitle}" (${e.docId})`)
+    .join("\n");
 
   const response = await llm({
     system: `You are a knowledge base editor. Given a broken wikilink target and a list of existing articles, decide the best action.`,
@@ -221,24 +227,28 @@ What should we do? Respond with EXACTLY one line in one of these formats:
 - KEEP — if you're unsure and want to leave it for human review`,
     temperature: 0.1,
     maxTokens: 256,
-  })
+  });
 
-  const trimmed = response.trim().split('\n')[0] ?? ''
+  const trimmed = response.trim().split("\n")[0] ?? "";
 
-  if (trimmed.startsWith('REPLACE:')) {
-    const newTarget = trimmed.match(/\[\[(.+?)\]\]/)?.[1]
+  if (trimmed.startsWith("REPLACE:")) {
+    const newTarget = trimmed.match(/\[\[(.+?)\]\]/)?.[1];
     if (newTarget) {
-      const newContent = content.replace(`[[${brokenTarget}]]`, `[[${newTarget}]]`)
-      return { healed: true, newContent, message: `Replaced [[${brokenTarget}]] → [[${newTarget}]]` }
+      const newContent = content.replace(`[[${brokenTarget}]]`, `[[${newTarget}]]`);
+      return {
+        healed: true,
+        newContent,
+        message: `Replaced [[${brokenTarget}]] → [[${newTarget}]]`,
+      };
     }
   }
 
-  if (trimmed.startsWith('REMOVE')) {
-    const newContent = content.replace(`[[${brokenTarget}]]`, brokenTarget)
-    return { healed: true, newContent, message: `Unlinked [[${brokenTarget}]] → plain text` }
+  if (trimmed.startsWith("REMOVE")) {
+    const newContent = content.replace(`[[${brokenTarget}]]`, brokenTarget);
+    return { healed: true, newContent, message: `Unlinked [[${brokenTarget}]] → plain text` };
   }
 
-  return { healed: false, message: `LLM chose KEEP for [[${brokenTarget}]]` }
+  return { healed: false, message: `LLM chose KEEP for [[${brokenTarget}]]` };
 }
 
 // ── LOW_ARTICLE_QUALITY ───────────────────────────────────────────────────────
@@ -248,11 +258,11 @@ async function healLowQuality(
   issue: LintIssue,
   content: string,
 ): Promise<{ healed: boolean; newContent?: string; message: string }> {
-  const wordCount = content.split(/\s+/).filter(Boolean).length
+  const wordCount = content.split(/\s+/).filter(Boolean).length;
 
   // Only heal if moderately short — very short articles need fresh synthesis
   if (wordCount < 50) {
-    return { healed: false, message: 'Article too short for heal — needs full re-synthesis' }
+    return { healed: false, message: "Article too short for heal — needs full re-synthesis" };
   }
 
   const response = await llm({
@@ -268,23 +278,23 @@ Rules:
     user: `This article was flagged as low quality. Please expand it:\n\n${content}`,
     temperature: 0.3,
     maxTokens: 4096,
-  })
+  });
 
   if (!response.trim()) {
-    return { healed: false, message: 'LLM returned empty response' }
+    return { healed: false, message: "LLM returned empty response" };
   }
 
   // Sanity check: new content should be longer
-  const newWordCount = response.split(/\s+/).filter(Boolean).length
+  const newWordCount = response.split(/\s+/).filter(Boolean).length;
   if (newWordCount <= wordCount) {
-    return { healed: false, message: 'LLM response was not longer than original' }
+    return { healed: false, message: "LLM response was not longer than original" };
   }
 
   return {
     healed: true,
     newContent: response,
     message: `Expanded from ${wordCount} to ${newWordCount} words`,
-  }
+  };
 }
 
 // ── ORPHANED_ARTICLE ──────────────────────────────────────────────────────────
@@ -296,14 +306,14 @@ async function healOrphanedArticle(
   registry: ConceptRegistry,
 ): Promise<{ healed: boolean; newContent?: string; message: string }> {
   // Extract the title
-  const titleMatch = content.match(/^title:\s*['"]?(.+?)['"]?\s*$/m)
-  const title = titleMatch?.[1] ?? issue.docId
+  const titleMatch = content.match(/^title:\s*['"]?(.+?)['"]?\s*$/m);
+  const title = titleMatch?.[1] ?? issue.docId;
 
   // Build list of other articles that could link here
   const otherArticles = Array.from(registry.values())
-    .filter(e => e.docId !== issue.docId)
-    .map(e => `- "${e.canonicalTitle}" (${e.entityType})`)
-    .join('\n')
+    .filter((e) => e.docId !== issue.docId)
+    .map((e) => `- "${e.canonicalTitle}" (${e.entityType})`)
+    .join("\n");
 
   const response = await llm({
     system: `You are a knowledge base editor. An article is orphaned (no other articles link to it). Suggest which section of this article should mention related articles to improve connectivity.
@@ -318,19 +328,19 @@ Other articles in the KB:
 ${otherArticles}`,
     temperature: 0.3,
     maxTokens: 512,
-  })
+  });
 
   if (!response.trim()) {
-    return { healed: false, message: 'LLM returned empty response' }
+    return { healed: false, message: "LLM returned empty response" };
   }
 
   // Append a "Related Topics" section before the last --- or at the end
-  const section = `\n\n## Related Topics\n\n${response.trim()}\n`
-  const newContent = content.trimEnd() + section
+  const section = `\n\n## Related Topics\n\n${response.trim()}\n`;
+  const newContent = content.trimEnd() + section;
 
   return {
     healed: true,
     newContent,
     message: `Added "Related Topics" section with cross-links`,
-  }
+  };
 }

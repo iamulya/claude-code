@@ -20,44 +20,44 @@
  * ```
  */
 
-import { estimateTokens } from '../utils/tokens.js'
+import { estimateTokens } from "../utils/tokens.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type MessageLike = {
-  role: string
-  content: string
-  toolName?: string
-  toolCallId?: string
-}
+  role: string;
+  content: string;
+  toolName?: string;
+  toolCallId?: string;
+};
 
 export type SnipConfig = {
   /** Max number of old tool results to keep. Default: 15. */
-  maxOldToolResults?: number
+  maxOldToolResults?: number;
   /** Tool results older than this many turns get snipped. Default: 20. */
-  maxToolResultAge?: number
+  maxToolResultAge?: number;
   /** Replace snipped content with this placeholder. Default: "[Old tool result cleared]". */
-  placeholderText?: string
+  placeholderText?: string;
   /** Minimum token length of a tool result to be eligible for snipping. Default: 100. */
-  minSnipTokens?: number
+  minSnipTokens?: number;
   /** Keep the most recent N tool results untouched. Default: 5. */
-  keepRecent?: number
+  keepRecent?: number;
   /** Tool names whose results are never snipped. */
-  exemptTools?: string[]
-}
+  exemptTools?: string[];
+};
 
 export type SnipResult = {
   /** Messages with old content snipped. */
-  snipped: MessageLike[]
+  snipped: MessageLike[];
   /** Estimated tokens freed by snipping. */
-  tokensFreed: number
+  tokensFreed: number;
   /** Number of tool results snipped. */
-  itemsRemoved: number
-}
+  itemsRemoved: number;
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_PLACEHOLDER = '[Old tool result cleared]'
+const DEFAULT_PLACEHOLDER = "[Old tool result cleared]";
 
 // ── snipHistory ──────────────────────────────────────────────────────────────
 
@@ -74,10 +74,7 @@ const DEFAULT_PLACEHOLDER = '[Old tool result cleared]'
  * These are replaced with a short placeholder text, dramatically reducing
  * context size before the expensive LLM-based compaction runs.
  */
-export function snipHistory(
-  messages: MessageLike[],
-  config: SnipConfig = {},
-): SnipResult {
+export function snipHistory(messages: MessageLike[], config: SnipConfig = {}): SnipResult {
   const {
     maxOldToolResults = 15,
     maxToolResultAge = 20,
@@ -85,70 +82,70 @@ export function snipHistory(
     minSnipTokens = 100,
     keepRecent = 5,
     exemptTools = [],
-  } = config
+  } = config;
 
-  const exemptSet = new Set(exemptTools)
-  const totalMessages = messages.length
+  const exemptSet = new Set(exemptTools);
+  const totalMessages = messages.length;
 
   // Find all tool result indices
-  const toolResultIndices: number[] = []
+  const toolResultIndices: number[] = [];
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i]!.role === 'tool' || messages[i]!.toolCallId) {
-      toolResultIndices.push(i)
+    if (messages[i]!.role === "tool" || messages[i]!.toolCallId) {
+      toolResultIndices.push(i);
     }
   }
 
   // Determine which tool results to snip
-  const snipIndices = new Set<number>()
-  const recentBoundary = toolResultIndices.length - keepRecent
+  const snipIndices = new Set<number>();
+  const recentBoundary = toolResultIndices.length - keepRecent;
 
   for (let ri = 0; ri < toolResultIndices.length; ri++) {
-    const idx = toolResultIndices[ri]!
-    const msg = messages[idx]!
+    const idx = toolResultIndices[ri]!;
+    const msg = messages[idx]!;
 
     // Skip recent tool results
-    if (ri >= recentBoundary) continue
+    if (ri >= recentBoundary) continue;
 
     // Skip exempt tools
-    if (msg.toolName && exemptSet.has(msg.toolName)) continue
+    if (msg.toolName && exemptSet.has(msg.toolName)) continue;
 
     // Skip small results
-    const tokens = estimateTokens(msg.content)
-    if (tokens < minSnipTokens) continue
+    const tokens = estimateTokens(msg.content);
+    if (tokens < minSnipTokens) continue;
 
     // Check age (turns from end)
-    const age = totalMessages - idx
-    if (age < maxToolResultAge) continue
+    const age = totalMessages - idx;
+    if (age < maxToolResultAge) continue;
 
     // Enough old tool results — snip
-    if (snipIndices.size >= maxOldToolResults) break
+    if (snipIndices.size >= maxOldToolResults) break;
 
-    snipIndices.add(idx)
+    snipIndices.add(idx);
   }
 
   // Build snipped messages
-  let tokensFreed = 0
-  let itemsRemoved = 0
-  const snipped: MessageLike[] = []
+  let tokensFreed = 0;
+  let itemsRemoved = 0;
+  const snipped: MessageLike[] = [];
 
   for (let i = 0; i < messages.length; i++) {
     if (snipIndices.has(i)) {
-      const original = messages[i]!
-      const originalTokens = estimateTokens(original.content)
-      const placeholderTokens = estimateTokens(placeholderText)
-      tokensFreed += originalTokens - placeholderTokens
-      itemsRemoved++
+      const original = messages[i]!;
+      const originalTokens = estimateTokens(original.content);
+      const placeholderTokens = estimateTokens(placeholderText);
+      tokensFreed += originalTokens - placeholderTokens;
+      itemsRemoved++;
 
       snipped.push({
         ...original,
         content: placeholderText,
-      })
+      });
     } else {
-      snipped.push(messages[i]!)
+      snipped.push(messages[i]!);
     }
   }
 
-  return { snipped, tokensFreed, itemsRemoved }
+  return { snipped, tokensFreed, itemsRemoved };
 }
 
 /**
@@ -159,51 +156,57 @@ export function snipHistory(
  */
 export function deduplicateToolResults(
   messages: MessageLike[],
-  placeholder = '[Duplicate result — see below]',
+  placeholder = "[Duplicate result — see below]",
 ): SnipResult {
   // Track last seen content hash for each tool+input combo
-  const lastSeen = new Map<string, number>() // key → last index
-  const duplicateIndices = new Set<number>()
+  const lastSeen = new Map<string, number>(); // key → last index
+  const duplicateIndices = new Set<number>();
 
   // Forward pass: find the last occurrence of each tool result
   for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]!
-    if (msg.role !== 'tool' && !msg.toolCallId) continue
+    const msg = messages[i]!;
+    if (msg.role !== "tool" && !msg.toolCallId) continue;
 
-    const key = `${msg.toolName ?? 'unknown'}:${hashContent(msg.content)}`
-    const prev = lastSeen.get(key)
+    const key = `${msg.toolName ?? "unknown"}:${hashContent(msg.content)}`;
+    const prev = lastSeen.get(key);
     if (prev !== undefined) {
-      duplicateIndices.add(prev) // Earlier one is the duplicate
+      duplicateIndices.add(prev); // Earlier one is the duplicate
     }
-    lastSeen.set(key, i)
+    lastSeen.set(key, i);
   }
 
-  let tokensFreed = 0
-  const snipped: MessageLike[] = []
+  let tokensFreed = 0;
+  const snipped: MessageLike[] = [];
 
   for (let i = 0; i < messages.length; i++) {
     if (duplicateIndices.has(i)) {
-      const original = messages[i]!
-      tokensFreed += estimateTokens(original.content) - estimateTokens(placeholder)
-      snipped.push({ ...original, content: placeholder })
+      const original = messages[i]!;
+      tokensFreed += estimateTokens(original.content) - estimateTokens(placeholder);
+      snipped.push({ ...original, content: placeholder });
     } else {
-      snipped.push(messages[i]!)
+      snipped.push(messages[i]!);
     }
   }
 
-  return { snipped, tokensFreed, itemsRemoved: duplicateIndices.size }
+  return { snipped, tokensFreed, itemsRemoved: duplicateIndices.size };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function hashContent(content: string): string {
-  // Fast non-crypto hash for deduplication
-  let hash = 0
-  const len = Math.min(content.length, 500) // Only hash first 500 chars
-  for (let i = 0; i < len; i++) {
-    const chr = content.charCodeAt(i)
-    hash = ((hash << 5) - hash) + chr
-    hash |= 0
+  // Include the full string length in the key to distinguish results
+  // that have identical prefixes but differ later. The inner hash still caps at
+  // 2 KB for performance, but the length suffix catches cases where the tail
+  // differs without needing to scan the whole string character-by-character.
+  // (Two strings with the same 2 KB prefix AND the same total length are
+  // considered equivalent — an acceptable false-positive rate for deduplication.)
+  let hash = 0;
+  const cap = Math.min(content.length, 2048); // raised from 500 → 2 KB
+  for (let i = 0; i < cap; i++) {
+    const chr = content.charCodeAt(i);
+    hash = (hash << 5) - hash + chr;
+    hash |= 0;
   }
-  return hash.toString(36)
+  // Append length so "abc..." (len 3000) ≠ "abc..." (len 4000)
+  return `${hash.toString(36)}_${content.length}`;
 }

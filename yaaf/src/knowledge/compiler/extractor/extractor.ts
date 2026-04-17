@@ -9,43 +9,40 @@
  * Each source file goes through two passes:
  *
  * Pass 1 — Static analysis (no LLM, instant):
- *   - Vocabulary scan: find all known entity mentions via alias index
- *   - Registry lookup: check which mentioned entities already have articles
- *   - Directory hint: infer entity type from file path convention
- *   - Token estimation: decide how much to include in the LLM prompt
+ * - Vocabulary scan: find all known entity mentions via alias index
+ * - Registry lookup: check which mentioned entities already have articles
+ * - Directory hint: infer entity type from file path convention
+ * - Token estimation: decide how much to include in the LLM prompt
  *
  * Pass 2 — LLM classification (uses extractionModel, fast/cheap):
- *   - Classify the source into entity type + canonical title
- *   - Identify existing articles to update vs new articles to create
- *   - Extract candidate new concepts not yet in the KB
- *   - Suggest frontmatter values from the source
- *   - Determine the article's relationships to known KB entities
+ * - Classify the source into entity type + canonical title
+ * - Identify existing articles to update vs new articles to create
+ * - Extract candidate new concepts not yet in the KB
+ * - Suggest frontmatter values from the source
+ * - Determine the article's relationships to known KB entities
  *
  * Pass 3 — Post-processing (no LLM):
- *   - Compute deterministic docIds from LLM output
- *   - Merge sources targeting the same entity (multi-source grouping)
- *   - Validate entity types against ontology
- *   - Flag low-confidence plans for human review
+ * - Compute deterministic docIds from LLM output
+ * - Merge sources targeting the same entity (multi-source grouping)
+ * - Validate entity types against ontology
+ * - Flag low-confidence plans for human review
  */
 
-import { join, dirname, relative, basename } from 'path'
-import { generateDocId } from '../utils.js'
-import { withRetry } from '../retry.js'
-import type { KBOntology, ConceptRegistry } from '../../ontology/index.js'
-import { buildAliasIndex, scanForEntityMentions } from '../../ontology/index.js'
-import type { IngestedContent } from '../ingester/index.js'
-import { estimateTokens } from '../../../utils/tokens.js'
+import { join, dirname, relative, basename } from "path";
+import { generateDocId } from "../utils.js";
+import { withRetry } from "../retry.js";
+import type { KBOntology, ConceptRegistry } from "../../ontology/index.js";
+import { buildAliasIndex, scanForEntityMentions } from "../../ontology/index.js";
+import type { IngestedContent } from "../ingester/index.js";
+import { estimateTokens } from "../../../utils/tokens.js";
 import type {
   CompilationPlan,
   ArticlePlan,
   StaticAnalysisResult,
   CandidateConcept,
   ArticleAction,
-} from './types.js'
-import {
-  buildExtractionSystemPrompt,
-  buildExtractionUserPrompt,
-} from './prompt.js'
+} from "./types.js";
+import { buildExtractionSystemPrompt, buildExtractionUserPrompt } from "./prompt.js";
 
 // ── Directory → entity type conventions ──────────────────────────────────────
 
@@ -55,29 +52,29 @@ import {
  * will use this as a strong prior for LLM classification.
  */
 const DIRECTORY_HINTS: Record<string, string> = {
-  papers: 'research_paper',
-  paper: 'research_paper',
-  research: 'research_paper',
-  arxiv: 'research_paper',
-  preprints: 'research_paper',
-  tools: 'tool',
-  libs: 'tool',
-  libraries: 'tool',
-  repos: 'tool',
-  concepts: 'concept',
-  ideas: 'concept',
-  glossary: 'concept',
-  tutorials: 'tutorial',
-  guides: 'tutorial',
-  howtos: 'tutorial',
-  datasets: 'dataset',
-  data: 'dataset',
-  apis: 'api',
-  'web-clips': 'article',
-  articles: 'article',
-  blogs: 'article',
-  news: 'article',
-}
+  papers: "research_paper",
+  paper: "research_paper",
+  research: "research_paper",
+  arxiv: "research_paper",
+  preprints: "research_paper",
+  tools: "tool",
+  libs: "tool",
+  libraries: "tool",
+  repos: "tool",
+  concepts: "concept",
+  ideas: "concept",
+  glossary: "concept",
+  tutorials: "tutorial",
+  guides: "tutorial",
+  howtos: "tutorial",
+  datasets: "dataset",
+  data: "dataset",
+  apis: "api",
+  "web-clips": "article",
+  articles: "article",
+  blogs: "article",
+  news: "article",
+};
 
 // ── GenerateFn type ───────────────────────────────────────────────────────────
 
@@ -89,16 +86,16 @@ const DIRECTORY_HINTS: Record<string, string> = {
  * ```ts
  * const model = new GeminiChatModel({ model: 'gemini-2.5-flash', apiKey: '...' })
  * const generateFn: GenerateFn = async (system, user) => {
- *   const result = await model.complete({
- *     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
- *     temperature: 0.1,
- *     maxTokens: 2048,
- *   })
- *   return result.content ?? ''
+ * const result = await model.complete({
+ * messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+ * temperature: 0.1,
+ * maxTokens: 2048,
+ * })
+ * return result.content ?? ''
  * }
  * ```
  */
-export type GenerateFn = (systemPrompt: string, userPrompt: string) => Promise<string>
+export type GenerateFn = (systemPrompt: string, userPrompt: string) => Promise<string>;
 
 // ── DocId generation ──────────────────────────────────────────────────────────
 // Delegated to ../utils.ts for proper pluralization (Phase 4B)
@@ -117,88 +114,88 @@ export type GenerateFn = (systemPrompt: string, userPrompt: string) => Promise<s
 function extractJsonFromLlmResponse(raw: string): string {
   // 1. Strip markdown code fences (any variant)
   let text = raw
-    .replace(/^```(?:json|JSON)?\s*/m, '')
-    .replace(/```\s*$/m, '')
-    .trim()
+    .replace(/^```(?:json|JSON)?\s*/m, "")
+    .replace(/```\s*$/m, "")
+    .trim();
 
   // 2. Find the first '{' — skip any preamble
-  const start = text.indexOf('{')
+  const start = text.indexOf("{");
   if (start === -1) {
     // No object found — return as-is and let JSON.parse produce a useful error
-    return text
+    return text;
   }
 
   // 3. Walk forward counting braces, tracking string context (Phase 1B fix)
-  //    Previous version didn't account for braces inside JSON string values
-  //    e.g., {"code": "function foo() { return {} }"} would break
-  let depth = 0
-  let inString = false
-  let escape = false
-  let end = -1
+  // Previous version didn't account for braces inside JSON string values
+  // e.g., {"code": "function foo() { return {} }"} would break
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let end = -1;
 
   for (let i = start; i < text.length; i++) {
-    const ch = text[i]!
+    const ch = text[i]!;
 
     // Handle escape sequences inside strings
     if (escape) {
-      escape = false
-      continue
+      escape = false;
+      continue;
     }
 
-    if (ch === '\\' && inString) {
-      escape = true
-      continue
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
     }
 
     // Toggle string context on unescaped quotes
     if (ch === '"') {
-      inString = !inString
-      continue
+      inString = !inString;
+      continue;
     }
 
     // Only count braces outside of strings
-    if (inString) continue
+    if (inString) continue;
 
-    if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
       if (depth === 0) {
-        end = i
-        break
+        end = i;
+        break;
       }
     }
   }
 
   if (end === -1) {
     // Unbalanced — return from start onwards and let JSON.parse fail with context
-    return text.slice(start)
+    return text.slice(start);
   }
 
-  return text.slice(start, end + 1)
+  return text.slice(start, end + 1);
 }
 
 // ── LLM response parser ───────────────────────────────────────────────────────
 
 interface RawArticlePlan {
-  canonicalTitle?: string
-  entityType?: string
-  action?: string
-  existingDocId?: string | null
-  docIdSuggestion?: string
-  knownLinkDocIds?: string[]
+  canonicalTitle?: string;
+  entityType?: string;
+  action?: string;
+  existingDocId?: string | null;
+  docIdSuggestion?: string;
+  knownLinkDocIds?: string[];
   candidateNewConcepts?: Array<{
-    name?: string
-    entityType?: string
-    description?: string
-    mentionCount?: number
-  }>
-  suggestedFrontmatter?: Record<string, unknown>
-  skipReason?: string | null
-  confidence?: number
+    name?: string;
+    entityType?: string;
+    description?: string;
+    mentionCount?: number;
+  }>;
+  suggestedFrontmatter?: Record<string, unknown>;
+  skipReason?: string | null;
+  confidence?: number;
 }
 
 interface RawExtractionResponse {
-  articles?: RawArticlePlan[]
+  articles?: RawArticlePlan[];
 }
 
 /**
@@ -214,84 +211,81 @@ function parseExtractionResponse(
 ): ArticlePlan[] {
   // Robustly extract JSON from the LLM response.
   // LLMs may wrap JSON in markdown fences, add preamble prose, or include trailing text.
-  const cleaned = extractJsonFromLlmResponse(raw)
+  const cleaned = extractJsonFromLlmResponse(raw);
 
-  let parsed: RawExtractionResponse
+  let parsed: RawExtractionResponse;
   try {
-    parsed = JSON.parse(cleaned)
+    parsed = JSON.parse(cleaned);
   } catch (err) {
     throw new Error(
       `Concept Extractor: Failed to parse JSON from LLM response.\n` +
-      `Source: ${sourcePath}\n` +
-      `Parse error: ${err instanceof Error ? err.message : String(err)}\n` +
-      `Cleaned excerpt: ${cleaned.slice(0, 300)}`,
-    )
+        `Source: ${sourcePath}\n` +
+        `Parse error: ${err instanceof Error ? err.message : String(err)}\n` +
+        `Cleaned excerpt: ${cleaned.slice(0, 300)}`,
+    );
   }
 
   if (!parsed.articles || !Array.isArray(parsed.articles)) {
     throw new Error(
-      `Concept Extractor: Response missing 'articles' array.\n` +
-      `Source: ${sourcePath}`,
-    )
+      `Concept Extractor: Response missing 'articles' array.\n` + `Source: ${sourcePath}`,
+    );
   }
 
-  const validEntityTypes = new Set(Object.keys(ontology.entityTypes))
-  const validRegistryDocIds = new Set(Array.from(registry.keys()))
+  const validEntityTypes = new Set(Object.keys(ontology.entityTypes));
+  const validRegistryDocIds = new Set(Array.from(registry.keys()));
 
   return parsed.articles
-    .filter((a): a is RawArticlePlan => !!a && typeof a === 'object')
+    .filter((a): a is RawArticlePlan => !!a && typeof a === "object")
     .map((raw): ArticlePlan | null => {
-      const title = typeof raw.canonicalTitle === 'string' ? raw.canonicalTitle.trim() : ''
-      if (!title) return null // Skip plans without a title
+      const title = typeof raw.canonicalTitle === "string" ? raw.canonicalTitle.trim() : "";
+      if (!title) return null; // Skip plans without a title
 
       // Validate and fall back entity type
-      let entityType = typeof raw.entityType === 'string' ? raw.entityType.trim() : ''
+      let entityType = typeof raw.entityType === "string" ? raw.entityType.trim() : "";
       if (!validEntityTypes.has(entityType)) {
-        entityType = Object.keys(ontology.entityTypes)[0]! // Fall back to first entity type
+        entityType = Object.keys(ontology.entityTypes)[0]!; // Fall back to first entity type
       }
 
       const action: ArticleAction =
-        raw.action === 'create' || raw.action === 'update' || raw.action === 'skip'
+        raw.action === "create" || raw.action === "update" || raw.action === "skip"
           ? raw.action
-          : 'create'
+          : "create";
 
       // DocId: use LLM suggestion if it looks valid, else generate deterministically
       const suggestedDocId =
-        typeof raw.docIdSuggestion === 'string' &&
-        /^[a-z][a-z0-9-/]+$/.test(raw.docIdSuggestion)
+        typeof raw.docIdSuggestion === "string" && /^[a-z][a-z0-9-/]+$/.test(raw.docIdSuggestion)
           ? raw.docIdSuggestion
-          : generateDocId(title, entityType)
+          : generateDocId(title, entityType);
 
       // Validate existing docId for updates
       const existingDocId =
-        action === 'update' &&
-        typeof raw.existingDocId === 'string' &&
+        action === "update" &&
+        typeof raw.existingDocId === "string" &&
         validRegistryDocIds.has(raw.existingDocId)
           ? raw.existingDocId
-          : undefined
+          : undefined;
 
       // Validate known link docIds (must exist in registry)
-      const knownLinkDocIds = (raw.knownLinkDocIds ?? [])
-        .filter((id): id is string => typeof id === 'string' && validRegistryDocIds.has(id))
+      const knownLinkDocIds = (raw.knownLinkDocIds ?? []).filter(
+        (id): id is string => typeof id === "string" && validRegistryDocIds.has(id),
+      );
 
       // Parse candidate new concepts
       const candidateNewConcepts: CandidateConcept[] = (raw.candidateNewConcepts ?? [])
-        .filter(c => typeof c?.name === 'string' && c.name.trim())
-        .map(c => ({
-          name: (c.name ?? '').trim(),
-          entityType: validEntityTypes.has(c.entityType ?? '')
+        .filter((c) => typeof c?.name === "string" && c.name.trim())
+        .map((c) => ({
+          name: (c.name ?? "").trim(),
+          entityType: validEntityTypes.has(c.entityType ?? "")
             ? c.entityType!
             : Object.keys(ontology.entityTypes)[0]!,
-          description: typeof c.description === 'string' ? c.description.trim() : '',
-          mentionCount: typeof c.mentionCount === 'number' ? c.mentionCount : 1,
-        }))
+          description: typeof c.description === "string" ? c.description.trim() : "",
+          mentionCount: typeof c.mentionCount === "number" ? c.mentionCount : 1,
+        }));
 
       const confidence =
-        typeof raw.confidence === 'number' &&
-        raw.confidence >= 0 &&
-        raw.confidence <= 1
+        typeof raw.confidence === "number" && raw.confidence >= 0 && raw.confidence <= 1
           ? raw.confidence
-          : 0.7 // Default moderate confidence
+          : 0.7; // Default moderate confidence
 
       return {
         docId: suggestedDocId,
@@ -302,18 +296,16 @@ function parseExtractionResponse(
         sourcePaths: [sourcePath],
         knownLinkDocIds,
         candidateNewConcepts,
-        suggestedFrontmatter: typeof raw.suggestedFrontmatter === 'object' &&
-          raw.suggestedFrontmatter !== null
-          ? raw.suggestedFrontmatter
-          : {},
+        suggestedFrontmatter:
+          typeof raw.suggestedFrontmatter === "object" && raw.suggestedFrontmatter !== null
+            ? raw.suggestedFrontmatter
+            : {},
         skipReason:
-          action === 'skip' && typeof raw.skipReason === 'string'
-            ? raw.skipReason
-            : undefined,
+          action === "skip" && typeof raw.skipReason === "string" ? raw.skipReason : undefined,
         confidence,
-      }
+      };
     })
-    .filter((p): p is ArticlePlan => p !== null)
+    .filter((p): p is ArticlePlan => p !== null);
 }
 
 // ── ConceptExtractor class ────────────────────────────────────────────────────
@@ -325,24 +317,24 @@ function parseExtractionResponse(
  * ```ts
  * const model = new GeminiChatModel({ model: 'gemini-2.5-flash', apiKey: key })
  * const generateFn: GenerateFn = (sys, user) =>
- *   model.complete({ messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] })
- *     .then(r => r.content ?? '')
+ * model.complete({ messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] })
+ * .then(r => r.content ?? '')
  *
  * const extractor = new ConceptExtractor(ontology, registry, generateFn)
  * const plan = await extractor.buildPlan(ingestedContents)
  * ```
  */
 export class ConceptExtractor {
-  private readonly systemPrompt: string
-  private readonly aliasIndex: ReturnType<typeof buildAliasIndex>
+  private readonly systemPrompt: string;
+  private readonly aliasIndex: ReturnType<typeof buildAliasIndex>;
 
   constructor(
     private readonly ontology: KBOntology,
     private readonly registry: ConceptRegistry,
     private readonly generateFn: GenerateFn,
   ) {
-    this.systemPrompt = buildExtractionSystemPrompt(ontology)
-    this.aliasIndex = buildAliasIndex(ontology)
+    this.systemPrompt = buildExtractionSystemPrompt(ontology);
+    this.aliasIndex = buildAliasIndex(ontology);
   }
 
   // ── Public API ───────────────────────────────────────────
@@ -357,43 +349,44 @@ export class ConceptExtractor {
    * @returns CompilationPlan ready for the Knowledge Synthesizer
    */
   async buildPlan(contents: IngestedContent[]): Promise<CompilationPlan> {
-    const allArticlePlans: ArticlePlan[] = []
-    const skipped: CompilationPlan['skipped'] = []
+    const allArticlePlans: ArticlePlan[] = [];
+    const skipped: CompilationPlan["skipped"] = [];
 
     // Process each source file independently
     const results = await Promise.allSettled(
-      contents.map(content => this.extractFromContent(content)),
-    )
+      contents.map((content) => this.extractFromContent(content)),
+    );
 
     for (const [i, result] of results.entries()) {
-      const content = contents[i]!
+      const content = contents[i]!;
 
-      if (result.status === 'rejected') {
-        const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason))
+      if (result.status === "rejected") {
+        const err =
+          result.reason instanceof Error ? result.reason : new Error(String(result.reason));
         skipped.push({
           sourcePath: content.sourceFile,
           reason: `Extraction failed: ${err.message}`,
-        })
-        continue
+        });
+        continue;
       }
 
-      const plans = result.value
+      const plans = result.value;
 
       // Separate skipped plans from actionable ones
       for (const plan of plans) {
-        if (plan.action === 'skip') {
+        if (plan.action === "skip") {
           skipped.push({
             sourcePath: content.sourceFile,
-            reason: plan.skipReason ?? 'LLM classified as non-KB-worthy',
-          })
+            reason: plan.skipReason ?? "LLM classified as non-KB-worthy",
+          });
         } else {
-          allArticlePlans.push(plan)
+          allArticlePlans.push(plan);
         }
       }
     }
 
     // Group plans targeting the same docId (multi-source synthesis)
-    const merged = this.mergeByDocId(allArticlePlans)
+    const merged = this.mergeByDocId(allArticlePlans);
 
     return {
       sourceCount: contents.length,
@@ -401,7 +394,7 @@ export class ConceptExtractor {
       skipped,
       blockedByMissingDeps: [],
       createdAt: Date.now(),
-    }
+    };
   }
 
   // ── Private methods ──────────────────────────────────────
@@ -411,7 +404,7 @@ export class ConceptExtractor {
    */
   private async extractFromContent(content: IngestedContent): Promise<ArticlePlan[]> {
     // Pass 1: Static analysis (instant, no LLM)
-    const staticResult = this.staticAnalyze(content)
+    const staticResult = this.staticAnalyze(content);
 
     // Pass 2: LLM classification
     const userPrompt = buildExtractionUserPrompt(
@@ -419,13 +412,12 @@ export class ConceptExtractor {
       staticResult,
       this.registry,
       this.ontology,
-    )
+    );
 
     // Phase 2A: Wrap LLM call in retry logic for transient failures
-    const rawResponse = await withRetry(
-      () => this.generateFn(this.systemPrompt, userPrompt),
-      { maxRetries: 3 },
-    )
+    const rawResponse = await withRetry(() => this.generateFn(this.systemPrompt, userPrompt), {
+      maxRetries: 3,
+    });
 
     // Pass 3: Parse + validate + post-process
     const plans = parseExtractionResponse(
@@ -433,9 +425,9 @@ export class ConceptExtractor {
       this.ontology,
       content.sourceFile,
       this.registry,
-    )
+    );
 
-    return plans
+    return plans;
   }
 
   /**
@@ -444,43 +436,39 @@ export class ConceptExtractor {
    */
   private staticAnalyze(content: IngestedContent): StaticAnalysisResult {
     // Vocabulary scan
-    const entityMentions = scanForEntityMentions(
-      content.text,
-      this.ontology,
-      this.aliasIndex,
-    )
+    const entityMentions = scanForEntityMentions(content.text, this.ontology, this.aliasIndex);
 
     // Registry matches — entities mentioned that already have compiled articles
     const registryMatches = entityMentions
-      .filter(m => m.docId)
-      .map(m => {
-        const entry = this.registry.get(m.docId!)
-        if (!entry) return null
+      .filter((m) => m.docId)
+      .map((m) => {
+        const entry = this.registry.get(m.docId!);
+        if (!entry) return null;
         // Confidence: 50% base + count boost (max +40%) + entity type match (+10%)
-        const countBoost = Math.min(m.count / 10, 0.4)
-        const typeMatch = m.entityType === entry.entityType ? 0.1 : 0
+        const countBoost = Math.min(m.count / 10, 0.4);
+        const typeMatch = m.entityType === entry.entityType ? 0.1 : 0;
         return {
           docId: entry.docId,
           canonicalTitle: entry.canonicalTitle,
           entityType: entry.entityType,
           confidence: Math.min(0.5 + countBoost + typeMatch, 1.0),
-        }
+        };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null)
-      .sort((a, b) => b.confidence - a.confidence)
+      .sort((a, b) => b.confidence - a.confidence);
 
     // Directory hint
-    const dirHint = this.detectDirectoryHint(content.sourceFile)
+    const dirHint = this.detectDirectoryHint(content.sourceFile);
 
     // Token estimate
-    const tokenEstimate = estimateTokens(content.text)
+    const tokenEstimate = estimateTokens(content.text);
 
     return {
       entityMentions,
       registryMatches,
       directoryHint: dirHint,
       tokenEstimate,
-    }
+    };
   }
 
   /**
@@ -488,14 +476,14 @@ export class ConceptExtractor {
    * e.g., .../raw/papers/paper.pdf → 'research_paper'
    */
   private detectDirectoryHint(filePath: string): string | undefined {
-    const parts = filePath.replace(/\\/g, '/').split('/')
+    const parts = filePath.replace(/\\/g, "/").split("/");
     for (let i = parts.length - 2; i >= 0; i--) {
-      const dir = parts[i]?.toLowerCase() ?? ''
+      const dir = parts[i]?.toLowerCase() ?? "";
       if (DIRECTORY_HINTS[dir]) {
-        return DIRECTORY_HINTS[dir]
+        return DIRECTORY_HINTS[dir];
       }
     }
-    return undefined
+    return undefined;
   }
 
   /**
@@ -504,51 +492,51 @@ export class ConceptExtractor {
    * into one article by the Synthesizer — so we combine their source lists.
    */
   private mergeByDocId(plans: ArticlePlan[]): ArticlePlan[] {
-    const grouped = new Map<string, ArticlePlan>()
+    const grouped = new Map<string, ArticlePlan>();
 
     for (const plan of plans) {
-      const existing = grouped.get(plan.docId)
+      const existing = grouped.get(plan.docId);
 
       if (!existing) {
-        grouped.set(plan.docId, { ...plan })
-        continue
+        grouped.set(plan.docId, { ...plan });
+        continue;
       }
 
       // Merge sources
-      existing.sourcePaths.push(...plan.sourcePaths)
+      existing.sourcePaths.push(...plan.sourcePaths);
 
       // Take the higher-confidence classification
       if (plan.confidence > existing.confidence) {
-        existing.canonicalTitle = plan.canonicalTitle
-        existing.entityType = plan.entityType
-        existing.confidence = plan.confidence
+        existing.canonicalTitle = plan.canonicalTitle;
+        existing.entityType = plan.entityType;
+        existing.confidence = plan.confidence;
         existing.suggestedFrontmatter = {
           ...existing.suggestedFrontmatter,
           ...plan.suggestedFrontmatter,
-        }
+        };
       }
 
       // Merge known links (deduplicate)
-      const allLinks = new Set([...existing.knownLinkDocIds, ...plan.knownLinkDocIds])
-      existing.knownLinkDocIds = Array.from(allLinks)
+      const allLinks = new Set([...existing.knownLinkDocIds, ...plan.knownLinkDocIds]);
+      existing.knownLinkDocIds = Array.from(allLinks);
 
       // Merge candidate new concepts (deduplicate by name)
-      const existingNames = new Set(existing.candidateNewConcepts.map(c => c.name.toLowerCase()))
+      const existingNames = new Set(existing.candidateNewConcepts.map((c) => c.name.toLowerCase()));
       for (const candidate of plan.candidateNewConcepts) {
         if (!existingNames.has(candidate.name.toLowerCase())) {
-          existing.candidateNewConcepts.push(candidate)
-          existingNames.add(candidate.name.toLowerCase())
+          existing.candidateNewConcepts.push(candidate);
+          existingNames.add(candidate.name.toLowerCase());
         }
       }
 
       // action: prefer 'update' over 'create' (if either source says update, update)
-      if (plan.action === 'update' && existing.action === 'create') {
-        existing.action = 'update'
-        existing.existingDocId = plan.existingDocId
+      if (plan.action === "update" && existing.action === "create") {
+        existing.action = "update";
+        existing.existingDocId = plan.existingDocId;
       }
     }
 
-    return Array.from(grouped.values())
+    return Array.from(grouped.values());
   }
 }
 
@@ -564,22 +552,22 @@ export class ConceptExtractor {
 export function makeGenerateFn(
   model: {
     complete(params: {
-      messages: Array<{ role: string; content: string }>
-      temperature?: number
-      maxTokens?: number
-    }): Promise<{ content?: string | null }>
+      messages: Array<{ role: string; content: string }>;
+      temperature?: number;
+      maxTokens?: number;
+    }): Promise<{ content?: string | null }>;
   },
   options: { temperature?: number; maxTokens?: number } = {},
 ): GenerateFn {
   return async (systemPrompt: string, userPrompt: string) => {
     const result = await model.complete({
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
       temperature: options.temperature ?? 0.1,
       maxTokens: options.maxTokens ?? 8192,
-    })
-    return result.content ?? ''
-  }
+    });
+    return result.content ?? "";
+  };
 }

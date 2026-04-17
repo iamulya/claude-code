@@ -14,7 +14,7 @@
  */
 
 // ── State Store ──────────────────────────────────────────────────────────────
-export { createStore, type Store, type StoreSubscriber } from './store/store.js'
+export { createStore, type Store, type StoreSubscriber } from "./store/store.js";
 
 // ── Tool System ──────────────────────────────────────────────────────────────
 export {
@@ -28,7 +28,7 @@ export {
   type PermissionResult,
   type PermissionBehavior,
   type ValidationResult,
-} from './tools/tool.js'
+} from "./tools/tool.js";
 
 // ── OpenAPI Toolset ──────────────────────────────────────────────────────────
 export {
@@ -36,7 +36,7 @@ export {
   type OpenAPIToolsetOptions,
   type AuthConfig as OpenAPIAuthConfig,
   type ParsedOperation,
-} from './tools/openapi/index.js'
+} from "./tools/openapi/index.js";
 
 // ── Memory ───────────────────────────────────────────────────────────────────
 
@@ -47,12 +47,9 @@ export {
   type MemoryHeader,
   type MemoryStoreConfig,
   MEMORY_TYPES,
-} from './memory/memoryStore.js'
+} from "./memory/memoryStore.js";
 
-export {
-  MemoryRelevanceEngine,
-  type RelevantMemory,
-} from './memory/relevance.js'
+export { MemoryRelevanceEngine, type RelevantMemory } from "./memory/relevance.js";
 
 // ── Memory Strategies ────────────────────────────────────────────────────────
 export {
@@ -86,7 +83,7 @@ export {
   type RecencyRetrievalConfig,
   type CompositeMemoryConfig,
   type HonchoMemoryStrategyConfig,
-} from './memory/strategies.js'
+} from "./memory/strategies.js";
 
 // ── Context Manager ──────────────────────────────────────────────────────────
 export {
@@ -99,7 +96,7 @@ export {
   type CompactionStrategyName,
   type Message,
   type MessageRole,
-} from './context/contextManager.js'
+} from "./context/contextManager.js";
 
 // ── Compaction Strategies ────────────────────────────────────────────────────
 export {
@@ -126,7 +123,7 @@ export {
   type TimeBasedMicroCompactConfig,
   type SessionMemoryStrategyConfig,
   type CompositeStrategyConfig,
-} from './context/strategies.js'
+} from "./context/strategies.js";
 
 // ── Agent Spawner ────────────────────────────────────────────────────────────
 export {
@@ -136,20 +133,16 @@ export {
   type AgentStatus,
   type SpawnConfig,
   type SpawnResult,
-} from './agents/orchestrator.js'
+} from "./agents/orchestrator.js";
 
-export {
-  Mailbox,
-  type MailboxMessage,
-  type MailboxConfig,
-} from './agents/mailbox.js'
+export { Mailbox, type MailboxMessage, type MailboxConfig } from "./agents/mailbox.js";
 
 export {
   TaskManager,
   type TaskState,
   type TaskType,
   type TaskStatus,
-} from './agents/taskManager.js'
+} from "./agents/taskManager.js";
 
 export {
   AgentRunner,
@@ -166,7 +159,7 @@ export {
   type RunnerEvents,
   type RunnerEventHandler,
   type RunnerStreamEvent,
-} from './agents/runner.js'
+} from "./agents/runner.js";
 
 // ── AgentThread (stateless reducer / durable pause-resume) ───────────────────
 export {
@@ -178,20 +171,17 @@ export {
   forkThread,
   serializeThread,
   deserializeThread,
-} from './agents/thread.js'
+} from "./agents/thread.js";
 
 // ── Streaming Tool Executor (concurrent execution) ───────────────────────────
-export {
-  StreamingToolExecutor,
-  type ToolExecutionResult,
-} from './agents/streamingExecutor.js'
+export { StreamingToolExecutor, type ToolExecutionResult } from "./agents/streamingExecutor.js";
 
 // ── Tool Result Budget ───────────────────────────────────────────────────────
 export {
   applyToolResultBudget,
   type ToolResultBudgetConfig,
   type ToolResultBudgetResult,
-} from './utils/toolResultBudget.js'
+} from "./utils/toolResultBudget.js";
 
 // ── Agent (high-level abstraction over AgentRunner) ───────────────────────────
 export {
@@ -203,7 +193,7 @@ export {
   type ModelProvider,
   type PlanModeConfig,
   type RunOptions,
-} from './agent.js'
+} from "./agent.js";
 
 // ── Stream Adapter (bridges Agent → runtime harnesses) ────────────────────────
 export {
@@ -211,12 +201,12 @@ export {
   toStreamableAgent,
   type RuntimeStreamEvent,
   type StreamableAgent,
-} from './runtime/adapter.js'
+} from "./runtime/adapter.js";
 
 // ── Models (built-in ChatModel implementations) ───────────────────────────────
-export { OpenAIChatModel, type OpenAIModelConfig } from './models/openai.js'
-export { GeminiChatModel, type GeminiModelConfig } from './models/gemini.js'
-export { AnthropicChatModel, type AnthropicModelConfig } from './models/anthropic.js'
+export { OpenAIChatModel, type OpenAIModelConfig } from "./models/openai.js";
+export { GeminiChatModel, type GeminiModelConfig } from "./models/gemini.js";
+export { AnthropicChatModel, type AnthropicModelConfig } from "./models/anthropic.js";
 
 // ── Vigil (Autonomous Agent Mode) ────────────────────────────────────────────
 export {
@@ -226,7 +216,7 @@ export {
   type VigilEvents,
   type VigilEventHandler,
   type ScheduledTask,
-} from './vigil.js'
+} from "./vigil.js";
 
 // ── System Prompt Builder ─────────────────────────────────────────────────────
 export {
@@ -244,15 +234,10 @@ export {
   type SectionFn,
   type CacheBehavior,
   type SystemPromptSection,
-} from './prompt/systemPrompt.js'
+} from "./prompt/systemPrompt.js";
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
-export {
-  type Hooks,
-  type HookContext,
-  type HookResult,
-  type LLMHookResult,
-} from './hooks.js'
+export { type Hooks, type HookContext, type HookResult, type LLMHookResult } from "./hooks.js";
 
 // ── Permission System ─────────────────────────────────────────────────────────
 export {
@@ -266,7 +251,7 @@ export {
   type PermissionOutcome,
   type PermissionMode,
   type ApprovalHandler,
-} from './permissions.js'
+} from "./permissions.js";
 
 // ── Identity & Access Management (IAM) ───────────────────────────────────────
 export {
@@ -332,7 +317,7 @@ export {
   type JwtPayload,
   type JwtHeader,
   type JwtVerifyOptions,
-} from './iam/index.js'
+} from "./iam/index.js";
 
 // ── Security Middleware (OWASP LLM Top 10) ────────────────────────────────────
 export {
@@ -405,20 +390,13 @@ export {
   type AuditStats,
   securityHooks,
   type SecurityHooksConfig,
-} from './security/index.js'
+} from "./security/index.js";
 
 // ── Session Persistence ──────────────────────────────────────────────────────
-export {
-  Session,
-  listSessions,
-  pruneOldSessions,
-} from './session.js'
+export { Session, listSessions, pruneOldSessions } from "./session.js";
 
 // ── Secure Storage ────────────────────────────────────────────────────────────
-export {
-  SecureStorage,
-  type SecureStorageConfig,
-} from './storage/secureStorage.js'
+export { SecureStorage, type SecureStorageConfig } from "./storage/secureStorage.js";
 
 // ── Sandbox ───────────────────────────────────────────────────────────────────
 export {
@@ -429,7 +407,7 @@ export {
   projectSandbox,
   type SandboxConfig,
   type SandboxViolation,
-} from './sandbox.js'
+} from "./sandbox.js";
 
 // ── Model Router ─────────────────────────────────────────────────────────────
 export {
@@ -438,7 +416,7 @@ export {
   alwaysFast,
   type RouterConfig,
   type RoutingDecision,
-} from './models/router.js'
+} from "./models/router.js";
 
 // ── Team Memory ───────────────────────────────────────────────────────────────
 export {
@@ -446,7 +424,7 @@ export {
   type TeamMemoryConfig,
   type TeamMemoryEntry,
   type MemoryScope,
-} from './memory/teamMemory.js'
+} from "./memory/teamMemory.js";
 
 // ── Skills ────────────────────────────────────────────────────────────────────
 export {
@@ -458,7 +436,7 @@ export {
   type Skill,
   type SkillFrontmatter,
   type SkillRegistryEvents,
-} from './skills.js'
+} from "./skills.js";
 
 // ── MCP Integration ───────────────────────────────────────────────────────────
 export {
@@ -470,14 +448,14 @@ export {
   type McpServerConfig,
   type McpStdioServer,
   type McpSseServer,
-} from './integrations/mcp.js'
+} from "./integrations/mcp.js";
 
 // ── Utilities ────────────────────────────────────────────────────────────────────
-export { EventBus, type EventHandler } from './utils/eventBus.js'
-export { Logger, type LogLevel } from './utils/logger.js'
-export { estimateTokens } from './utils/tokens.js'
-export { validateCron, nextCronRunMs, describeCron } from './utils/cron.js'
-export { withRetry, computeRetryDelay, type RetryConfig } from './utils/retry.js'
+export { EventBus, type EventHandler } from "./utils/eventBus.js";
+export { Logger, type LogLevel } from "./utils/logger.js";
+export { estimateTokens } from "./utils/tokens.js";
+export { validateCron, nextCronRunMs, describeCron } from "./utils/cron.js";
+export { withRetry, computeRetryDelay, type RetryConfig } from "./utils/retry.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────────
 export {
@@ -496,17 +474,17 @@ export {
   classifyAPIError,
   parseRetryAfterHeader,
   type ErrorCode,
-} from './errors.js'
+} from "./errors.js";
 
 // ── Plugin System (Adapter Contracts + Registry) ───────────────────────────────
 // PluginBase — shared base class for plugins (extends this, not Plugin interface)
-export { PluginBase } from './plugin/base.js'
+export { PluginBase } from "./plugin/base.js";
 // BaseLLMAdapter — shared base class for LLM model implementations
-export { BaseLLMAdapter } from './models/base.js'
+export { BaseLLMAdapter } from "./models/base.js";
 // resolveModel — construct a ChatModel from AgentConfig provider settings
-export { resolveModel, type ResolverConfig } from './models/resolver.js'
+export { resolveModel, type ResolverConfig } from "./models/resolver.js";
 // Model specs registry — look up or extend per-model context/output token limits
-export { resolveModelSpecs, registerModelSpecs, type ModelSpecs } from './models/specs.js'
+export { resolveModelSpecs, registerModelSpecs, type ModelSpecs } from "./models/specs.js";
 export {
   PluginHost,
   type Plugin,
@@ -562,7 +540,7 @@ export {
   // MCP adapter interface + types
   type McpAdapter,
   type McpServerInfo,
-} from './plugin/types.js'
+} from "./plugin/types.js";
 
 // ── Plugins (each is a single class implementing adapter interfaces) ─────────
 export {
@@ -571,7 +549,7 @@ export {
   type HonchoConfig,
   type HonchoSearchResult,
   type HonchoRepresentation,
-} from './integrations/honcho.js'
+} from "./integrations/honcho.js";
 
 export {
   AgentFSPlugin,
@@ -580,13 +558,9 @@ export {
   type FSNodeType,
   type TreeEntry,
   type FSChange,
-} from './integrations/agentfs.js'
+} from "./integrations/agentfs.js";
 
-export {
-  CamoufoxPlugin,
-  type CamoufoxConfig,
-  type ElementInfo,
-} from './integrations/camoufox.js'
+export { CamoufoxPlugin, type CamoufoxConfig, type ElementInfo } from "./integrations/camoufox.js";
 
 // ── Telemetry ─────────────────────────────────────────────────────────────────
 // OpenTelemetry integration — mirrors main repo instrumentation.ts + sessionTracing.ts.
@@ -597,7 +571,7 @@ export {
   getYAAFMeter,
   getYAAFOTelLogger,
   parseExporterList,
-} from './telemetry/telemetry.js'
+} from "./telemetry/telemetry.js";
 
 export {
   isTracingEnabled,
@@ -613,7 +587,7 @@ export {
   getCurrentRunSpan,
   getCurrentToolSpan,
   type Span,
-} from './telemetry/tracing.js'
+} from "./telemetry/tracing.js";
 
 export {
   getBaseAttributes,
@@ -623,18 +597,18 @@ export {
   YAAF_METER_NAME,
   YAAF_LOGGER_NAME,
   type YAAFSpanType,
-} from './telemetry/attributes.js'
+} from "./telemetry/attributes.js";
 
-// ── Cost Tracker (Gap 1 + 6) ─────────────────────────────────────────────────
+// ── Cost Tracker ─────────────────────────────────────────────────
 export {
   CostTracker,
   type ModelPricing,
   type UsageRecord,
   type ModelUsage as CostModelUsage,
   type CostSnapshot,
-} from './utils/costTracker.js'
+} from "./utils/costTracker.js";
 
-// ── Guardrails (Gap 3) ───────────────────────────────────────────────────────
+// ── Guardrails ───────────────────────────────────────────────────────
 export {
   Guardrails,
   BudgetExceededError,
@@ -645,9 +619,9 @@ export {
   type GuardrailDetail,
   type GuardrailEvent,
   type GuardrailListener,
-} from './utils/guardrails.js'
+} from "./utils/guardrails.js";
 
-// ── Coordinator Mode (Gap 2) ─────────────────────────────────────────────────
+// ── Coordinator Mode ─────────────────────────────────────────────────
 export {
   buildCoordinatorPrompt,
   buildWorkerResult,
@@ -657,86 +631,73 @@ export {
   type TaskStatus as CoordinatorTaskStatus,
   type WorkerDefinition,
   type CoordinatorPromptConfig,
-} from './agents/coordinator.js'
+} from "./agents/coordinator.js";
 
-// ── Agent Summarization (Gap 5) ──────────────────────────────────────────────
+// ── Agent Summarization ──────────────────────────────────────────────
 export {
   startAgentSummarization,
   type AgentSummarizationConfig,
   type SummarizationHandle,
-} from './agents/agentSummary.js'
+} from "./agents/agentSummary.js";
 
-// ── Notifications (Gap 7) ────────────────────────────────────────────────────
+// ── Notifications ────────────────────────────────────────────────────
 export {
   ConsoleNotifier,
   WebhookNotifier,
   CallbackNotifier,
   CompositeNotifier,
   BufferNotifier,
-  // GAP 7 FIX: bridge factory — wrap any NotificationChannel as a NotificationAdapter plugin
+  // bridge factory — wrap any NotificationChannel as a NotificationAdapter plugin
   notificationAdapterFromChannel,
   type NotificationChannel,
   type Notification,
   type NotificationType,
-} from './utils/notifier.js'
+} from "./utils/notifier.js";
 
-// ── Auto Memory Extraction (Gap 4) ───────────────────────────────────────────
-export {
-  AutoMemoryExtractor,
-  type AutoExtractorConfig,
-} from './memory/autoExtract.js'
+// ── Auto Memory Extraction ───────────────────────────────────────────
+export { AutoMemoryExtractor, type AutoExtractorConfig } from "./memory/autoExtract.js";
 
-// ── Tool-Use Summaries (Gap 8) ───────────────────────────────────────────────
+// ── Tool-Use Summaries ───────────────────────────────────────────────
 export {
   generateToolUseSummary,
   type ToolInfo,
   type ToolSummaryConfig,
-} from './utils/toolSummary.js'
+} from "./utils/toolSummary.js";
 
-// ── Structured Compaction Prompts (Gap 9) ─────────────────────────────────────
+// ── Structured Compaction Prompts ─────────────────────────────────────
 export {
   buildCompactionPrompt,
   stripAnalysisBlock,
   extractAnalysisBlock,
   type CompactionPromptConfig,
-} from './context/compactionPrompts.js'
+} from "./context/compactionPrompts.js";
 
-// ── History Snipping (Gap 10) ────────────────────────────────────────────────
+// ── History Snipping ────────────────────────────────────────────────
 export {
   snipHistory,
   deduplicateToolResults,
   type SnipConfig,
   type SnipResult,
-} from './context/historySnip.js'
+} from "./context/historySnip.js";
 
-// ── Auto-Compact Circuit Breaker (Gap 11) ────────────────────────────────────
-export {
-  CompactionCircuitBreaker,
-  type CircuitBreakerConfig,
-} from './context/circuitBreaker.js'
+// ── Auto-Compact Circuit Breaker ────────────────────────────────────
+export { CompactionCircuitBreaker, type CircuitBreakerConfig } from "./context/circuitBreaker.js";
 
-// ── Away/Resume Summary (Gap 12) ─────────────────────────────────────────────
-export {
-  generateAwaySummary,
-  type AwaySummaryConfig,
-} from './utils/awaySummary.js'
+// ── Away/Resume Summary ─────────────────────────────────────────────
+export { generateAwaySummary, type AwaySummaryConfig } from "./utils/awaySummary.js";
 
-// ── Scratchpad (Gap 13) ──────────────────────────────────────────────────────
-export {
-  Scratchpad,
-  type ScratchpadConfig,
-  type ScratchpadEntry,
-} from './agents/scratchpad.js'
+// ── Scratchpad ──────────────────────────────────────────────────────
+export { Scratchpad, type ScratchpadConfig, type ScratchpadEntry } from "./agents/scratchpad.js";
 
-// ── Content Replacement State (Gap 14) ───────────────────────────────────────
+// ── Content Replacement State ───────────────────────────────────────
 export {
   ContentReplacementTracker,
   type FileEdit,
   type EditType,
   type ContentReplacementSnapshot,
-} from './context/contentReplacement.js'
+} from "./context/contentReplacement.js";
 
-// ── Workflow Agents (ADK Parity — A1) ────────────────────────────────────────
+// ── Workflow Agents () ────────────────────────────────────────
 export {
   sequential,
   parallel,
@@ -749,16 +710,12 @@ export {
   type SequentialConfig,
   type ParallelConfig,
   type LoopConfig,
-} from './agents/workflow.js'
+} from "./agents/workflow.js";
 
-// ── Agent Tool (ADK Parity — A4) ─────────────────────────────────────────────
-export {
-  agentTool,
-  agentTools,
-  type AgentToolConfig,
-} from './tools/agentTool.js'
+// ── Agent Tool () ─────────────────────────────────────────────
+export { agentTool, agentTools, type AgentToolConfig } from "./tools/agentTool.js";
 
-// ── Structured Output (ADK Parity — A2) ──────────────────────────────────────
+// ── Structured Output () ──────────────────────────────────────
 export {
   structuredAgent,
   parseStructuredOutput,
@@ -768,34 +725,34 @@ export {
   type ParseSuccess,
   type ParseFailure,
   type StructuredAgentConfig,
-} from './agents/structuredOutput.js'
+} from "./agents/structuredOutput.js";
 
-// ── Tool Loop Detection (OpenClaw Parity — O9) ──────────────────────────────
+// ── Tool Loop Detection () ──────────────────────────────
 export {
   ToolLoopDetector,
   type LoopDetectorConfig,
   type ToolCallRecord,
   type LoopInfo,
-} from './tools/loopDetector.js'
+} from "./tools/loopDetector.js";
 
-// ── Heartbeat / Proactive Scheduling (OpenClaw Parity — O4) ─────────────────
+// ── Heartbeat / Proactive Scheduling () ─────────────────
 export {
   Heartbeat,
   type ScheduledTask as HeartbeatTask,
   type StandingOrder,
   type HeartbeatConfig,
-} from './automation/heartbeat.js'
+} from "./automation/heartbeat.js";
 
-// ── Context Engine (OpenClaw Parity — O8) ────────────────────────────────────
+// ── Context Engine () ────────────────────────────────────
 export {
   ContextEngine,
   type ContextSection as ContextEngineSection,
   type ContextEngineConfig,
   type ContextInspection,
   type SoulTransform,
-} from './agents/contextEngine.js'
+} from "./agents/contextEngine.js";
 
-// ── Delegate Architecture (OpenClaw Parity — O6) ────────────────────────────
+// ── Delegate Architecture () ────────────────────────────
 export {
   AgentRouter,
   type AgentEntry,
@@ -803,11 +760,11 @@ export {
   type RoutableMessage,
   type PresenceInfo,
   type SessionScope,
-} from './agents/delegate.js'
+} from "./agents/delegate.js";
 
 // ── Gateway / Channels / Approvals ───────────────────────────────────────────
 // NOT exported from the main barrel by design.
-// Import explicitly via:  import { Gateway } from 'yaaf/gateway'
+// Import explicitly via: import { Gateway } from 'yaaf/gateway'
 // See src/gateway.ts for the opt-in entry point.
 
 // ── Doctor (Embedded Expert Agent) ───────────────────────────────────────────
@@ -816,7 +773,7 @@ export {
   type YaafDoctorConfig,
   type DoctorIssue,
   type WatchOptions,
-} from './doctor/index.js'
+} from "./doctor/index.js";
 
 // ── A2A Protocol (Agent-to-Agent Interop) ────────────────────────────────────
 export {
@@ -834,7 +791,7 @@ export {
   type A2AClientConfig,
   type A2AServerConfig,
   type A2AAgent,
-} from './integrations/a2a.js'
+} from "./integrations/a2a.js";
 
 // ── MCP OAuth (OAuth 2.0 for MCP Servers) ────────────────────────────────────
 export {
@@ -846,11 +803,11 @@ export {
   type TokenStore,
   type AuthorizationUrlResult,
   type CallbackResult,
-} from './integrations/mcpOAuth.js'
+} from "./integrations/mcpOAuth.js";
 
 // ── Remote Sessions ──────────────────────────────────────────────────────────
 // NOT exported from the main barrel by design (like Gateway).
-// Import explicitly via:  import { RemoteSessionServer } from 'yaaf/remote'
+// Import explicitly via: import { RemoteSessionServer } from 'yaaf/remote'
 // See src/remote.ts for the opt-in entry point.
 
 // ── Knowledge Base Store (runtime read API) ───────────────────────────────────
@@ -866,4 +823,4 @@ export {
   type SearchResult,
   type KBToolOptions,
   type KnowledgeBaseOptions,
-} from './knowledge/store/index.js'
+} from "./knowledge/store/index.js";

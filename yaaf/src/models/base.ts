@@ -14,8 +14,8 @@
  * - `constructor` — call `super(name)` with a unique plugin name
  */
 
-import { PluginBase } from '../plugin/base.js'
-import type { LLMAdapter, LLMQueryParams, LLMResponse, LLMMessage } from '../plugin/types.js'
+import { PluginBase } from "../plugin/base.js";
+import type { LLMAdapter, LLMQueryParams, LLMResponse, LLMMessage } from "../plugin/types.js";
 import type {
   ChatModel,
   StreamingChatModel,
@@ -23,28 +23,28 @@ import type {
   ChatResult,
   ChatDelta,
   ToolSchema,
-} from '../agents/runner.js'
-import { estimateTokens as rawEstimateTokens } from '../utils/tokens.js'
+} from "../agents/runner.js";
+import { estimateTokens as rawEstimateTokens } from "../utils/tokens.js";
 
 export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, StreamingChatModel {
   // ── Abstract surface — each provider implements these ─────────────────────
 
-  abstract readonly model: string
-  abstract readonly contextWindowTokens: number
-  abstract readonly maxOutputTokens: number
+  abstract readonly model: string;
+  abstract readonly contextWindowTokens: number;
+  abstract readonly maxOutputTokens: number;
   abstract complete(params: {
-    messages: ChatMessage[]
-    tools?: ToolSchema[]
-    temperature?: number
-    maxTokens?: number
-    signal?: AbortSignal
-  }): Promise<ChatResult>
+    messages: ChatMessage[];
+    tools?: ToolSchema[];
+    temperature?: number;
+    maxTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<ChatResult>;
 
   constructor(name: string) {
-    super(name, ['llm'])
+    super(name, ["llm"]);
   }
 
-  // ── H3 FIX: Retry with exponential backoff ─────────────────────────────────
+  // ── H3 FIX: Retry with exponential backoff ───────────────────────────────────
 
   /**
    * Retry transient API errors with exponential backoff + jitter.
@@ -55,34 +55,84 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
    * - HTTP 503 (service unavailable)
    * - Network errors (ECONNRESET, ETIMEDOUT, fetch failures)
    *
+   * Accepts an AbortSignal. Checks signal.aborted before each retry
+   * sleep and re-throws AbortError immediately (never retried).
+   *
+   * Adds maxDelayMs cap to prevent absurdly long retry sleeps.
+   *
    * @param fn — async function to retry
    * @param maxRetries — maximum retry attempts (default: 3)
    * @param baseDelayMs — initial delay in ms (default: 1000)
+   * @param maxDelayMs — maximum delay per retry in ms (default: 32_000)
+   * @param signal — optional AbortSignal; if aborted, retries stop immediately
    */
   protected async withRetry<T>(
     fn: () => Promise<T>,
     maxRetries = 3,
     baseDelayMs = 1_000,
+    maxDelayMs = 32_000,
+    signal?: AbortSignal,
   ): Promise<T> {
-    let lastError: Error | undefined
+    let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn()
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err))
+      // Stop immediately if the caller has cancelled the request.
+      if (signal?.aborted) {
+        const abortErr = new Error("Request was aborted");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
 
-        if (attempt >= maxRetries || !this.isRetryableError(lastError)) {
-          throw lastError
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+
+        // Never retry an aborted request.
+        if (
+          lastError.name === "AbortError" ||
+          lastError.message.toLowerCase().includes("aborted")
+        ) {
+          throw lastError;
         }
 
-        // Exponential backoff with jitter: delay = baseDelay * 2^attempt + random jitter
-        const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * baseDelayMs * 0.5
-        await new Promise(resolve => setTimeout(resolve, delay))
+        if (attempt >= maxRetries || !this.isRetryableError(lastError)) {
+          throw lastError;
+        }
+
+        // Cap max delay to prevent 40s+ stalls.
+        // delay = min(baseDelay * 2^attempt, maxDelay) + random jitter
+        const expDelay = baseDelayMs * Math.pow(2, attempt);
+        const cappedDelay = Math.min(expDelay, maxDelayMs);
+        const jitter = Math.random() * Math.min(baseDelayMs * 0.5, 1_000);
+        const delay = cappedDelay + jitter;
+
+        // Check abort again before sleeping — the signal may have
+        // fired during the failed fn() call.
+        if (signal?.aborted) {
+          const abortErr = new Error("Request was aborted");
+          abortErr.name = "AbortError";
+          throw abortErr;
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay);
+          // If signal aborts during the sleep, reject immediately.
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              const abortErr = new Error("Request was aborted");
+              abortErr.name = "AbortError";
+              reject(abortErr);
+            },
+            { once: true },
+          );
+        });
       }
     }
 
-    throw lastError!
+    throw lastError!;
   }
 
   /**
@@ -90,24 +140,28 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
    * Override in subclasses for provider-specific error handling.
    */
   protected isRetryableError(err: Error): boolean {
-    const msg = err.message.toLowerCase()
+    const msg = err.message.toLowerCase();
+
+    // AbortError / abort-related errors are never retryable
+    if (err.name === "AbortError") return false;
+    if (msg.includes("aborted") || msg.includes("abort")) return false;
 
     // HTTP status code checks
-    if (msg.includes('429') || msg.includes('rate limit')) return true
-    if (msg.includes('500') || msg.includes('internal server error')) return true
-    if (msg.includes('503') || msg.includes('service unavailable')) return true
-    if (msg.includes('502') || msg.includes('bad gateway')) return true
+    if (msg.includes("429") || msg.includes("rate limit")) return true;
+    if (msg.includes("500") || msg.includes("internal server error")) return true;
+    if (msg.includes("503") || msg.includes("service unavailable")) return true;
+    if (msg.includes("502") || msg.includes("bad gateway")) return true;
 
     // Network errors
-    if (msg.includes('econnreset') || msg.includes('etimedout')) return true
-    if (msg.includes('econnrefused') || msg.includes('epipe')) return true
-    if (msg.includes('network') || msg.includes('fetch failed')) return true
-    if (msg.includes('socket hang up')) return true
+    if (msg.includes("econnreset") || msg.includes("etimedout")) return true;
+    if (msg.includes("econnrefused") || msg.includes("epipe")) return true;
+    if (msg.includes("network") || msg.includes("fetch failed")) return true;
+    if (msg.includes("socket hang up")) return true;
 
     // Provider-specific transient errors
-    if (msg.includes('overloaded') || msg.includes('capacity')) return true
+    if (msg.includes("overloaded") || msg.includes("capacity")) return true;
 
-    return false
+    return false;
   }
 
   // ── Streaming — default fallback wraps complete() ─────────────────────────
@@ -118,20 +172,20 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
    * subclasses should override with real SSE streaming.
    */
   async *stream(params: {
-    messages: ChatMessage[]
-    tools?: ToolSchema[]
-    temperature?: number
-    maxTokens?: number
-    signal?: AbortSignal
+    messages: ChatMessage[];
+    tools?: ToolSchema[];
+    temperature?: number;
+    maxTokens?: number;
+    signal?: AbortSignal;
   }): AsyncGenerator<ChatDelta, void, undefined> {
-    const result = await this.complete(params)
+    const result = await this.complete(params);
 
     // Emit a single delta containing the full response
     yield {
       content: result.content,
       finishReason: result.finishReason,
       usage: result.usage,
-    }
+    };
   }
 
   // ── LLMAdapter — shared implementations ───────────────────────────────────
@@ -139,16 +193,16 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
   /**
    * Simple text query — no tool schemas, no history management.
    * Wraps `complete()` with a single-user-message conversation.
-   * H3 FIX: Wrapped in withRetry() for transient error resilience.
+   * Wrapped in withRetry() for transient error resilience.
    */
   async query(params: LLMQueryParams): Promise<LLMResponse> {
     return this.withRetry(async () => {
-      const chatMessages: ChatMessage[] = []
+      const chatMessages: ChatMessage[] = [];
       if (params.system) {
-        chatMessages.push({ role: 'system', content: params.system })
+        chatMessages.push({ role: "system", content: params.system });
       }
       for (const m of params.messages) {
-        chatMessages.push({ role: m.role, content: m.content })
+        chatMessages.push({ role: m.role, content: m.content });
       }
 
       const result = await this.complete({
@@ -156,48 +210,48 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
         temperature: params.temperature,
         maxTokens: params.maxTokens,
         signal: params.signal,
-      })
+      });
 
       return {
-        content: result.content ?? '',
+        content: result.content ?? "",
         tokensUsed: {
           input: result.usage?.promptTokens ?? 0,
           output: result.usage?.completionTokens ?? 0,
         },
         model: this.model,
         stopReason: result.finishReason,
-      }
-    })
+      };
+    });
   }
 
   /**
    * Summarize a conversation into a compact string.
    * Used by ContextManager for context compaction.
-   * H3 FIX: Wrapped in withRetry() for transient error resilience.
+   * Wrapped in withRetry() for transient error resilience.
    */
   async summarize(messages: LLMMessage[], instructions?: string): Promise<string> {
     return this.withRetry(async () => {
       const systemParts = [
-        'You are a conversation summarizer. Compress the provided conversation into a compact, information-dense summary that preserves all key facts, decisions, and context. Focus on what was done, what was learned, and what state was established.',
-      ]
-      if (instructions) systemParts.push(instructions)
+        "You are a conversation summarizer. Compress the provided conversation into a compact, information-dense summary that preserves all key facts, decisions, and context. Focus on what was done, what was learned, and what state was established.",
+      ];
+      if (instructions) systemParts.push(instructions);
 
-      const formatted = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
+      const formatted = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n");
       const result = await this.complete({
         messages: [
-          { role: 'system', content: systemParts.join('\n\n') },
-          { role: 'user', content: `Summarize this conversation:\n\n${formatted}` },
+          { role: "system", content: systemParts.join("\n\n") },
+          { role: "user", content: `Summarize this conversation:\n\n${formatted}` },
         ],
         temperature: 0.1,
         maxTokens: 1024,
-      })
-      return result.content ?? ''
-    })
+      });
+      return result.content ?? "";
+    });
   }
 
   /** Rough token estimate — no network call. */
   estimateTokens(text: string): number {
-    return rawEstimateTokens(text)
+    return rawEstimateTokens(text);
   }
 
   /**
@@ -207,13 +261,13 @@ export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, S
   override async healthCheck(): Promise<boolean> {
     try {
       const result = await this.complete({
-        messages: [{ role: 'user', content: 'ping' }],
+        messages: [{ role: "user", content: "ping" }],
         maxTokens: 1,
         temperature: 0,
-      })
-      return result.finishReason === 'length' || !!result.content
+      });
+      return result.finishReason === "length" || !!result.content;
     } catch {
-      return false
+      return false;
     }
   }
 }

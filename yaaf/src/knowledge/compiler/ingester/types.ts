@@ -15,16 +15,16 @@
  */
 export type ImageRef = {
   /** The original src/href as it appeared in the source (may be relative or absolute URL) */
-  originalSrc: string
+  originalSrc: string;
   /** Absolute path to the local image file (already downloaded/resolved) */
-  localPath: string
+  localPath: string;
   /** Alt text from the source, or filename if none */
-  altText: string
+  altText: string;
   /** Image MIME type (image/png, image/jpeg, image/svg+xml, etc.) */
-  mimeType: string
+  mimeType: string;
   /** File size in bytes */
-  sizeBytes: number
-}
+  sizeBytes: number;
+};
 
 // ── Ingester result ───────────────────────────────────────────────────────────
 
@@ -34,29 +34,29 @@ export type ImageRef = {
  */
 export type IngestedContent = {
   /** Extracted text content (may be markdown or plain text — synthesizer handles both) */
-  text: string
+  text: string;
   /** All images found in the source, with local paths resolved */
-  images: ImageRef[]
+  images: ImageRef[];
   /** Detected MIME type of the source file */
-  mimeType: string
+  mimeType: string;
   /** Absolute path to the source file */
-  sourceFile: string
+  sourceFile: string;
   /** Extracted document title (from HTML <title>, PDF metadata, or first H1) */
-  title?: string
+  title?: string;
   /** Format-specific metadata (e.g., PDF author, HTML og:description) */
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>;
   /**
    * Whether the ingester performed lossy extraction.
    * true = some content may have been lost (HTML noise removal, PDF layout)
    * false = lossless (markdown, plain text, JSON)
    */
-  lossy: boolean
+  lossy: boolean;
   /**
    * Source of the original content (for citation in the compiled article).
    * For local files this is the file path; for clipped URLs it's the original URL.
    */
-  sourceUrl?: string
-}
+  sourceUrl?: string;
+};
 
 // ── Ingester interface ────────────────────────────────────────────────────────
 
@@ -66,13 +66,13 @@ export type IngestedContent = {
  */
 export interface Ingester {
   /** MIME types this ingester handles */
-  readonly supportedMimeTypes: string[]
+  readonly supportedMimeTypes: string[];
   /** File extensions this ingester handles (without leading dot) */
-  readonly supportedExtensions: string[]
+  readonly supportedExtensions: string[];
   /** Whether this ingester requires optional peer dependencies */
-  readonly requiresOptionalDeps: boolean
+  readonly requiresOptionalDeps: boolean;
   /** Names of required optional packages (for error messages) */
-  readonly optionalDeps?: string[]
+  readonly optionalDeps?: string[];
 
   /**
    * Extract content from a source file.
@@ -81,7 +81,7 @@ export interface Ingester {
    * @param options - Ingestion options
    * @returns Normalized content ready for the synthesis pipeline
    */
-  ingest(filePath: string, options?: IngesterOptions): Promise<IngestedContent>
+  ingest(filePath: string, options?: IngesterOptions): Promise<IngestedContent>;
 }
 
 export type IngesterOptions = {
@@ -89,56 +89,56 @@ export type IngesterOptions = {
    * Directory where downloaded images should be saved.
    * Defaults to a sibling `assets/` directory of the source file.
    */
-  imageOutputDir?: string
+  imageOutputDir?: string;
   /**
    * Maximum image dimension (width or height) in pixels.
    * Images exceeding this will be resized at download time.
    * Default: 1024
    */
-  maxImageDimension?: number
+  maxImageDimension?: number;
   /**
    * The original URL this content was fetched from (for citation).
    */
-  sourceUrl?: string
-}
+  sourceUrl?: string;
+};
 
 // ── Format detection ──────────────────────────────────────────────────────────
 
 const EXTENSION_TO_MIME: Record<string, string> = {
-  'md': 'text/markdown',
-  'mdx': 'text/markdown',
-  'txt': 'text/plain',
-  'html': 'text/html',
-  'htm': 'text/html',
-  'json': 'application/json',
-  'yaml': 'application/yaml',
-  'yml': 'application/yaml',
-  'ts': 'text/typescript',
-  'tsx': 'text/typescript',
-  'js': 'text/javascript',
-  'jsx': 'text/javascript',
-  'py': 'text/x-python',
-  'pdf': 'application/pdf',
-  'csv': 'text/csv',
-  'svg': 'image/svg+xml',
-  'png': 'image/png',
-  'jpg': 'image/jpeg',
-  'jpeg': 'image/jpeg',
-  'webp': 'image/webp',
-  'gif': 'image/gif',
-  'tiff': 'image/tiff',
-  'tif': 'image/tiff',
-}
+  md: "text/markdown",
+  mdx: "text/markdown",
+  txt: "text/plain",
+  html: "text/html",
+  htm: "text/html",
+  json: "application/json",
+  yaml: "application/yaml",
+  yml: "application/yaml",
+  ts: "text/typescript",
+  tsx: "text/typescript",
+  js: "text/javascript",
+  jsx: "text/javascript",
+  py: "text/x-python",
+  pdf: "application/pdf",
+  csv: "text/csv",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  tiff: "image/tiff",
+  tif: "image/tiff",
+};
 
 export function detectMimeType(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  return EXTENSION_TO_MIME[ext] ?? 'application/octet-stream'
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return EXTENSION_TO_MIME[ext] ?? "application/octet-stream";
 }
 
 export function isImageMimeType(mimeType: string): boolean {
-  return mimeType.startsWith('image/')
+  return mimeType.startsWith("image/");
 }
 
 export function isSvg(mimeType: string): boolean {
-  return mimeType === 'image/svg+xml'
+  return mimeType === "image/svg+xml";
 }

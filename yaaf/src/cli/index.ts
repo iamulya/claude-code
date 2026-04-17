@@ -4,329 +4,335 @@
  * YAAF CLI — Developer tools for the YAAF agent framework.
  *
  * Commands:
- *   yaaf init [name]         Scaffold a new agent project
- *   yaaf dev                 Run agent in interactive REPL mode
- *   yaaf add tool <name>     Add a tool scaffold
- *   yaaf add skill <name>    Add a SKILL.md template
- *   yaaf context list        Inspect the system prompt
- *   yaaf doctor              YAAF expert agent (diagnoses your project)
- *   yaaf run                 Run agent in production mode
- *   yaaf status              Show agent status
+ * yaaf init [name] Scaffold a new agent project
+ * yaaf dev Run agent in interactive REPL mode
+ * yaaf add tool <name> Add a tool scaffold
+ * yaaf add skill <name> Add a SKILL.md template
+ * yaaf context list Inspect the system prompt
+ * yaaf doctor YAAF expert agent (diagnoses your project)
+ * yaaf run Run agent in production mode
+ * yaaf status Show agent status
  *
  * @module cli
  */
 
-import { parseArgs } from 'node:util'
-import { initProject } from './init.js'
-import { runDev } from './dev.js'
-import { addComponent } from './add.js'
-import { contextList } from './context.js'
+import { parseArgs } from "node:util";
+import { initProject } from "./init.js";
+import { runDev } from "./dev.js";
+import { addComponent } from "./add.js";
+import { contextList } from "./context.js";
 
 // ── Styling ──────────────────────────────────────────────────────────────────
 
-const BOLD = '\x1b[1m'
-const DIM = '\x1b[2m'
-const CYAN = '\x1b[36m'
-const GREEN = '\x1b[32m'
-const YELLOW = '\x1b[33m'
-const RED = '\x1b[31m'
-const RESET = '\x1b[0m'
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const CYAN = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const RESET = "\x1b[0m";
 
 function banner(): string {
   return `
-${CYAN}${BOLD}  ╦ ╦╔═╗╔═╗╔═╗${RESET}
-${CYAN}${BOLD}  ╚╦╝╠═╣╠═╣╠╣ ${RESET}  ${DIM}Yet Another Agentic Framework${RESET}
-${CYAN}${BOLD}   ╩ ╩ ╩╩ ╩╚  ${RESET}  ${DIM}v0.4.0${RESET}
-`
+${CYAN}${BOLD} ╦ ╦╔═╗╔═╗╔═╗${RESET}
+${CYAN}${BOLD} ╚╦╝╠═╣╠═╣╠╣ ${RESET} ${DIM}Yet Another Agentic Framework${RESET}
+${CYAN}${BOLD} ╩ ╩ ╩╩ ╩╚ ${RESET} ${DIM}v0.4.0${RESET}
+`;
 }
 
 function helpText(): string {
   return `${banner()}
 ${BOLD}USAGE${RESET}
-  ${CYAN}yaaf${RESET} <command> [options]
+ ${CYAN}yaaf${RESET} <command> [options]
 
 ${BOLD}COMMANDS${RESET}
-  ${GREEN}init${RESET} [name]           Create a new agent project
-  ${GREEN}dev${RESET}                   Run agent in interactive REPL mode
-  ${GREEN}add${RESET} tool <name>       Add a new tool to the project
-  ${GREEN}add${RESET} skill <name>      Add a new SKILL.md to the project
-  ${GREEN}context${RESET} list          Inspect the assembled system prompt
-  ${GREEN}doctor${RESET}                Diagnose your YAAF project (expert agent)
-  ${GREEN}run${RESET}                   Run agent entry point
-  ${GREEN}status${RESET}               Show project status
+ ${GREEN}init${RESET} [name] Create a new agent project
+ ${GREEN}dev${RESET} Run agent in interactive REPL mode
+ ${GREEN}add${RESET} tool <name> Add a new tool to the project
+ ${GREEN}add${RESET} skill <name> Add a new SKILL.md to the project
+ ${GREEN}context${RESET} list Inspect the assembled system prompt
+ ${GREEN}doctor${RESET} Diagnose your YAAF project (expert agent)
+ ${GREEN}run${RESET} Run agent entry point
+ ${GREEN}status${RESET} Show project status
 
 ${BOLD}OPTIONS${RESET}
-  ${DIM}--help, -h${RESET}             Show this help message
-  ${DIM}--version, -v${RESET}          Show version
+ ${DIM}--help, -h${RESET} Show this help message
+ ${DIM}--version, -v${RESET} Show version
 
 ${BOLD}EXAMPLES${RESET}
-  ${DIM}$${RESET} yaaf init my-agent
-  ${DIM}$${RESET} yaaf dev
-  ${DIM}$${RESET} yaaf add tool weather
-  ${DIM}$${RESET} yaaf add skill security-review
-  ${DIM}$${RESET} yaaf doctor
-  ${DIM}$${RESET} yaaf doctor --daemon
-  ${DIM}$${RESET} yaaf doctor --watch
-`
+ ${DIM}$${RESET} yaaf init my-agent
+ ${DIM}$${RESET} yaaf dev
+ ${DIM}$${RESET} yaaf add tool weather
+ ${DIM}$${RESET} yaaf add skill security-review
+ ${DIM}$${RESET} yaaf doctor
+ ${DIM}$${RESET} yaaf doctor --daemon
+ ${DIM}$${RESET} yaaf doctor --watch
+`;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
-  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
-    console.log(helpText())
-    return
+  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
+    console.log(helpText());
+    return;
   }
 
-  if (argv.includes('--version') || argv.includes('-v')) {
-    console.log('yaaf v0.4.0')
-    return
+  if (argv.includes("--version") || argv.includes("-v")) {
+    console.log("yaaf v0.4.0");
+    return;
   }
 
-  const command = argv[0]
-  const rest = argv.slice(1)
+  const command = argv[0];
+  const rest = argv.slice(1);
 
   try {
     switch (command) {
-      case 'init':
-        await initProject(rest[0])
-        break
+      case "init":
+        await initProject(rest[0]);
+        break;
 
-      case 'dev':
-        await runDev(rest)
-        break
+      case "dev":
+        await runDev(rest);
+        break;
 
-      case 'add':
-        await addComponent(rest)
-        break
+      case "add":
+        await addComponent(rest);
+        break;
 
-      case 'context':
-        if (rest[0] === 'list') {
-          await contextList()
+      case "context":
+        if (rest[0] === "list") {
+          await contextList();
         } else {
-          console.error(`${RED}Unknown context subcommand: ${rest[0]}${RESET}`)
-          console.log(`  Usage: yaaf context list`)
-          process.exitCode = 1
+          console.error(`${RED}Unknown context subcommand: ${rest[0]}${RESET}`);
+          console.log(` Usage: yaaf context list`);
+          process.exitCode = 1;
         }
-        break
+        break;
 
-      case 'run':
-        await runAgent(rest)
-        break
+      case "run":
+        await runAgent(rest);
+        break;
 
-      case 'status':
-        await showStatus()
-        break
+      case "status":
+        await showStatus();
+        break;
 
-      case 'doctor':
-        await runDoctor(rest)
-        break
+      case "doctor":
+        await runDoctor(rest);
+        break;
 
       default:
-        console.error(`${RED}Unknown command: ${command}${RESET}`)
-        console.log(helpText())
-        process.exitCode = 1
+        console.error(`${RED}Unknown command: ${command}${RESET}`);
+        console.log(helpText());
+        process.exitCode = 1;
     }
   } catch (err) {
-    console.error(`${RED}Error:${RESET} ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
+    console.error(`${RED}Error:${RESET} ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
   }
 }
 
 // ── Run command ──────────────────────────────────────────────────────────────
 
 async function runAgent(_args: string[]): Promise<void> {
-  const { resolve } = await import('node:path')
-  const { existsSync } = await import('node:fs')
+  const { resolve } = await import("node:path");
+  const { existsSync } = await import("node:fs");
 
   // Look for common entry points
-  const candidates = [
-    'src/index.ts',
-    'src/agent.ts',
-    'src/main.ts',
-    'index.ts',
-  ]
+  const candidates = ["src/index.ts", "src/agent.ts", "src/main.ts", "index.ts"];
 
-  const entry = candidates.find(c => existsSync(resolve(process.cwd(), c)))
+  const entry = candidates.find((c) => existsSync(resolve(process.cwd(), c)));
   if (!entry) {
     throw new Error(
-      `No entry point found. Looked for: ${candidates.join(', ')}\n` +
-      `  Run from your agent project root, or create src/index.ts`
-    )
+      `No entry point found. Looked for: ${candidates.join(", ")}\n` +
+        ` Run from your agent project root, or create src/index.ts`,
+    );
   }
 
-  console.log(`${GREEN}▶${RESET} Running ${CYAN}${entry}${RESET}...`)
+  console.log(`${GREEN}▶${RESET} Running ${CYAN}${entry}${RESET}...`);
 
-  const { execSync } = await import('node:child_process')
+  const { execSync } = await import("node:child_process");
   execSync(`npx tsx ${entry}`, {
     cwd: process.cwd(),
-    stdio: 'inherit',
-    env: { ...process.env, NODE_ENV: 'production' },
-  })
+    stdio: "inherit",
+    env: { ...process.env, NODE_ENV: "production" },
+  });
 }
 
 // ── Status command ───────────────────────────────────────────────────────────
 
 async function showStatus(): Promise<void> {
-  const { resolve, basename } = await import('node:path')
-  const { existsSync, readFileSync, readdirSync } = await import('node:fs')
+  const { resolve, basename } = await import("node:path");
+  const { existsSync, readFileSync, readdirSync } = await import("node:fs");
 
-  const cwd = process.cwd()
-  const pkgPath = resolve(cwd, 'package.json')
+  const cwd = process.cwd();
+  const pkgPath = resolve(cwd, "package.json");
 
-  console.log(banner())
+  console.log(banner());
 
   // Project info
   if (existsSync(pkgPath)) {
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
-    console.log(`${BOLD}Project:${RESET}  ${pkg.name ?? basename(cwd)}`)
-    console.log(`${BOLD}Version:${RESET}  ${pkg.version ?? 'unknown'}`)
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    console.log(`${BOLD}Project:${RESET} ${pkg.name ?? basename(cwd)}`);
+    console.log(`${BOLD}Version:${RESET} ${pkg.version ?? "unknown"}`);
   } else {
-    console.log(`${YELLOW}⚠ No package.json found${RESET}`)
+    console.log(`${YELLOW}⚠ No package.json found${RESET}`);
   }
 
   // Tools
-  const toolsDir = resolve(cwd, 'src/tools')
+  const toolsDir = resolve(cwd, "src/tools");
   if (existsSync(toolsDir)) {
-    const tools = readdirSync(toolsDir).filter(f => f.endsWith('.ts'))
-    console.log(`${BOLD}Tools:${RESET}    ${tools.length} (${tools.map(f => f.replace('.ts', '')).join(', ') || 'none'})`)
+    const tools = readdirSync(toolsDir).filter((f) => f.endsWith(".ts"));
+    console.log(
+      `${BOLD}Tools:${RESET} ${tools.length} (${tools.map((f) => f.replace(".ts", "")).join(", ") || "none"})`,
+    );
   }
 
   // Skills
-  const skillsDir = resolve(cwd, 'skills')
+  const skillsDir = resolve(cwd, "skills");
   if (existsSync(skillsDir)) {
-    const skills = readdirSync(skillsDir).filter(f => f.endsWith('.md'))
-    console.log(`${BOLD}Skills:${RESET}   ${skills.length} (${skills.map(f => f.replace('.md', '')).join(', ') || 'none'})`)
+    const skills = readdirSync(skillsDir).filter((f) => f.endsWith(".md"));
+    console.log(
+      `${BOLD}Skills:${RESET} ${skills.length} (${skills.map((f) => f.replace(".md", "")).join(", ") || "none"})`,
+    );
   }
 
   // Soul
-  const soulPath = resolve(cwd, 'SOUL.md')
-  console.log(`${BOLD}Soul:${RESET}     ${existsSync(soulPath) ? GREEN + '✓ SOUL.md' + RESET : DIM + 'none' + RESET}`)
+  const soulPath = resolve(cwd, "SOUL.md");
+  console.log(
+    `${BOLD}Soul:${RESET} ${existsSync(soulPath) ? GREEN + "✓ SOUL.md" + RESET : DIM + "none" + RESET}`,
+  );
 
   // Memory
-  const memDir = resolve(cwd, '.yaaf/memory')
+  const memDir = resolve(cwd, ".yaaf/memory");
   if (existsSync(memDir)) {
-    const memories = readdirSync(memDir).length
-    console.log(`${BOLD}Memories:${RESET} ${memories} entries`)
+    const memories = readdirSync(memDir).length;
+    console.log(`${BOLD}Memories:${RESET} ${memories} entries`);
   }
 
-  console.log()
+  console.log();
 }
 
 // ── Doctor command ──────────────────────────────────────────────────────────
 
 async function runDoctor(args: string[]): Promise<void> {
-  const { YaafDoctor } = await import('../doctor/index.js')
-  const readline = await import('readline')
+  const { YaafDoctor } = await import("../doctor/index.js");
+  const readline = await import("readline");
 
-  const isDaemon = args.includes('--daemon')
-  const isWatch = args.includes('--watch')
+  const isDaemon = args.includes("--daemon");
+  const isWatch = args.includes("--watch");
 
   const doctor = new YaafDoctor({
     projectRoot: process.cwd(),
-  })
+  });
 
   // ── Watch Mode (no LLM) ──────────────────────────────────────────────
   if (isWatch) {
-    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(watch mode — no LLM)${RESET}`)
-    console.log(`${DIM}   Checking tsc every 10s. Ctrl+C to stop.${RESET}\n`)
+    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(watch mode — no LLM)${RESET}`);
+    console.log(`${DIM} Checking tsc every 10s. Ctrl+C to stop.${RESET}\n`);
 
-    let tickCount = 0
+    let tickCount = 0;
     doctor.startWatch({
       intervalSec: 10,
       onError: (errors) => {
-        tickCount++
-        console.log(`${RED}  ✗ ${errors.length} new error(s):${RESET}`)
-        for (const e of errors.slice(0, 10)) console.log(`    ${e}`)
+        tickCount++;
+        console.log(`${RED} ✗ ${errors.length} new error(s):${RESET}`);
+        for (const e of errors.slice(0, 10)) console.log(` ${e}`);
       },
       onClear: () => {
-        console.log(`${GREEN}  ✓ All errors resolved!${RESET}`)
+        console.log(`${GREEN} ✓ All errors resolved!${RESET}`);
       },
-    })
+    });
 
     // Keep process alive
-    await new Promise(() => {})
-    return
+    await new Promise(() => {});
+    return;
   }
 
   // ── Daemon Mode ─────────────────────────────────────────────────────
   if (isDaemon) {
-    const interval = parseInt(process.env.CHECK_INTERVAL_SEC ?? '30', 10)
-    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(daemon — every ${interval}s)${RESET}`)
-    console.log(`${DIM}   Watching for errors. Ctrl+C to stop.${RESET}\n`)
+    const interval = parseInt(process.env.CHECK_INTERVAL_SEC ?? "30", 10);
+    console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET} ${DIM}(daemon — every ${interval}s)${RESET}`);
+    console.log(`${DIM} Watching for errors. Ctrl+C to stop.${RESET}\n`);
 
     doctor.onIssue((issue) => {
-      const icon = issue.type === 'compile_error' ? `${RED}🔴${RESET}` : `${YELLOW}🟡${RESET}`
-      console.log(`\n${icon} ${BOLD}${issue.summary}${RESET}`)
-      console.log(`${DIM}${issue.details.split('\n').slice(0, 8).join('\n')}${RESET}\n`)
-    })
+      const icon = issue.type === "compile_error" ? `${RED}🔴${RESET}` : `${YELLOW}🟡${RESET}`;
+      console.log(`\n${icon} ${BOLD}${issue.summary}${RESET}`);
+      console.log(`${DIM}${issue.details.split("\n").slice(0, 8).join("\n")}${RESET}\n`);
+    });
 
-    await doctor.startDaemon()
+    await doctor.startDaemon();
 
-    process.on('SIGINT', () => {
-      doctor.stopDaemon()
-      console.log(`${DIM}\nDoctor stopped.${RESET}`)
-      process.exit(0)
-    })
+    process.on("SIGINT", () => {
+      doctor.stopDaemon();
+      console.log(`${DIM}\nDoctor stopped.${RESET}`);
+      process.exit(0);
+    });
 
     // Keep alive
-    await new Promise(() => {})
-    return
+    await new Promise(() => {});
+    return;
   }
 
   // ── Interactive Mode ────────────────────────────────────────────────
-  console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET}`)
-  console.log(`${DIM}   I'm an expert on YAAF. Ask me anything about your project.${RESET}`)
-  console.log(`${DIM}   I can read files, search code, run tsc, run tests, and diagnose issues.${RESET}`)
-  console.log(`${DIM}   Type "exit" to quit, "reset" to clear history.${RESET}\n`)
+  console.log(`${CYAN}${BOLD}🩺 YAAF Doctor${RESET}`);
+  console.log(`${DIM} I'm an expert on YAAF. Ask me anything about your project.${RESET}`);
+  console.log(
+    `${DIM} I can read files, search code, run tsc, run tests, and diagnose issues.${RESET}`,
+  );
+  console.log(`${DIM} Type "exit" to quit, "reset" to clear history.${RESET}\n`);
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `${CYAN}  doctor>${RESET} `,
-  })
+    prompt: `${CYAN} doctor>${RESET} `,
+  });
 
-  rl.prompt()
+  rl.prompt();
 
-  rl.on('line', async (line) => {
-    const input = line.trim()
-    if (!input) { rl.prompt(); return }
-    if (input === 'exit' || input === 'quit') {
-      console.log(`${DIM}  Goodbye!${RESET}`)
-      rl.close()
-      process.exit(0)
+  rl.on("line", async (line) => {
+    const input = line.trim();
+    if (!input) {
+      rl.prompt();
+      return;
     }
-    if (input === 'reset') {
-      doctor.reset()
-      console.log(`${GREEN}  ✓ Conversation reset${RESET}`)
-      rl.prompt()
-      return
+    if (input === "exit" || input === "quit") {
+      console.log(`${DIM} Goodbye!${RESET}`);
+      rl.close();
+      process.exit(0);
+    }
+    if (input === "reset") {
+      doctor.reset();
+      console.log(`${GREEN} ✓ Conversation reset${RESET}`);
+      rl.prompt();
+      return;
     }
 
     try {
-      console.log()
+      console.log();
       for await (const event of doctor.askStream(input)) {
-        if (event.type === 'text_delta') {
-          process.stdout.write(event.content)
-        } else if (event.type === 'tool_call_start') {
-          console.log(`${DIM}  ⚙ ${event.name}...${RESET}`)
-        } else if (event.type === 'tool_call_result') {
-          console.log(`${DIM}  ✓ ${event.name} (${event.durationMs}ms)${RESET}`)
+        if (event.type === "text_delta") {
+          process.stdout.write(event.content);
+        } else if (event.type === "tool_call_start") {
+          console.log(`${DIM} ⚙ ${event.name}...${RESET}`);
+        } else if (event.type === "tool_call_result") {
+          console.log(`${DIM} ✓ ${event.name} (${event.durationMs}ms)${RESET}`);
         }
       }
-      console.log('\n')
+      console.log("\n");
     } catch (err: any) {
-      console.error(`${RED}  Error: ${err.message}${RESET}\n`)
+      console.error(`${RED} Error: ${err.message}${RESET}\n`);
     }
 
-    rl.prompt()
-  })
+    rl.prompt();
+  });
 
-  rl.on('close', () => process.exit(0))
+  rl.on("close", () => process.exit(0));
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 main().catch((err) => {
-  console.error(err)
-  process.exitCode = 1
-})
+  console.error(err);
+  process.exitCode = 1;
+});

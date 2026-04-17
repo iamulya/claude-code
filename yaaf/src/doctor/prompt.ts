@@ -3,9 +3,9 @@
  *
  * The Doctor's knowledge comes from two sources:
  * 1. A static, comprehensive reference of YAAF's architecture and APIs
- *    (this is baked in — it doesn't need to read the YAAF source)
+ * (this is baked in — it doesn't need to read the YAAF source)
  * 2. Dynamic project context — the developer's actual files, which it
- *    reads on-demand via tools
+ * reads on-demand via tools
  *
  * This separation is key: the Doctor knows YAAF deeply from birth,
  * and uses tools to learn about the developer's specific project.
@@ -78,7 +78,7 @@ You are an expert on YAAF (Yet Another Agent Framework) — a TypeScript-first, 
 6. **Import errors** — wrong import paths, missing peer dependencies
 7. **TypeScript errors** — run tsc and explain root causes
 8. **Test failures** — run tests and diagnose what's broken and why
-`
+`;
 
 /**
  * Daemon tick prompt — tells the Doctor what to check on each wake-up.
@@ -96,4 +96,4 @@ Rules:
 - Diagnose root causes and suggest specific fixes with file paths and line numbers.
 - Use brief() to communicate findings.
 - Be concise and actionable.
-</tick>`
+</tick>`;

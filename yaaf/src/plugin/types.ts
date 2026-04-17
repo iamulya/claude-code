@@ -5,56 +5,57 @@
  * implements one or more well-defined adapter interfaces. This ensures:
  *
  * 1. **Swappable backends** — Switch from file-based memory to Honcho,
- *    from the default JSONL session store to Redis, or from the built-in
- *    truncation strategy to a custom semantic compactor — by registering
- *    one plugin, not rewriting your agent.
+ * from the default JSONL session store to Redis, or from the built-in
+ * truncation strategy to a custom semantic compactor — by registering
+ * one plugin, not rewriting your agent.
  * 2. **Composable capabilities** — Combine adapters freely (Honcho memory
- *    + Camoufox browser + custom file system + KB linter rules).
+ * + Camoufox browser + custom file system + KB linter rules).
  * 3. **Testability** — Mock any adapter for unit testing.
  * 4. **Discoverability** — Plugins declare their capabilities upfront;
- *    the `PluginHost` routes requests to the right adapter automatically.
+ * the `PluginHost` routes requests to the right adapter automatically.
  *
  * ## Architecture
  *
  * ```
- *                         ┌──────────────────┐
- *                         │    PluginHost     │
- *                         │  (central registry│
- *                         │   & capability    │
- *                         │     index)        │
- *                         └────────┬─────────┘
- *                                  │
- *           ┌──────────────────────┼───────────────────────┐
- *           │                      │                       │
- *     ┌─────▼──────┐       ┌───────▼──────┐     ┌─────────▼────────┐
- *     │  Plugin A   │       │  Plugin B    │     │  Plugin C        │
- *     │ capabilities│       │ capabilities │     │ capabilities     │
- *     │ - memory    │       │ - browser    │     │ - memory         │
- *     │             │       │ - tool_prov  │     │ - context_prov   │
- *     │             │       │ - context_prov     │ - skill_provider │
- *     └────────────┘        └──────────────┘     └──────────────────┘
+ * ┌──────────────────┐
+ * │ PluginHost │
+ * │ (central registry│
+ * │ & capability │
+ * │ index) │
+ * └────────┬─────────┘
+ * │
+ * ┌──────────────────────┼───────────────────────┐
+ * │ │ │
+ * ┌─────▼──────┐ ┌───────▼──────┐ ┌─────────▼────────┐
+ * │ Plugin A │ │ Plugin B │ │ Plugin C │
+ * │ capabilities│ │ capabilities │ │ capabilities │
+ * │ - memory │ │ - browser │ │ - memory │
+ * │ │ │ - tool_prov │ │ - context_prov │
+ * │ │ │ - context_prov │ - skill_provider │
+ * └────────────┘ └──────────────┘ └──────────────────┘
  * ```
  *
  * ## Adapter Interfaces
  *
- * | Interface              | Capability         | Purpose                                           |
+ * | Interface | Capability | Purpose |
  * |------------------------|--------------------|---------------------------------------------------|
- * | `MemoryAdapter`        | `memory`           | Persistent memory (store, query, search)          |
- * | `BrowserAdapter`       | `browser`          | Web automation (navigate, interact, scrape)       |
- * | `FileSystemAdapter`    | `filesystem`       | Virtual filesystem for agent state                |
- * | `ToolProvider`         | `tool_provider`    | Dynamically contributes tools to every agent turn |
- * | `ContextProvider`      | `context_provider` | Injects context sections into the system prompt   |
- * | `LLMAdapter`           | `llm`              | Full LLM backend — model, pricing, health check   |
- * | `SecurityAdapter`      | `security`         | Pre/post-call guardrails (allow, block, modify)   |
- * | `ObservabilityAdapter` | `observability`    | Logs, metrics, spans for LLM and tool events      |
- * | `NotificationAdapter`  | `notification`     | Fan-out alerts (email, Slack, webhook, PagerDuty) |
- * | `IngesterAdapter`      | `ingester`         | Document ingestion pipeline (PDF, HTML, etc.)     |
- * | `McpAdapter`           | `mcp`              | MCP server connection + automatic tool bridging   |
- * | `CompactionAdapter`    | `compaction`       | Custom context compaction (replaces truncate/LLM) |
- * | `SkillProviderAdapter` | `skill_provider`   | Dynamic skill injection (API-fetched, per-user)   |
- * | `SessionAdapter`       | `session`          | Swappable session persistence (Redis, Postgres…)  |
- * | `IdentityAdapter`      | `identity`         | Resolve user identity from HTTP requests (JWT…)   |
- * | `LinterRuleAdapter`    | `linter_rule`      | Extensible KB lint rules without forking checks   |
+ * | `MemoryAdapter` | `memory` | Persistent memory (store, query, search) |
+ * | `BrowserAdapter` | `browser` | Web automation (navigate, interact, scrape) |
+ * | `FileSystemAdapter` | `filesystem` | Virtual filesystem for agent state |
+ * | `ToolProvider` | `tool_provider` | Dynamically contributes tools to every agent turn |
+ * | `ContextProvider` | `context_provider` | Injects context sections into the system prompt |
+ * | `LLMAdapter` | `llm` | Full LLM backend — model, pricing, health check |
+ * | `SecurityAdapter` | `security` | Pre/post-call guardrails (allow, block, modify) |
+ * | `ObservabilityAdapter` | `observability` | Logs, metrics, spans for LLM and tool events |
+ * | `NotificationAdapter` | `notification` | Fan-out alerts (email, Slack, webhook, PagerDuty) |
+ * | `IngesterAdapter` | `ingester` | Document ingestion pipeline (PDF, HTML, etc.) |
+ * | `McpAdapter` | `mcp` | MCP server connection + automatic tool bridging |
+ * | `CompactionAdapter` | `compaction` | Custom context compaction (replaces truncate/LLM) |
+ * | `SkillProviderAdapter` | `skill_provider` | Dynamic skill injection (API-fetched, per-user) |
+ * | `SessionAdapter` | `session` | Swappable session persistence (Redis, Postgres…) |
+ * | `IdentityAdapter` | `identity` | Resolve user identity from HTTP requests (JWT…) |
+ * | `LinterRuleAdapter` | `linter_rule` | Extensible KB lint rules without forking checks |
+ * | `SandboxBackendAdapter`| `sandbox_backend` | External tool-execution sandbox (Firecracker, …) |
  *
  * ## Quick Start
  *
@@ -64,18 +65,19 @@
  * import { CamoufoxPlugin } from 'yaaf/camoufox'
  *
  * const agent = await Agent.create({
- *   model: 'gpt-4o',
- *   plugins: [
- *     new HonchoPlugin({ apiKey: process.env.HONCHO_KEY! }),
- *     new CamoufoxPlugin({ headless: true }),
- *   ],
+ * model: 'gpt-4o',
+ * plugins: [
+ * new HonchoPlugin({ apiKey: process.env.HONCHO_KEY! }),
+ * new CamoufoxPlugin({ headless: true }),
+ * ],
  * })
  * ```
  *
  * @module plugin
  */
 
-import type { ChatModel, ChatMessage, ChatResult, ToolSchema } from '../agents/runner.js'
+import type { ChatModel, ChatMessage, ChatResult, ToolSchema } from "../agents/runner.js";
+import type { TrustPolicy } from "../security/trustPolicy.js";
 
 // ── Plugin Lifecycle ─────────────────────────────────────────────────────────
 
@@ -87,47 +89,51 @@ import type { ChatModel, ChatMessage, ChatResult, ToolSchema } from '../agents/r
  * so lookups are O(1) without scanning all registered plugins.
  *
  * ### Core capabilities
- * - `memory`           — Implements `MemoryAdapter` (store, query, retrieve memories)
- * - `browser`          — Implements `BrowserAdapter` (navigate, click, screenshot)
- * - `filesystem`       — Implements `FileSystemAdapter` (read, write, list, watch)
- * - `tool_provider`    — Implements `ToolProvider` (contributes `Tool[]` to every run)
+ * - `memory` — Implements `MemoryAdapter` (store, query, retrieve memories)
+ * - `browser` — Implements `BrowserAdapter` (navigate, click, screenshot)
+ * - `filesystem` — Implements `FileSystemAdapter` (read, write, list, watch)
+ * - `tool_provider` — Implements `ToolProvider` (contributes `Tool[]` to every run)
  * - `context_provider` — Implements `ContextProvider` (injects context sections per turn)
- * - `llm`              — Implements `LLMAdapter` (full model: complete, stream, pricing)
- * - `mcp`              — Implements `McpAdapter` (MCP server bridge + tool auto-discovery)
+ * - `llm` — Implements `LLMAdapter` (full model: complete, stream, pricing)
+ * - `mcp` — Implements `McpAdapter` (MCP server bridge + tool auto-discovery)
  *
  * ### Safety & observability capabilities
- * - `security`         — Implements `SecurityAdapter` (pre/post-call guardrails)
- * - `observability`    — Implements `ObservabilityAdapter` (logs, metrics, spans)
- * - `notification`     — Implements `NotificationAdapter` (alerts fan-out)
- * - `ingester`         — Implements `IngesterAdapter` (document ingestion pipeline)
+ * - `security` — Implements `SecurityAdapter` (pre/post-call guardrails)
+ * - `observability` — Implements `ObservabilityAdapter` (logs, metrics, spans)
+ * - `notification` — Implements `NotificationAdapter` (alerts fan-out)
+ * - `ingester` — Implements `IngesterAdapter` (document ingestion pipeline)
  *
  * ### Phase 2 extension capabilities
- * - `compaction`       — Implements `CompactionAdapter` (custom ContextManager strategy)
- * - `skill_provider`   — Implements `SkillProviderAdapter` (dynamic skill injection)
- * - `session`          — Implements `SessionAdapter` (swappable conversation persistence)
- * - `identity`         — Implements `IdentityAdapter` (user identity resolution from requests)
- * - `linter_rule`      — Implements `LinterRuleAdapter` (extra KB lint rules)
+ * - `compaction` — Implements `CompactionAdapter` (custom ContextManager strategy)
+ * - `skill_provider` — Implements `SkillProviderAdapter` (dynamic skill injection)
+ * - `session` — Implements `SessionAdapter` (swappable conversation persistence)
+ * - `identity` — Implements `IdentityAdapter` (user identity resolution from requests)
+ * - `linter_rule` — Implements `LinterRuleAdapter` (extra KB lint rules)
  */
 export type PluginCapability =
   // ── Core ──────────────────────────────────────────────────────────────────
-  | 'memory'           // MemoryAdapter
-  | 'browser'          // BrowserAdapter
-  | 'filesystem'       // FileSystemAdapter
-  | 'tool_provider'    // ToolProvider
-  | 'context_provider' // ContextProvider
-  | 'llm'              // LLMAdapter
-  | 'mcp'              // McpAdapter
+  | "memory" // MemoryAdapter
+  | "browser" // BrowserAdapter
+  | "filesystem" // FileSystemAdapter
+  | "tool_provider" // ToolProvider
+  | "context_provider" // ContextProvider
+  | "llm" // LLMAdapter
+  | "mcp" // McpAdapter
   // ── Safety & observability ────────────────────────────────────────────────
-  | 'security'         // SecurityAdapter
-  | 'observability'    // ObservabilityAdapter
-  | 'notification'     // NotificationAdapter
-  | 'ingester'         // IngesterAdapter
-  // ── Phase 2: extension points ─────────────────────────────────────────────
-  | 'compaction'       // CompactionAdapter — custom context compaction strategy
-  | 'skill_provider'   // SkillProviderAdapter — dynamic skill injection
-  | 'session'          // SessionAdapter — swappable conversation persistence
-  | 'identity'         // IdentityAdapter — user identity resolution from requests
-  | 'linter_rule'      // LinterRuleAdapter — extra KB lint rules
+  | "security" // SecurityAdapter
+  | "observability" // ObservabilityAdapter
+  | "notification" // NotificationAdapter
+  | "ingester" // IngesterAdapter
+  // ── extension points ─────────────────────────────────────────────
+  | "compaction" // CompactionAdapter — custom context compaction strategy
+  | "skill_provider" // SkillProviderAdapter — dynamic skill injection
+  | "session" // SessionAdapter — swappable conversation persistence
+  | "identity" // IdentityAdapter — user identity resolution from requests
+  | "linter_rule" // LinterRuleAdapter — extra KB lint rules
+  // ── Multi-agent & memory ──────────────────────────────────────────────────
+  | "ipc" // IPCAdapter — swappable inter-agent message transport (S2-A)
+  | "vectorstore" // VectorStoreAdapter — semantic memory retrieval (S3-A)
+  | "sandbox_backend"; // SandboxBackendAdapter — external tool execution runtime (Firecracker, gVisor)
 
 /**
  * Base plugin interface.
@@ -135,31 +141,31 @@ export type PluginCapability =
  */
 export interface Plugin {
   /** Unique plugin name (e.g., 'honcho', 'camoufox', 'agentfs') */
-  readonly name: string
+  readonly name: string;
 
   /** Semver version string */
-  readonly version: string
+  readonly version: string;
 
   /** Capabilities this plugin provides */
-  readonly capabilities: readonly PluginCapability[]
+  readonly capabilities: readonly PluginCapability[];
 
   /**
    * Initialize the plugin. Called once when registered with the PluginHost.
    * Use this for async setup (connecting to APIs, spawning processes, etc.)
    */
-  initialize?(): Promise<void>
+  initialize?(): Promise<void>;
 
   /**
    * Graceful shutdown. Called when the PluginHost is destroyed.
    * Use this to close connections, kill subprocesses, flush buffers.
    */
-  destroy?(): Promise<void>
+  destroy?(): Promise<void>;
 
   /**
    * Health check. Returns true if the plugin is operational.
    * Called periodically by the PluginHost for monitoring.
    */
-  healthCheck?(): Promise<boolean>
+  healthCheck?(): Promise<boolean>;
 }
 
 // ── Adapter Interfaces ───────────────────────────────────────────────────────
@@ -174,66 +180,66 @@ export interface Plugin {
  */
 export interface MemoryAdapter extends Plugin {
   /** Save a memory entry */
-  save(entry: MemoryEntry): Promise<string>
+  save(entry: MemoryEntry): Promise<string>;
 
   /** Read a memory by ID or filename */
-  read(id: string): Promise<MemoryEntryWithContent | null>
+  read(id: string): Promise<MemoryEntryWithContent | null>;
 
   /** Remove a memory */
-  remove(id: string): Promise<boolean>
+  remove(id: string): Promise<boolean>;
 
   /** List all memory headers (lightweight, no content) */
-  list(filter?: MemoryFilter): Promise<MemoryEntryMeta[]>
+  list(filter?: MemoryFilter): Promise<MemoryEntryMeta[]>;
 
   /** Search memories by relevance to a query */
-  search(query: string, limit?: number): Promise<MemorySearchResult[]>
+  search(query: string, limit?: number): Promise<MemorySearchResult[]>;
 
   /** Get the memory index (summary of all memories for system prompt) */
-  getIndex(): Promise<string>
+  getIndex(): Promise<string>;
 
   /** Build the system prompt fragment for memory instructions */
-  buildPrompt(): string
+  buildPrompt(): string;
 }
 
 /** Entry to save */
 export type MemoryEntry = {
-  name: string
-  description: string
-  type: 'user' | 'feedback' | 'project' | 'reference'
-  content: string
-  scope?: 'private' | 'team'
-  metadata?: Record<string, unknown>
-}
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
+  content: string;
+  scope?: "private" | "team";
+  metadata?: Record<string, unknown>;
+};
 
 /** Full entry with content */
 export type MemoryEntryWithContent = MemoryEntry & {
-  id: string
-  createdAt: number
-  updatedAt: number
-}
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+};
 
 /** Lightweight metadata for listing */
 export type MemoryEntryMeta = {
-  id: string
-  name: string
-  description: string
-  type: string
-  updatedAt: number
-}
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  updatedAt: number;
+};
 
 /** Filter for listing memories */
 export type MemoryFilter = {
-  type?: string
-  scope?: 'private' | 'team'
-  since?: number
-}
+  type?: string;
+  scope?: "private" | "team";
+  since?: number;
+};
 
 /** Search result with relevance score */
 export type MemorySearchResult = {
-  entry: MemoryEntryMeta
-  score: number
-  snippet?: string
-}
+  entry: MemoryEntryMeta;
+  score: number;
+  snippet?: string;
+};
 
 // ── Browser Adapter ──────────────────────────────────────────────────────────
 
@@ -246,68 +252,68 @@ export type MemorySearchResult = {
  */
 export interface BrowserAdapter extends Plugin {
   /** Start the browser */
-  start(): Promise<void>
+  start(): Promise<void>;
 
   /** Stop the browser */
-  stop(): Promise<void>
+  stop(): Promise<void>;
 
   /** Whether the browser is currently running */
-  readonly running: boolean
+  readonly running: boolean;
 
   /** Navigate to a URL and extract content */
-  navigate(url: string, opts?: NavigateOptions): Promise<PageContent>
+  navigate(url: string, opts?: NavigateOptions): Promise<PageContent>;
 
   /** Take a screenshot */
-  screenshot(opts?: ScreenshotOptions): Promise<ScreenshotData>
+  screenshot(opts?: ScreenshotOptions): Promise<ScreenshotData>;
 
   /** Click an element */
-  click(selector: string): Promise<void>
+  click(selector: string): Promise<void>;
 
   /** Type text into an element */
-  type(selector: string, text: string): Promise<void>
+  type(selector: string, text: string): Promise<void>;
 
   /** Scroll the page */
-  scroll(direction: 'up' | 'down', amount?: number): Promise<void>
+  scroll(direction: "up" | "down", amount?: number): Promise<void>;
 
   /** Wait for an element to appear */
-  waitForSelector(selector: string, timeoutMs?: number): Promise<boolean>
+  waitForSelector(selector: string, timeoutMs?: number): Promise<boolean>;
 
   /** Get the current page URL */
-  getUrl(): Promise<string>
+  getUrl(): Promise<string>;
 
   /** Evaluate JavaScript in the page context */
-  evaluate(expression: string): Promise<unknown>
+  evaluate(expression: string): Promise<unknown>;
 
   /**
    * Export browser capabilities as YAAF tools.
    * This is the bridge between the browser adapter and the tool system.
    */
-  asTools(prefix?: string): import('../tools/tool.js').Tool[]
+  asTools(prefix?: string): import("../tools/tool.js").Tool[];
 }
 
 export type NavigateOptions = {
-  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle'
-  extractHtml?: boolean
-}
+  waitUntil?: "load" | "domcontentloaded" | "networkidle";
+  extractHtml?: boolean;
+};
 
 export type PageContent = {
-  url: string
-  title: string
-  textContent: string
-  html?: string
-  statusCode: number
-}
+  url: string;
+  title: string;
+  textContent: string;
+  html?: string;
+  statusCode: number;
+};
 
 export type ScreenshotOptions = {
-  fullPage?: boolean
-  selector?: string
-}
+  fullPage?: boolean;
+  selector?: string;
+};
 
 export type ScreenshotData = {
-  data: string  // base64 PNG
-  width: number
-  height: number
-}
+  data: string; // base64 PNG
+  width: number;
+  height: number;
+};
 
 // ── FileSystem Adapter ───────────────────────────────────────────────────────
 
@@ -320,43 +326,43 @@ export type ScreenshotData = {
  */
 export interface FileSystemAdapter extends Plugin {
   /** Read a file's content */
-  read(path: string): Promise<string | null>
+  read(path: string): Promise<string | null>;
 
   /** Write a file */
-  write(path: string, content: string, agentId?: string): Promise<void>
+  write(path: string, content: string, agentId?: string): Promise<void>;
 
   /** Check if a path exists */
-  exists(path: string): Promise<boolean>
+  exists(path: string): Promise<boolean>;
 
   /** Delete a file */
-  remove(path: string, agentId?: string): Promise<boolean>
+  remove(path: string, agentId?: string): Promise<boolean>;
 
   /** List entries in a directory */
-  list(path: string): Promise<FSEntryInfo[]>
+  list(path: string): Promise<FSEntryInfo[]>;
 
   /** Create a directory */
-  mkdir(path: string): Promise<void>
+  mkdir(path: string): Promise<void>;
 
   /** Get a text representation of the filesystem for LLM context */
-  toPrompt(path?: string): string
+  toPrompt(path?: string): string;
 
   /** Get filesystem stats */
-  getStats(): FSStats
+  getStats(): FSStats;
 }
 
 export type FSEntryInfo = {
-  name: string
-  path: string
-  type: 'file' | 'directory' | 'tool' | 'symlink'
-  size?: number
-}
+  name: string;
+  path: string;
+  type: "file" | "directory" | "tool" | "symlink";
+  size?: number;
+};
 
 export type FSStats = {
-  totalSize: number
-  maxSize: number
-  usagePercent: number
-  fileCount: number
-}
+  totalSize: number;
+  maxSize: number;
+  usagePercent: number;
+  fileCount: number;
+};
 
 // ── Tool Provider ────────────────────────────────────────────────────────────
 
@@ -369,14 +375,14 @@ export type FSStats = {
  */
 export interface ToolProvider extends Plugin {
   /** Get all tools this provider offers */
-  getTools(): import('../tools/tool.js').Tool[]
+  getTools(): import("../tools/tool.js").Tool[];
 
   /**
    * Optional: get tools filtered by context.
    * E.g., a database provider might return different tools
    * depending on which database is connected.
    */
-  getToolsForContext?(context: Record<string, unknown>): import('../tools/tool.js').Tool[]
+  getToolsForContext?(context: Record<string, unknown>): import("../tools/tool.js").Tool[];
 }
 
 // ── Context Provider ─────────────────────────────────────────────────────────
@@ -396,15 +402,15 @@ export interface ContextProvider extends Plugin {
   getContextSections(
     query: string,
     existingContext?: Record<string, string>,
-  ): Promise<ContextSection[]>
+  ): Promise<ContextSection[]>;
 }
 
 export type ContextSection = {
-  key: string
-  content: string
-  placement: 'system' | 'user'
-  priority?: number
-}
+  key: string;
+  content: string;
+  placement: "system" | "user";
+  priority?: number;
+};
 
 // ── LLM Adapter ──────────────────────────────────────────────────────────────
 
@@ -424,66 +430,66 @@ export type ContextSection = {
  */
 export interface LLMAdapter extends Plugin, ChatModel {
   // ChatModel already provides:
-  //   complete(params): Promise<ChatResult>
+  // complete(params): Promise<ChatResult>
 
   /**
    * Simple text query — no tool schemas, no history management.
    * Wraps `complete()` with a single user message for convenience.
    */
-  query(params: LLMQueryParams): Promise<LLMResponse>
+  query(params: LLMQueryParams): Promise<LLMResponse>;
 
   /**
    * Summarize a conversation into a compact string.
    * Used by ContextManager for context compaction.
    */
-  summarize(messages: LLMMessage[], instructions?: string): Promise<string>
+  summarize(messages: LLMMessage[], instructions?: string): Promise<string>;
 
   /** Estimate token count for a string (rough, no network call). */
-  estimateTokens(text: string): number
+  estimateTokens(text: string): number;
 
   /** Model identifier (e.g. 'gemini-2.0-flash', 'gpt-4o-mini') */
-  readonly model: string
+  readonly model: string;
 
   /** Context window size in tokens */
-  readonly contextWindowTokens: number
+  readonly contextWindowTokens: number;
 
   /** Maximum output tokens per completion */
-  readonly maxOutputTokens: number
+  readonly maxOutputTokens: number;
 
   /**
    * Optional pricing declaration — consumed by CostTracker to keep the
    * price table accurate without hardcoding. Per 1M tokens, USD.
    */
-  readonly pricing?: LLMPricing
+  readonly pricing?: LLMPricing;
 }
 
 /** Pricing per 1M tokens (USD) — mirrors CostTracker.ModelPricing. */
 export type LLMPricing = {
-  inputPerMillion: number
-  outputPerMillion: number
-  cacheReadPerMillion?: number
-  cacheWritePerMillion?: number
-}
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+};
 
 export type LLMMessage = {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 export type LLMQueryParams = {
-  messages: LLMMessage[]
-  system?: string
-  maxTokens?: number
-  temperature?: number
-  signal?: AbortSignal
-}
+  messages: LLMMessage[];
+  system?: string;
+  maxTokens?: number;
+  temperature?: number;
+  signal?: AbortSignal;
+};
 
 export type LLMResponse = {
-  content: string
-  tokensUsed: { input: number; output: number }
-  model: string
-  stopReason?: string
-}
+  content: string;
+  tokensUsed: { input: number; output: number };
+  model: string;
+  stopReason?: string;
+};
 
 // ── MCP Adapter ──────────────────────────────────────────────────────────────
 
@@ -499,16 +505,16 @@ export type LLMResponse = {
  * @example
  * ```ts
  * class MyMcpPlugin implements McpAdapter {
- *   readonly name = 'my-mcp'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['mcp', 'tool_provider'] as const
+ * readonly name = 'my-mcp'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['mcp', 'tool_provider'] as const
  *
- *   async initialize() { await this.connect() }
- *   async destroy()    { await this.disconnect() }
+ * async initialize() { await this.connect() }
+ * async destroy() { await this.disconnect() }
  *
- *   getTools()  { return this.tools }
- *   listServers() { return [{ name: 'my-server', transport: 'stdio', connected: true, toolCount: 3 }] }
- *   async callTool(toolName, args) { ... }
+ * getTools() { return this.tools }
+ * listServers() { return [{ name: 'my-server', transport: 'stdio', connected: true, toolCount: 3 }] }
+ * async callTool(toolName, args) { ... }
  * }
  * ```
  */
@@ -517,38 +523,34 @@ export interface McpAdapter extends ToolProvider {
    * List all connected MCP servers and their current status.
    * Used by PluginHost.getMcpServers() for introspection and health display.
    */
-  listServers(): McpServerInfo[]
+  listServers(): McpServerInfo[];
 
   /**
    * Call a specific tool on a specific server directly (bypass tool wrapping).
    * Useful for admin / debugging flows.
    */
-  callTool(
-    toolName: string,
-    args: Record<string, unknown>,
-    serverName?: string,
-  ): Promise<string>
+  callTool(toolName: string, args: Record<string, unknown>, serverName?: string): Promise<string>;
 
   /**
    * The transport type(s) this adapter connects to.
    * For display / filtering purposes.
    */
-  readonly transports: ReadonlyArray<'stdio' | 'sse'>
+  readonly transports: ReadonlyArray<"stdio" | "sse">;
 }
 
 /** Status snapshot of a single MCP server connection. */
 export type McpServerInfo = {
   /** Server name as configured */
-  name: string
+  name: string;
   /** Transport type */
-  transport: 'stdio' | 'sse'
+  transport: "stdio" | "sse";
   /** Whether the server is currently connected */
-  connected: boolean
+  connected: boolean;
   /** Number of tools exposed by this server */
-  toolCount: number
+  toolCount: number;
   /** Server URL (SSE) or command (stdio) */
-  endpoint?: string
-}
+  endpoint?: string;
+};
 
 // ── Security Adapter ─────────────────────────────────────────────────────────
 
@@ -568,14 +570,14 @@ export type McpServerInfo = {
  * @example
  * ```ts
  * class MyWafAdapter extends PluginBase implements SecurityAdapter {
- *   readonly capabilities = ['security'] as const
- *   readonly phase = 'input'
- *   readonly priority = 10  // run before built-ins
+ * readonly capabilities = ['security'] as const
+ * readonly phase = 'input'
+ * readonly priority = 10 // run before built-ins
  *
- *   beforeLLM(messages) {
- *     // scan for WAF violations...
- *     return messages
- *   }
+ * beforeLLM(messages) {
+ * // scan for WAF violations...
+ * return messages
+ * }
  * }
  *
  * await host.register(new MyWafAdapter())
@@ -585,24 +587,26 @@ export type McpServerInfo = {
 export interface SecurityAdapter extends Plugin {
   /**
    * Which pipeline phase this guard operates in.
-   * - `'input'`  — only `beforeLLM` is called
+   * - `'input'` — only `beforeLLM` is called
    * - `'output'` — only `afterLLM` is called
-   * - `'both'`   — both hooks are called
+   * - `'both'` — both hooks are called
    */
-  readonly phase: 'input' | 'output' | 'both'
+  readonly phase: "input" | "output" | "both";
 
   /**
    * Execution priority — lower numbers run first.
    * Built-in guards use 50; set < 50 to run before them, > 50 to run after.
    * Default: 50
    */
-  readonly priority?: number
+  readonly priority?: number;
 
   /**
    * Input-side guard. Receives the current message array and returns
    * a (possibly modified) array, or undefined to pass through unchanged.
    */
-  beforeLLM?(messages: ChatMessage[]): ChatMessage[] | undefined | Promise<ChatMessage[] | undefined>
+  beforeLLM?(
+    messages: ChatMessage[],
+  ): ChatMessage[] | undefined | Promise<ChatMessage[] | undefined>;
 
   /**
    * Output-side guard. Receives the LLM response and returns an
@@ -611,14 +615,14 @@ export interface SecurityAdapter extends Plugin {
   afterLLM?(
     response: ChatResult,
     iteration: number,
-  ): SecurityHookResult | undefined | Promise<SecurityHookResult | undefined>
+  ): SecurityHookResult | undefined | Promise<SecurityHookResult | undefined>;
 }
 
 /** Result type for SecurityAdapter.afterLLM — mirrors Hooks.afterLLM return. */
 export type SecurityHookResult =
-  | { action: 'continue' }
-  | { action: 'override'; content: string }
-  | { action: 'stop'; reason: string }
+  | { action: "continue" }
+  | { action: "override"; content: string }
+  | { action: "stop"; reason: string };
 
 // ── Observability Adapter ────────────────────────────────────────────────────
 
@@ -631,10 +635,10 @@ export type SecurityHookResult =
  * @example
  * ```ts
  * class DatadogAdapter extends PluginBase implements ObservabilityAdapter {
- *   readonly capabilities = ['observability'] as const
+ * readonly capabilities = ['observability'] as const
  *
- *   log(entry) { datadogLogs.send(entry) }
- *   metric(name, value) { datadogMetrics.gauge(name, value) }
+ * log(entry) { datadogLogs.send(entry) }
+ * metric(name, value) { datadogMetrics.gauge(name, value) }
  * }
  * await host.register(new DatadogAdapter())
  * ```
@@ -644,43 +648,43 @@ export interface ObservabilityAdapter extends Plugin {
    * Receive a structured log entry.
    * Should not throw — errors in logging must never crash the agent.
    */
-  log?(entry: LogEntry): void
+  log?(entry: LogEntry): void;
 
   /**
    * Receive a completed span (OTel-compatible).
    * Called when a span opened via the tracing module is ended.
    */
-  span?(span: SpanData): void
+  span?(span: SpanData): void;
 
   /**
    * Receive a metric data point.
-   * @param name   — dot-separated metric name, e.g. 'agent.tokens_used'
-   * @param value  — numeric value
+   * @param name — dot-separated metric name, e.g. 'agent.tokens_used'
+   * @param value — numeric value
    * @param labels — optional key/value dimension labels
    */
-  metric?(name: string, value: number, labels?: Record<string, string>): void
+  metric?(name: string, value: number, labels?: Record<string, string>): void;
 }
 
 /** Structured log entry passed to ObservabilityAdapter.log(). */
 export type LogEntry = {
-  level: 'debug' | 'info' | 'warn' | 'error'
-  namespace: string
-  message: string
-  data?: Record<string, unknown>
-  timestamp: string
-}
+  level: "debug" | "info" | "warn" | "error";
+  namespace: string;
+  message: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
+};
 
 /** Span data passed to ObservabilityAdapter.span(). */
 export type SpanData = {
-  name: string
-  traceId: string
-  spanId: string
-  startTime: number
-  endTime: number
-  attributes?: Record<string, unknown>
-  status?: 'ok' | 'error'
-  error?: string
-}
+  name: string;
+  traceId: string;
+  spanId: string;
+  startTime: number;
+  endTime: number;
+  attributes?: Record<string, unknown>;
+  status?: "ok" | "error";
+  error?: string;
+};
 
 // ── Notification Adapter ─────────────────────────────────────────────────────
 
@@ -697,28 +701,28 @@ export type SpanData = {
  * @example
  * ```ts
  * class SlackNotifierPlugin extends PluginBase implements NotificationAdapter {
- *   readonly capabilities = ['notification'] as const
+ * readonly capabilities = ['notification'] as const
  *
- *   async notify(n) {
- *     await slack.postMessage({ channel: '#alerts', text: `${n.title}: ${n.message}` })
- *   }
+ * async notify(n) {
+ * await slack.postMessage({ channel: '#alerts', text: `${n.title}: ${n.message}` })
+ * }
  * }
  * await host.register(new SlackNotifierPlugin())
  * ```
  */
 export interface NotificationAdapter extends Plugin {
   /** Receive and deliver a notification. Must not throw. */
-  notify(notification: PluginNotification): Promise<void>
+  notify(notification: PluginNotification): Promise<void>;
 }
 
 /** Notification payload — matches the existing `Notification` type in notifier.ts. */
 export type PluginNotification = {
-  type: 'completed' | 'failed' | 'needs_attention' | 'warning' | 'info'
-  title: string
-  message: string
-  metadata?: Record<string, unknown>
-  timestamp?: string
-}
+  type: "completed" | "failed" | "needs_attention" | "warning" | "info";
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  timestamp?: string;
+};
 
 // ── Ingester Adapter ─────────────────────────────────────────────────────────
 
@@ -735,59 +739,56 @@ export type PluginNotification = {
  * @example
  * ```ts
  * class DocxIngesterPlugin extends PluginBase implements IngesterAdapter {
- *   readonly capabilities = ['ingester'] as const
- *   readonly supportedMimeTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
- *   readonly supportedExtensions = ['docx']
- *   readonly requiresOptionalDeps = true
- *   readonly optionalDeps = ['mammoth']
+ * readonly capabilities = ['ingester'] as const
+ * readonly supportedMimeTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+ * readonly supportedExtensions = ['docx']
+ * readonly requiresOptionalDeps = true
+ * readonly optionalDeps = ['mammoth']
  *
- *   async ingest(filePath) { ... }
+ * async ingest(filePath) { ... }
  * }
  * await host.register(new DocxIngesterPlugin())
  * ```
  */
 export interface IngesterAdapter extends Plugin {
   /** MIME types this ingester handles */
-  readonly supportedMimeTypes: string[]
+  readonly supportedMimeTypes: string[];
   /** File extensions this ingester handles (without leading dot) */
-  readonly supportedExtensions: string[]
+  readonly supportedExtensions: string[];
   /** Whether this ingester requires optional peer dependencies */
-  readonly requiresOptionalDeps: boolean
+  readonly requiresOptionalDeps: boolean;
   /** Names of required optional packages (for error messages) */
-  readonly optionalDeps?: string[]
+  readonly optionalDeps?: string[];
   /** Extract content from a source file. */
-  ingest(
-    filePath: string,
-    options?: IngesterAdapterOptions,
-  ): Promise<IngesterAdapterResult>
+  ingest(filePath: string, options?: IngesterAdapterOptions): Promise<IngesterAdapterResult>;
 }
 
 export type IngesterAdapterOptions = {
-  imageOutputDir?: string
-  maxImageDimension?: number
-  sourceUrl?: string
-}
+  imageOutputDir?: string;
+  maxImageDimension?: number;
+  sourceUrl?: string;
+};
 
 export type IngesterAdapterResult = {
-  text: string
+  text: string;
   images: Array<{
-    originalSrc: string
-    localPath: string
-    altText: string
-    mimeType: string
-    sizeBytes: number
-  }>
-  mimeType: string
-  sourceFile: string
-  title?: string
-  metadata?: Record<string, unknown>
-  lossy: boolean
-  sourceUrl?: string
-}
+    originalSrc: string;
+    localPath: string;
+    altText: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
+  mimeType: string;
+  sourceFile: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+  lossy: boolean;
+  sourceUrl?: string;
+};
 
 // ── Compaction Adapter ───────────────────────────────────────────────────────
 
-import type { CompactionContext, StrategyResult } from '../context/strategies.js'
+import type { CompactionContext, StrategyResult } from "../context/strategies.js";
 
 /**
  * Compaction Adapter — pluggable context compaction strategy.
@@ -807,44 +808,44 @@ import type { CompactionContext, StrategyResult } from '../context/strategies.js
  * @example
  * ```ts
  * class SemanticCompactionPlugin extends PluginBase implements CompactionAdapter {
- *   readonly name = 'semantic-compactor'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['compaction'] as const
- *   readonly description = 'Embedding-based semantic deduplication'
+ * readonly name = 'semantic-compactor'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['compaction'] as const
+ * readonly description = 'Embedding-based semantic deduplication'
  *
- *   // Optional: override the default token-budget check
- *   async shouldCompact(ctx: CompactionContext) {
- *     return ctx.totalTokens / ctx.effectiveLimit > 0.80
- *   }
+ * // Optional: override the default token-budget check
+ * async shouldCompact(ctx: CompactionContext) {
+ * return ctx.totalTokens / ctx.effectiveLimit > 0.80
+ * }
  *
- *   async compact(ctx: CompactionContext): Promise<StrategyResult> {
- *     const summary = await semanticSummarize(ctx.messages)
- *     return { messages: [summaryMessage(summary)], summary, messagesRemoved: ctx.messages.length }
- *   }
+ * async compact(ctx: CompactionContext): Promise<StrategyResult> {
+ * const summary = await semanticSummarize(ctx.messages)
+ * return { messages: [summaryMessage(summary)], summary, messagesRemoved: ctx.messages.length }
+ * }
  * }
  *
  * const agent = await Agent.create({
- *   model: 'gpt-4o',
- *   contextManager: 'auto',
- *   plugins: [new SemanticCompactionPlugin()],
+ * model: 'gpt-4o',
+ * contextManager: 'auto',
+ * plugins: [new SemanticCompactionPlugin()],
  * })
  * ```
  */
 export interface CompactionAdapter extends Plugin {
   /** Human-readable description shown in `/context list` and health reports */
-  readonly description: string
+  readonly description: string;
   /**
    * Optional override for when compaction should trigger.
    * When omitted, `ContextManager.shouldCompact()` (token-budget threshold) is used.
    */
-  shouldCompact?(ctx: CompactionContext): boolean | Promise<boolean>
+  shouldCompact?(ctx: CompactionContext): boolean | Promise<boolean>;
   /** Perform compaction and return the replacement message set + summary. */
-  compact(ctx: CompactionContext): Promise<StrategyResult>
+  compact(ctx: CompactionContext): Promise<StrategyResult>;
 }
 
 // ── Skill Provider Adapter ───────────────────────────────────────────────────
 
-import type { Skill } from '../skills.js'
+import type { Skill } from "../skills.js";
 
 /**
  * Skill Provider Adapter — plugin that contributes skills to the agent.
@@ -860,26 +861,26 @@ import type { Skill } from '../skills.js'
  * @example
  * ```ts
  * class CompanySkillsPlugin extends PluginBase implements SkillProviderAdapter {
- *   readonly name = 'company-skills'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['skill_provider'] as const
+ * readonly name = 'company-skills'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['skill_provider'] as const
  *
- *   async getSkills() {
- *     // Fetch personalized skills from an API, DB, or config store
- *     return fetchCompanySkills(this.tenantId)
- *   }
+ * async getSkills() {
+ * // Fetch personalized skills from an API, DB, or config store
+ * return fetchCompanySkills(this.tenantId)
+ * }
  * }
  *
  * const agent = await Agent.create({
- *   model: 'gpt-4o',
- *   plugins: [new CompanySkillsPlugin({ tenantId: 'acme' })],
+ * model: 'gpt-4o',
+ * plugins: [new CompanySkillsPlugin({ tenantId: 'acme' })],
  * })
  * // → company skills are merged into system prompt automatically
  * ```
  */
 export interface SkillProviderAdapter extends Plugin {
   /** Return skills to inject. May be async (e.g., API fetch, DB query). */
-  getSkills(): Skill[] | Promise<Skill[]>
+  getSkills(): Skill[] | Promise<Skill[]>;
 }
 
 // ── Session Adapter ──────────────────────────────────────────────────────────
@@ -899,64 +900,64 @@ export interface SkillProviderAdapter extends Plugin {
  * @example
  * ```ts
  * class RedisSessionAdapter extends PluginBase implements SessionAdapter {
- *   readonly name = 'redis-session'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['session'] as const
+ * readonly name = 'redis-session'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['session'] as const
  *
- *   async create(id: string) {
- *     await this.redis.del(id)
- *   }
- *   async append(id: string, messages: ChatMessage[]) {
- *     await this.redis.rpush(id, ...messages.map(m => JSON.stringify(m)))
- *   }
- *   async load(id: string): Promise<ChatMessage[]> {
- *     const raw = await this.redis.lrange(id, 0, -1)
- *     return raw.map(r => JSON.parse(r))
- *   }
- *   async delete(id: string) { await this.redis.del(id) }
- *   async compact(id: string, summary: string) {
- *     await this.redis.set(`${id}:summary`, summary)
- *   }
- *   async list(): Promise<string[]> {
- *     return this.redis.keys('session:*')
- *   }
+ * async create(id: string) {
+ * await this.redis.del(id)
+ * }
+ * async append(id: string, messages: ChatMessage[]) {
+ * await this.redis.rpush(id, ...messages.map(m => JSON.stringify(m)))
+ * }
+ * async load(id: string): Promise<ChatMessage[]> {
+ * const raw = await this.redis.lrange(id, 0, -1)
+ * return raw.map(r => JSON.parse(r))
+ * }
+ * async delete(id: string) { await this.redis.del(id) }
+ * async compact(id: string, summary: string) {
+ * await this.redis.set(`${id}:summary`, summary)
+ * }
+ * async list(): Promise<string[]> {
+ * return this.redis.keys('session:*')
+ * }
  * }
  *
  * const agent = await Agent.create({
- *   model: 'gpt-4o',
- *   plugins: [new RedisSessionAdapter({ url: process.env.REDIS_URL! })],
+ * model: 'gpt-4o',
+ * plugins: [new RedisSessionAdapter({ url: process.env.REDIS_URL! })],
  * })
  * ```
  */
 export interface SessionAdapter extends Plugin {
   /** Create a new empty session with the given ID. */
-  create(id: string): Promise<void>
+  create(id: string): Promise<void>;
   /** Append messages to an existing session. */
-  append(id: string, messages: ChatMessage[]): Promise<void>
+  append(id: string, messages: ChatMessage[]): Promise<void>;
   /** Load all messages for a session. Returns [] for unknown IDs. */
-  load(id: string): Promise<ChatMessage[]>
+  load(id: string): Promise<ChatMessage[]>;
   /** Delete a session permanently. */
-  delete(id: string): Promise<void>
+  delete(id: string): Promise<void>;
   /** Replace session content with a compaction summary. */
-  compact(id: string, summary: string): Promise<void>
+  compact(id: string, summary: string): Promise<void>;
   /** List all known session IDs. */
-  list(): Promise<string[]>
+  list(): Promise<string[]>;
   /**
    * Load session metadata (owner, createdAt, etc.).
    * Returns null if the session doesn't exist.
    * Optional — when omitted, adapter-backed sessions don't support ownership.
    */
-  loadMeta?(id: string): Promise<{ owner?: string; createdAt?: string } | null>
+  loadMeta?(id: string): Promise<{ owner?: string; createdAt?: string } | null>;
   /**
    * Persist session metadata (owner binding, etc.).
    * Optional — when omitted, adapter-backed sessions don't support ownership.
    */
-  saveMeta?(id: string, meta: { owner?: string }): Promise<void>
+  saveMeta?(id: string, meta: { owner?: string }): Promise<void>;
 }
 
 // ── Identity Adapter ─────────────────────────────────────────────────────────
 
-import type { UserContext, IncomingRequest } from '../iam/types.js'
+import type { UserContext, IncomingRequest } from "../iam/types.js";
 
 /**
  * Identity Adapter — pluggable user identity resolution for HTTP/A2A servers.
@@ -977,37 +978,37 @@ import type { UserContext, IncomingRequest } from '../iam/types.js'
  * @example
  * ```ts
  * class Auth0IdentityPlugin extends PluginBase implements IdentityAdapter {
- *   readonly name = 'auth0-identity'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['identity'] as const
+ * readonly name = 'auth0-identity'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['identity'] as const
  *
- *   async resolve(request: IncomingRequest): Promise<UserContext | null> {
- *     const token = request.headers['authorization']?.replace('Bearer ', '')
- *     if (!token) return null
- *     const decoded = await this.verifyJwt(token)
- *     return {
- *       userId: decoded.sub,
- *       name: decoded.name,
- *       roles: decoded['https://myapp.com/roles'] ?? [],
- *       attributes: { tenantId: decoded.org_id },
- *     }
- *   }
+ * async resolve(request: IncomingRequest): Promise<UserContext | null> {
+ * const token = request.headers['authorization']?.replace('Bearer ', '')
+ * if (!token) return null
+ * const decoded = await this.verifyJwt(token)
+ * return {
+ * userId: decoded.sub,
+ * name: decoded.name,
+ * roles: decoded['https://myapp.com/roles'] ?? [],
+ * attributes: { tenantId: decoded.org_id },
+ * }
+ * }
  *
- *   async healthCheck(): Promise<boolean> {
- *     // Verify JWKS endpoint is reachable
- *     const res = await fetch(this.jwksUri)
- *     return res.ok
- *   }
+ * async healthCheck(): Promise<boolean> {
+ * // Verify JWKS endpoint is reachable
+ * const res = await fetch(this.jwksUri)
+ * return res.ok
+ * }
  * }
  *
  * const agent = await Agent.create({
- *   model: 'gpt-4o',
- *   plugins: [new Auth0IdentityPlugin({ domain: 'myapp.auth0.com' })],
+ * model: 'gpt-4o',
+ * plugins: [new Auth0IdentityPlugin({ domain: 'myapp.auth0.com' })],
  * })
  *
  * const server = createServer(agent, {
- *   port: 3000,
- *   sessions: true,  // identity-scoped sessions
+ * port: 3000,
+ * sessions: true, // identity-scoped sessions
  * })
  * // → every /chat request is authenticated before reaching the agent
  * ```
@@ -1021,13 +1022,13 @@ export interface IdentityAdapter extends Plugin {
    * @param request — headers, query params, pre-parsed JWT claims
    * @returns UserContext or null
    */
-  resolve(request: IncomingRequest): Promise<UserContext | null>
+  resolve(request: IncomingRequest): Promise<UserContext | null>;
 
   /**
    * Optional: refresh stale credentials.
    * Called when a session's stored credentials are near expiry.
    */
-  refresh?(user: UserContext): Promise<UserContext | null>
+  refresh?(user: UserContext): Promise<UserContext | null>;
 }
 
 // ── Linter Rule Adapter ──────────────────────────────────────────────────────
@@ -1048,23 +1049,23 @@ export interface IdentityAdapter extends Plugin {
  * @example
  * ```ts
  * class TerminologyRule extends PluginBase implements LinterRuleAdapter {
- *   readonly name = 'terminology-rule'
- *   readonly version = '1.0.0'
- *   readonly capabilities = ['linter_rule'] as const
- *   readonly ruleId = 'T001'
- *   readonly description = 'Enforce standard product terminology'
- *   readonly severity = 'warning' as const
+ * readonly name = 'terminology-rule'
+ * readonly version = '1.0.0'
+ * readonly capabilities = ['linter_rule'] as const
+ * readonly ruleId = 'T001'
+ * readonly description = 'Enforce standard product terminology'
+ * readonly severity = 'warning' as const
  *
- *   check(docId: string, content: string): LinterRuleIssue[] {
- *     const issues: LinterRuleIssue[] = []
- *     if (/\bfrontend\b/i.test(content)) {
- *       issues.push({
- *         message: 'Use "front-end" (hyphenated), not "frontend"',
- *         fix: 'Replace all occurrences of "frontend" with "front-end"',
- *       })
- *     }
- *     return issues
- *   }
+ * check(docId: string, content: string): LinterRuleIssue[] {
+ * const issues: LinterRuleIssue[] = []
+ * if (/\bfrontend\b/i.test(content)) {
+ * issues.push({
+ * message: 'Use "front-end" (hyphenated), not "frontend"',
+ * fix: 'Replace all occurrences of "frontend" with "front-end"',
+ * })
+ * }
+ * return issues
+ * }
  * }
  *
  * const linter = new KBLinter(ontology, registry, compiledDir, rawDir, pluginHost)
@@ -1074,33 +1075,32 @@ export interface IdentityAdapter extends Plugin {
  */
 export interface LinterRuleAdapter extends Plugin {
   /** Short identifier used as the `PLUGIN_<ruleId>` lint code. */
-  readonly ruleId: string
+  readonly ruleId: string;
   /** Human-readable description of what this rule checks. */
-  readonly description: string
+  readonly description: string;
   /** Severity level for issues this rule produces. Defaults to `'warning'`. */
-  readonly severity?: 'error' | 'warning' | 'info'
+  readonly severity?: "error" | "warning" | "info";
   /**
    * Check a single compiled article for violations.
    *
-   * @param docId   - The article's canonical document ID
+   * @param docId - The article's canonical document ID
    * @param content - The full markdown body of the compiled article
    * @returns Array of issues (empty = article passes this rule)
    */
-  check(docId: string, content: string): LinterRuleIssue[] | Promise<LinterRuleIssue[]>
+  check(docId: string, content: string): LinterRuleIssue[] | Promise<LinterRuleIssue[]>;
 }
 
 /** An individual violation found by a `LinterRuleAdapter`. */
 export type LinterRuleIssue = {
   /** Human-readable description of the problem. */
-  message: string
+  message: string;
   /** Line number in the article where the issue occurs (optional). */
-  line?: number
+  line?: number;
   /** Suggested auto-fix description (shown in the lint report). */
-  fix?: string
-}
+  fix?: string;
+};
 
 // ── Plugin Host ──────────────────────────────────────────────────────────────
-
 
 /**
  * PluginHost — the central registry and capability index for all plugins.
@@ -1124,30 +1124,30 @@ export type LinterRuleIssue = {
  * await host.register(new AgentFSPlugin())
  *
  * // ── Core lookups ──────────────────────────────────────────────────────────
- * const memory  = host.getAdapter<MemoryAdapter>('memory')   // first match
- * const browser = host.getAdapter<BrowserAdapter>('browser')  // first match
- * const tools   = host.getAllTools()                           // merged from all ToolProviders
- * const ctx     = await host.gatherContext('Fix the auth bug') // from all ContextProviders
+ * const memory = host.getAdapter<MemoryAdapter>('memory') // first match
+ * const browser = host.getAdapter<BrowserAdapter>('browser') // first match
+ * const tools = host.getAllTools() // merged from all ToolProviders
+ * const ctx = await host.gatherContext('Fix the auth bug') // from all ContextProviders
  *
- * // ── Phase 2: extension point accessors ───────────────────────────────────
+ * // ── extension point accessors ───────────────────────────────────
  * // CompactionAdapter — override Agent's default truncation/LLM compaction
- * const compactor = host.getCompactionAdapter()   // → CompactionAdapter | null
+ * const compactor = host.getCompactionAdapter() // → CompactionAdapter | null
  *
  * // SkillProviderAdapter — merge plugin skills with config.skills
- * const skills = await host.getAllSkills()         // → Skill[]
+ * const skills = await host.getAllSkills() // → Skill[]
  *
  * // SessionAdapter — swap JSONL filesystem backend for Redis / Postgres / etc.
- * const session = host.getSessionAdapter()         // → SessionAdapter | null
+ * const session = host.getSessionAdapter() // → SessionAdapter | null
  *
  * // LinterRuleAdapter — run custom KB lint rules alongside built-in checks
- * const rules = host.getLinterRules()              // → LinterRuleAdapter[]
+ * const rules = host.getLinterRules() // → LinterRuleAdapter[]
  *
  * // Lookup a plugin by name (returns undefined if not registered)
  * const plugin = host.getPlugin<HonchoPlugin>('honcho')
  *
  * // ── Lifecycle ─────────────────────────────────────────────────────────────
- * const health = await host.healthCheckAll()       // → Map<name, boolean>
- * await host.destroyAll()                          // graceful shutdown
+ * const health = await host.healthCheckAll() // → Map<name, boolean>
+ * await host.destroyAll() // graceful shutdown
  * ```
  *
  * **Passing to Agent:**
@@ -1166,24 +1166,49 @@ export type LinterRuleIssue = {
  * ```
  */
 export class PluginHost {
-  private plugins = new Map<string, Plugin>()
-  private adaptersByCapability = new Map<PluginCapability, Plugin[]>()
+  private plugins = new Map<string, Plugin>();
+  private adaptersByCapability = new Map<PluginCapability, Plugin[]>();
+  /**
+   * S1-D FIX: Optional TrustPolicy for automatic plugin verification.
+   *
+   * - `'warn'` — log a console warning for unverified plugins, then register (default-safe, non-breaking)
+   * - `'strict'` — throw for unverified or unknown plugins (production hardens)
+   * - `TrustPolicy` instance — delegate to its `verifyPlugin()` method
+   *
+   * @example
+   * ```ts
+   * // Recommended: warn in dev, strict in production
+   * const host = new PluginHost({
+   * trustPolicy: process.env.NODE_ENV === 'production' ? 'strict' : 'warn'
+   * })
+   * ```
+   */
+  private readonly _trustPolicy?: TrustPolicy | "warn" | "strict";
+
+  constructor(opts?: { trustPolicy?: TrustPolicy | "warn" | "strict" }) {
+    this._trustPolicy = opts?.trustPolicy;
+  }
 
   /**
    * Register a plugin. Calls plugin.initialize() if defined.
    * Throws if a plugin with the same name is already registered.
+   * S1-D: Calls TrustPolicy.verifyPlugin() when a trust policy is configured.
    */
   async register(plugin: Plugin): Promise<void> {
     if (this.plugins.has(plugin.name)) {
-      throw new Error(`Plugin "${plugin.name}" is already registered`)
+      throw new Error(`Plugin "${plugin.name}" is already registered`);
     }
+
+    // S1-D FIX: Synchronous trust check — runs before entering any async boundary
+    // so the microtask queue ordering for initialize() is preserved (A1 invariant).
+    this._checkTrust(plugin.name);
 
     // Initialize the plugin
     if (plugin.initialize) {
-      await plugin.initialize()
+      await plugin.initialize();
     }
 
-    this.indexPlugin(plugin)
+    this.indexPlugin(plugin);
   }
 
   /**
@@ -1194,22 +1219,70 @@ export class PluginHost {
    * Avoids the `as unknown as { private fields }` hack in sync code paths.
    *
    * Throws if a plugin with the same name is already registered.
+   * S1-D: Calls TrustPolicy.verifyPlugin() when a trust policy is configured.
    */
   registerSync(plugin: Plugin): void {
     if (this.plugins.has(plugin.name)) {
-      throw new Error(`Plugin "${plugin.name}" is already registered`)
+      throw new Error(`Plugin "${plugin.name}" is already registered`);
     }
-    this.indexPlugin(plugin)
+    // S1-D FIX: Trust check (sync path — verifyPlugin is synchronous for 'warn'/'strict' modes)
+    this._checkTrustSync(plugin.name);
+    this.indexPlugin(plugin);
+  }
+
+  /** S1-D: Sync trust verification — zero microtask overhead for warn/strict modes. */
+  private _checkTrust(pluginName: string): void {
+    if (!this._trustPolicy) return;
+    if (this._trustPolicy === "warn") {
+      console.warn(
+        `[YAAF] Plugin "${pluginName}" registered without integrity verification. ` +
+          "Configure a TrustPolicy with sha256 hashes to verify plugin integrity.",
+      );
+      return;
+    }
+    if (this._trustPolicy === "strict") {
+      throw new Error(
+        `[YAAF] Plugin "${pluginName}" blocked: PluginHost is in strict trust mode. ` +
+          "Register an explicit TrustPolicy with a sha256 entry for this plugin.",
+      );
+    }
+    // Full TrustPolicy instance — call verifyPlugin() synchronously as a best-effort
+    // check. verifyPlugin() may be async; we fire it and let it reject the promise
+    // returned by register() if it rejects.
+    void (this._trustPolicy as TrustPolicy).verifyPlugin(pluginName);
+  }
+
+  /** S1-D: Sync trust check — used by registerSync(). */
+  private _checkTrustSync(pluginName: string): void {
+    if (!this._trustPolicy) return;
+    if (this._trustPolicy === "warn") {
+      console.warn(
+        `[YAAF] Plugin "${pluginName}" registered without integrity verification. ` +
+          "Configure a TrustPolicy with sha256 hashes to verify plugin integrity.",
+      );
+      return;
+    }
+    if (this._trustPolicy === "strict") {
+      throw new Error(
+        `[YAAF] Plugin "${pluginName}" blocked: PluginHost is in strict trust mode. ` +
+          "Register an explicit TrustPolicy with a sha256 entry for this plugin.",
+      );
+    }
+    // Full TrustPolicy — would need verifyPlugin to be sync. warn instead.
+    console.warn(
+      `[YAAF] Plugin "${pluginName}" registered via registerSync() — TrustPolicy.verifyPlugin() skipped. ` +
+        "Use async register() to enable full integrity verification.",
+    );
   }
 
   /** Shared indexing logic for register() and registerSync(). */
   private indexPlugin(plugin: Plugin): void {
-    this.plugins.set(plugin.name, plugin)
+    this.plugins.set(plugin.name, plugin);
     for (const cap of plugin.capabilities) {
       if (!this.adaptersByCapability.has(cap)) {
-        this.adaptersByCapability.set(cap, [])
+        this.adaptersByCapability.set(cap, []);
       }
-      this.adaptersByCapability.get(cap)!.push(plugin)
+      this.adaptersByCapability.get(cap)!.push(plugin);
     }
   }
 
@@ -1217,22 +1290,24 @@ export class PluginHost {
    * Unregister a plugin. Calls plugin.destroy() if defined.
    */
   async unregister(pluginName: string): Promise<void> {
-    const plugin = this.plugins.get(pluginName)
-    if (!plugin) return
+    const plugin = this.plugins.get(pluginName);
+    if (!plugin) return;
 
-    if (plugin.destroy) {
-      await plugin.destroy()
+    // Remove from the registry first so any re-entrant capability lookup
+    // does not see this plugin even if destroy() is slow or throws.
+    this.plugins.delete(pluginName);
+    for (const cap of plugin.capabilities) {
+      const plugins = this.adaptersByCapability.get(cap);
+      if (plugins) {
+        const idx = plugins.indexOf(plugin);
+        if (idx >= 0) plugins.splice(idx, 1);
+      }
     }
 
-    this.plugins.delete(pluginName)
-
-    // Remove from capability index
-    for (const cap of plugin.capabilities) {
-      const plugins = this.adaptersByCapability.get(cap)
-      if (plugins) {
-        const idx = plugins.indexOf(plugin)
-        if (idx >= 0) plugins.splice(idx, 1)
-      }
+    // Now call destroy() — if it throws, we let it propagate but the plugin
+    // is already de-indexed so the host is in a consistent state.
+    if (plugin.destroy) {
+      await plugin.destroy();
     }
   }
 
@@ -1241,8 +1316,8 @@ export class PluginHost {
    * Returns null if no plugin provides this capability.
    */
   getAdapter<T extends Plugin>(capability: PluginCapability): T | null {
-    const plugins = this.adaptersByCapability.get(capability)
-    return (plugins?.[0] as T) ?? null
+    const plugins = this.adaptersByCapability.get(capability);
+    return (plugins?.[0] as T) ?? null;
   }
 
   /**
@@ -1250,31 +1325,31 @@ export class PluginHost {
    * Useful for fan-out queries (e.g., search across multiple memory backends).
    */
   getAdapters<T extends Plugin>(capability: PluginCapability): T[] {
-    return (this.adaptersByCapability.get(capability) ?? []) as T[]
+    return (this.adaptersByCapability.get(capability) ?? []) as T[];
   }
 
   /** Get a plugin by name */
   getPlugin<T extends Plugin>(name: string): T | null {
-    return (this.plugins.get(name) as T) ?? null
+    return (this.plugins.get(name) as T) ?? null;
   }
 
   /** Check if a capability is available */
   hasCapability(capability: PluginCapability): boolean {
-    const plugins = this.adaptersByCapability.get(capability)
-    return !!plugins && plugins.length > 0
+    const plugins = this.adaptersByCapability.get(capability);
+    return !!plugins && plugins.length > 0;
   }
 
   /** List all registered plugins */
   listPlugins(): Array<{
-    name: string
-    version: string
-    capabilities: readonly PluginCapability[]
+    name: string;
+    version: string;
+    capabilities: readonly PluginCapability[];
   }> {
-    return [...this.plugins.values()].map(p => ({
+    return [...this.plugins.values()].map((p) => ({
       name: p.name,
       version: p.version,
       capabilities: p.capabilities,
-    }))
+    }));
   }
 
   /**
@@ -1283,13 +1358,13 @@ export class PluginHost {
    * MCP adapters are automatically included because they implement
    * `ToolProvider` (capabilities includes `'tool_provider'`).
    */
-  getAllTools(): import('../tools/tool.js').Tool[] {
-    const providers = this.getAdapters<ToolProvider>('tool_provider')
-    const tools: import('../tools/tool.js').Tool[] = []
+  getAllTools(): import("../tools/tool.js").Tool[] {
+    const providers = this.getAdapters<ToolProvider>("tool_provider");
+    const tools: import("../tools/tool.js").Tool[] = [];
     for (const provider of providers) {
-      tools.push(...provider.getTools())
+      tools.push(...provider.getTools());
     }
-    return tools
+    return tools;
   }
 
   /**
@@ -1300,58 +1375,62 @@ export class PluginHost {
    * Returns `{}` if no security adapters are registered.
    */
   buildSecurityHooks(): {
-    beforeLLM?: (messages: ChatMessage[]) => Promise<ChatMessage[] | undefined>
-    afterLLM?: (response: ChatResult, iteration: number) => Promise<SecurityHookResult | undefined>
+    beforeLLM?: (messages: ChatMessage[]) => Promise<ChatMessage[] | undefined>;
+    afterLLM?: (response: ChatResult, iteration: number) => Promise<SecurityHookResult | undefined>;
   } {
-    const adapters = this.getAdapters<SecurityAdapter>('security')
+    const adapters = this.getAdapters<SecurityAdapter>("security")
       .slice()
-      .sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50))
+      .sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50));
 
-    if (adapters.length === 0) return {}
+    if (adapters.length === 0) return {};
 
-    const inputAdapters = adapters.filter(a => a.phase === 'input' || a.phase === 'both')
-    const outputAdapters = adapters.filter(a => a.phase === 'output' || a.phase === 'both')
+    const inputAdapters = adapters.filter((a) => a.phase === "input" || a.phase === "both");
+    const outputAdapters = adapters.filter((a) => a.phase === "output" || a.phase === "both");
 
     const result: {
-      beforeLLM?: (messages: ChatMessage[]) => Promise<ChatMessage[] | undefined>
-      afterLLM?: (response: ChatResult, iteration: number) => Promise<SecurityHookResult | undefined>
-    } = {}
+      beforeLLM?: (messages: ChatMessage[]) => Promise<ChatMessage[] | undefined>;
+      afterLLM?: (
+        response: ChatResult,
+        iteration: number,
+      ) => Promise<SecurityHookResult | undefined>;
+    } = {};
 
     if (inputAdapters.length > 0) {
       result.beforeLLM = async (messages: ChatMessage[]) => {
-        let current = messages
+        let current = messages;
+        let modified = false;
         for (const adapter of inputAdapters) {
           if (adapter.beforeLLM) {
-            const result = await adapter.beforeLLM(current)
-            if (result) current = result
+            const result = await adapter.beforeLLM(current);
+            if (result) { current = result; modified = true; }
           }
         }
-        return current !== messages ? current : undefined
-      }
+        return modified ? current : undefined;
+      };
     }
 
     if (outputAdapters.length > 0) {
       result.afterLLM = async (response: ChatResult, iteration: number) => {
-        let currentResponse = response
-        let finalResult: SecurityHookResult | undefined
+        let currentResponse = response;
+        let finalResult: SecurityHookResult | undefined;
         for (const adapter of outputAdapters) {
           if (adapter.afterLLM) {
-            const hookResult = await adapter.afterLLM(currentResponse, iteration)
+            const hookResult = await adapter.afterLLM(currentResponse, iteration);
             if (hookResult) {
-              finalResult = hookResult
-              if (hookResult.action === 'override') {
-                currentResponse = { ...currentResponse, content: hookResult.content }
-              } else if (hookResult.action === 'stop') {
-                return hookResult
+              finalResult = hookResult;
+              if (hookResult.action === "override") {
+                currentResponse = { ...currentResponse, content: hookResult.content };
+              } else if (hookResult.action === "stop") {
+                return hookResult;
               }
             }
           }
         }
-        return finalResult
-      }
+        return finalResult;
+      };
     }
 
-    return result
+    return result;
   }
 
   /**
@@ -1359,14 +1438,20 @@ export class PluginHost {
    * Errors in individual adapters are swallowed (best-effort delivery).
    */
   async notify(notification: PluginNotification): Promise<void> {
-    const adapters = this.getAdapters<NotificationAdapter>('notification')
+    const adapters = this.getAdapters<NotificationAdapter>("notification");
     const filled: PluginNotification = {
       ...notification,
       timestamp: notification.timestamp ?? new Date().toISOString(),
-    }
-    await Promise.allSettled(adapters.map(a => {
-      try { return a.notify(filled) } catch { return Promise.resolve() }
-    }))
+    };
+    await Promise.allSettled(
+      adapters.map((a) => {
+        try {
+          return a.notify(filled);
+        } catch {
+          return Promise.resolve();
+        }
+      }),
+    );
   }
 
   /**
@@ -1374,9 +1459,13 @@ export class PluginHost {
    * Errors are swallowed — logging must not crash the agent.
    */
   emitLog(entry: LogEntry): void {
-    const adapters = this.getAdapters<ObservabilityAdapter>('observability')
+    const adapters = this.getAdapters<ObservabilityAdapter>("observability");
     for (const adapter of adapters) {
-      try { adapter.log?.(entry) } catch { /* swallow */ }
+      try {
+        adapter.log?.(entry);
+      } catch {
+        /* swallow */
+      }
     }
   }
 
@@ -1384,9 +1473,13 @@ export class PluginHost {
    * Fan-out a completed span to all registered ObservabilityAdapters.
    */
   emitSpan(span: SpanData): void {
-    const adapters = this.getAdapters<ObservabilityAdapter>('observability')
+    const adapters = this.getAdapters<ObservabilityAdapter>("observability");
     for (const adapter of adapters) {
-      try { adapter.span?.(span) } catch { /* swallow */ }
+      try {
+        adapter.span?.(span);
+      } catch {
+        /* swallow */
+      }
     }
   }
 
@@ -1394,9 +1487,13 @@ export class PluginHost {
    * Fan-out a metric to all registered ObservabilityAdapters.
    */
   emitMetric(name: string, value: number, labels?: Record<string, string>): void {
-    const adapters = this.getAdapters<ObservabilityAdapter>('observability')
+    const adapters = this.getAdapters<ObservabilityAdapter>("observability");
     for (const adapter of adapters) {
-      try { adapter.metric?.(name, value, labels) } catch { /* swallow */ }
+      try {
+        adapter.metric?.(name, value, labels);
+      } catch {
+        /* swallow */
+      }
     }
   }
 
@@ -1405,14 +1502,14 @@ export class PluginHost {
    * Returns a map of `modelId → pricing` for use by CostTracker.
    */
   getLLMPricing(): Record<string, LLMPricing> {
-    const adapters = this.getAdapters<LLMAdapter>('llm')
-    const pricing: Record<string, LLMPricing> = {}
+    const adapters = this.getAdapters<LLMAdapter>("llm");
+    const pricing: Record<string, LLMPricing> = {};
     for (const adapter of adapters) {
       if (adapter.pricing) {
-        pricing[adapter.model] = adapter.pricing
+        pricing[adapter.model] = adapter.pricing;
       }
     }
-    return pricing
+    return pricing;
   }
 
   /**
@@ -1420,7 +1517,7 @@ export class PluginHost {
    * Used by the KB compiler to build a dynamic extension→ingester dispatch table.
    */
   getIngesters(): IngesterAdapter[] {
-    return this.getAdapters<IngesterAdapter>('ingester')
+    return this.getAdapters<IngesterAdapter>("ingester");
   }
 
   /**
@@ -1428,20 +1525,20 @@ export class PluginHost {
    * @internal
    */
   listPluginsRaw(): Plugin[] {
-    return [...this.plugins.values()]
+    return [...this.plugins.values()];
   }
 
   /**
    * Get all tools from MCP adapters specifically.
    * Useful when you need to distinguish MCP tools from native tools.
    */
-  getMcpTools(): import('../tools/tool.js').Tool[] {
-    const adapters = this.getAdapters<McpAdapter>('mcp')
-    const tools: import('../tools/tool.js').Tool[] = []
+  getMcpTools(): import("../tools/tool.js").Tool[] {
+    const adapters = this.getAdapters<McpAdapter>("mcp");
+    const tools: import("../tools/tool.js").Tool[] = [];
     for (const adapter of adapters) {
-      tools.push(...adapter.getTools())
+      tools.push(...adapter.getTools());
     }
-    return tools
+    return tools;
   }
 
   /**
@@ -1449,12 +1546,12 @@ export class PluginHost {
    * Useful for health dashboards and `/status` endpoints.
    */
   getMcpServers(): McpServerInfo[] {
-    const adapters = this.getAdapters<McpAdapter>('mcp')
-    const servers: McpServerInfo[] = []
+    const adapters = this.getAdapters<McpAdapter>("mcp");
+    const servers: McpServerInfo[] = [];
     for (const adapter of adapters) {
-      servers.push(...adapter.listServers())
+      servers.push(...adapter.listServers());
     }
-    return servers
+    return servers;
   }
 
   /**
@@ -1464,7 +1561,7 @@ export class PluginHost {
    * Returns null if no `LLMAdapter` is registered.
    */
   getLLMAdapter(): LLMAdapter | null {
-    return this.getAdapter<LLMAdapter>('llm') ?? null
+    return this.getAdapter<LLMAdapter>("llm") ?? null;
   }
 
   /**
@@ -1474,35 +1571,42 @@ export class PluginHost {
     query: string,
     existingContext?: Record<string, string>,
   ): Promise<ContextSection[]> {
-    const providers = this.getAdapters<ContextProvider>('context_provider')
-    const sections: ContextSection[] = []
+    const providers = this.getAdapters<ContextProvider>("context_provider");
+    const sections: ContextSection[] = [];
     for (const provider of providers) {
-      const providerSections = await provider.getContextSections(
-        query,
-        existingContext,
-      )
-      sections.push(...providerSections)
+      // Wrap each provider individually so a failing provider
+      // (e.g. an offline knowledge base) does not discard sections already
+      // collected from providers that ran successfully before it.
+      // A single outer .catch(() => []) at the call site (agent.ts) would silently
+      // discard all partial results; per-provider isolation preserves them.
+      try {
+        const providerSections = await provider.getContextSections(query, existingContext);
+        sections.push(...providerSections);
+      } catch {
+        // Non-fatal: continue with sections collected so far.
+        // The caller may add observability or circuit-breaker logic if needed.
+      }
     }
-    return sections.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    return sections.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   }
 
   /**
    * Run health checks on all plugins.
    */
   async healthCheckAll(): Promise<Map<string, boolean>> {
-    const results = new Map<string, boolean>()
+    const results = new Map<string, boolean>();
     for (const [name, plugin] of this.plugins) {
       if (plugin.healthCheck) {
         try {
-          results.set(name, await plugin.healthCheck())
+          results.set(name, await plugin.healthCheck());
         } catch {
-          results.set(name, false)
+          results.set(name, false);
         }
       } else {
-        results.set(name, true) // No healthCheck = assume healthy
+        results.set(name, true); // No healthCheck = assume healthy
       }
     }
-    return results
+    return results;
   }
 
   /**
@@ -1510,23 +1614,23 @@ export class PluginHost {
    */
   async destroyAll(): Promise<void> {
     const destroyPromises = [...this.plugins.values()]
-      .filter(p => p.destroy)
-      .map(p => p.destroy!())
-    await Promise.allSettled(destroyPromises)
-    this.plugins.clear()
-    this.adaptersByCapability.clear()
+      .filter((p) => p.destroy)
+      .map((p) => p.destroy!());
+    await Promise.allSettled(destroyPromises);
+    this.plugins.clear();
+    this.adaptersByCapability.clear();
   }
 
-  // ── Phase 2: Extension Point Accessors ──────────────────────────────────────
+  // ── Extension Point Accessors ──────────────────────────────────────
   //
   // These methods surface the four Phase 2 adapter types introduced to make
   // every remaining YAAF subsystem fully extensible via plugins:
   //
-  //   getCompactionAdapter()  — consumed by Agent constructor (contextManager:'auto')
-  //   getAllSkills()           — consumed by Agent.create() before system-prompt assembly
-  //   getSessionAdapter()     — available for Session implementation to consult
-  //   getIdentityAdapter()    — consumed by createServer() for request authentication
-  //   getLinterRules()        — consumed by KBLinter.lint() after built-in checks
+  // getCompactionAdapter() — consumed by Agent constructor (contextManager:'auto')
+  // getAllSkills() — consumed by Agent.create() before system-prompt assembly
+  // getSessionAdapter() — available for Session implementation to consult
+  // getIdentityAdapter() — consumed by createServer() for request authentication
+  // getLinterRules() — consumed by KBLinter.lint() after built-in checks
   //
   // All Phase 2 methods follow the safe fan-out convention: failures in individual
   // plugins are silently skipped so a broken plugin can never crash the core agent.
@@ -1544,7 +1648,7 @@ export class PluginHost {
    * @returns The first `CompactionAdapter`, or `null` if no compaction plugin is registered.
    */
   getCompactionAdapter(): CompactionAdapter | null {
-    return this.getAdapter<CompactionAdapter>('compaction') ?? null
+    return this.getAdapter<CompactionAdapter>("compaction") ?? null;
   }
 
   /**
@@ -1560,15 +1664,17 @@ export class PluginHost {
    * @returns Flat array of `Skill` objects from all registered providers.
    */
   async getAllSkills(): Promise<Skill[]> {
-    const providers = this.getAdapters<SkillProviderAdapter>('skill_provider')
-    const allSkills: Skill[] = []
+    const providers = this.getAdapters<SkillProviderAdapter>("skill_provider");
+    const allSkills: Skill[] = [];
     for (const provider of providers) {
       try {
-        const skills = await provider.getSkills()
-        allSkills.push(...skills)
-      } catch { /* best-effort: skip failing skill providers */ }
+        const skills = await provider.getSkills();
+        allSkills.push(...skills);
+      } catch {
+        /* best-effort: skip failing skill providers */
+      }
     }
-    return allSkills
+    return allSkills;
   }
 
   /**
@@ -1581,7 +1687,7 @@ export class PluginHost {
    * @returns The first `SessionAdapter`, or `null` if no session plugin is registered.
    */
   getSessionAdapter(): SessionAdapter | null {
-    return this.getAdapter<SessionAdapter>('session') ?? null
+    return this.getAdapter<SessionAdapter>("session") ?? null;
   }
 
   /**
@@ -1596,7 +1702,7 @@ export class PluginHost {
    * @returns All registered linter rule adapters, in registration order.
    */
   getLinterRules(): LinterRuleAdapter[] {
-    return this.getAdapters<LinterRuleAdapter>('linter_rule')
+    return this.getAdapters<LinterRuleAdapter>("linter_rule");
   }
 
   /**
@@ -1613,6 +1719,6 @@ export class PluginHost {
    * @returns The first `IdentityAdapter`, or `null` if no identity plugin is registered.
    */
   getIdentityAdapter(): IdentityAdapter | null {
-    return this.getAdapter<IdentityAdapter>('identity') ?? null
+    return this.getAdapter<IdentityAdapter>("identity") ?? null;
   }
 }

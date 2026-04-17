@@ -21,51 +21,51 @@
  * - `url` is validated to be a parseable URL
  */
 export type FieldType =
-  | 'string'
-  | 'string[]'
-  | 'number'
-  | 'boolean'
-  | 'url'
-  | 'url[]'
-  | 'enum'
-  | 'enum[]'
-  | 'entity_ref'
-  | 'entity_ref[]'
-  | 'date'
+  | "string"
+  | "string[]"
+  | "number"
+  | "boolean"
+  | "url"
+  | "url[]"
+  | "enum"
+  | "enum[]"
+  | "entity_ref"
+  | "entity_ref[]"
+  | "date";
 
 // ── Frontmatter schema ───────────────────────────────────────────────────────
 
 /** Definition of a single frontmatter field within an entity type schema */
 export type FrontmatterFieldSchema = {
   /** Human-readable description of what this field represents */
-  description: string
+  description: string;
   /** The value type for this field */
-  type: FieldType
+  type: FieldType;
   /** Whether the compiler must produce a value for this field */
-  required: boolean
+  required: boolean;
   /**
    * Allowed values when type is 'enum' or 'enum[]'.
    * The compiler will reject values not in this list.
    */
-  enum?: string[]
+  enum?: string[];
   /**
    * When type is 'entity_ref' or 'entity_ref[]':
    * the entity type that the referenced doc must be classified as.
    * If omitted, any entity type is accepted.
    */
-  targetEntityType?: string
+  targetEntityType?: string;
   /**
    * Default value used by the compiler when the field is required but absent
    * and cannot be inferred. String representation (e.g., "[]" for empty arrays).
    */
-  default?: string
-}
+  default?: string;
+};
 
 /** Complete frontmatter schema for one entity type */
 export type FrontmatterSchema = {
   /** All field definitions for this entity type, keyed by field name */
-  fields: Record<string, FrontmatterFieldSchema>
-}
+  fields: Record<string, FrontmatterFieldSchema>;
+};
 
 // ── Article structure ────────────────────────────────────────────────────────
 
@@ -75,12 +75,12 @@ export type FrontmatterSchema = {
  */
 export type ArticleSection = {
   /** The H2 heading text (e.g., "Key Concepts", "How It Works") */
-  heading: string
+  heading: string;
   /** What content should go in this section — fed to the synthesizer as guidance */
-  description: string
+  description: string;
   /** If true, the linter emits a warning when this section is absent */
-  required: boolean
-}
+  required: boolean;
+};
 
 // ── Entity type ──────────────────────────────────────────────────────────────
 
@@ -90,50 +90,50 @@ export type ArticleSection = {
  * @example
  * ```yaml
  * entity_types:
- *   research_paper:
- *     description: A published academic paper or preprint
- *     frontmatter:
- *       fields:
- *         authors:
- *           type: string[]
- *           required: true
- *           description: List of author names
- *         year:
- *           type: number
- *           required: true
- *           description: Year of publication
- *     article_structure:
- *       - heading: Summary
- *         description: 2-3 sentence abstract in plain language
- *         required: true
- *       - heading: Key Contributions
- *         description: Bullet list of what this paper adds to the field
- *         required: true
- *     linkable_to: [concept, tool, dataset]
+ * research_paper:
+ * description: A published academic paper or preprint
+ * frontmatter:
+ * fields:
+ * authors:
+ * type: string[]
+ * required: true
+ * description: List of author names
+ * year:
+ * type: number
+ * required: true
+ * description: Year of publication
+ * article_structure:
+ * - heading: Summary
+ * description: 2-3 sentence abstract in plain language
+ * required: true
+ * - heading: Key Contributions
+ * description: Bullet list of what this paper adds to the field
+ * required: true
+ * linkable_to: [concept, tool, dataset]
  * ```
  */
 export type EntityTypeSchema = {
   /** Human-readable description — fed to the LLM during compilation and linting */
-  description: string
+  description: string;
   /** Frontmatter schema for articles of this entity type */
-  frontmatter: FrontmatterSchema
+  frontmatter: FrontmatterSchema;
   /**
    * Ordered list of H2 sections the synthesizer should produce.
    * The synthesizer respects this order.
    */
-  articleStructure: ArticleSection[]
+  articleStructure: ArticleSection[];
   /**
    * Which other entity types this entity type may link to via [[wikilinks]].
    * An empty array means no type restriction (any entity type is linkable).
    * Used by the linter to flag semantically invalid cross-links.
    */
-  linkableTo: string[]
+  linkableTo: string[];
   /**
    * Whether articles of this type should appear in the llms.txt index.
    * Default: true. Set false for internal/stub-only types.
    */
-  indexable?: boolean
-}
+  indexable?: boolean;
+};
 
 // ── Relationship types ───────────────────────────────────────────────────────
 
@@ -145,28 +145,28 @@ export type EntityTypeSchema = {
  * @example
  * ```yaml
  * relationship_types:
- *   - name: IMPLEMENTS
- *     from: tool
- *     to: concept
- *     description: A tool that provides an implementation of a concept
- *     reciprocal: IMPLEMENTED_BY
+ * - name: IMPLEMENTS
+ * from: tool
+ * to: concept
+ * description: A tool that provides an implementation of a concept
+ * reciprocal: IMPLEMENTED_BY
  * ```
  */
 export type RelationshipType = {
   /** Canonical name in SCREAMING_SNAKE_CASE (e.g., "IS_IMPLEMENTED_BY") */
-  name: string
+  name: string;
   /** Source entity type */
-  from: string
+  from: string;
   /** Target entity type */
-  to: string
+  to: string;
   /** Human-readable description fed to synthesizer and linter */
-  description: string
+  description: string;
   /**
    * The inverse relationship name, if one exists.
    * When the linker adds edge A→B via `name`, it also adds B→A via `reciprocal`.
    */
-  reciprocal?: string
-}
+  reciprocal?: string;
+};
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
 
@@ -180,27 +180,27 @@ export type RelationshipType = {
  * @example
  * ```yaml
  * vocabulary:
- *   attention mechanism:
- *     aliases:
- *       - self-attention
- *       - scaled dot-product attention
- *       - multi-head attention
- *     entity_type: concept   # optional: which entity type this term maps to
- *     doc_id: concepts/attention-mechanism  # optional: compiled article path
+ * attention mechanism:
+ * aliases:
+ * - self-attention
+ * - scaled dot-product attention
+ * - multi-head attention
+ * entity_type: concept # optional: which entity type this term maps to
+ * doc_id: concepts/attention-mechanism # optional: compiled article path
  * ```
  */
 export type VocabularyEntry = {
   /** All alternative names that resolve to this canonical term */
-  aliases: string[]
+  aliases: string[];
   /** Optional: the entity type this term is classified as */
-  entityType?: string
+  entityType?: string;
   /**
    * Optional: the relative path to the compiled article for this term
    * (relative to the `compiled/` directory, without `.md` extension).
    * Set automatically by the compiler when an article is created.
    */
-  docId?: string
-}
+  docId?: string;
+};
 
 // ── Knowledge Base config ────────────────────────────────────────────────────
 
@@ -210,12 +210,12 @@ export type VocabularyEntry = {
  */
 export type KBBudgetConfig = {
   /** Maximum tokens for a compiled text document. Default: 4096 */
-  textDocumentTokens: number
+  textDocumentTokens: number;
   /** Maximum vision tokens for images injected per fetch call. Default: 1200 */
-  imageTokens: number
+  imageTokens: number;
   /** Maximum number of images returned per fetch_kb_document call. Default: 3 */
-  maxImagesPerFetch: number
-}
+  maxImagesPerFetch: number;
+};
 
 /**
  * Model configuration for the KB compiler.
@@ -226,23 +226,23 @@ export type KBCompilerModelConfig = {
    * Used for: Concept Extractor, Frontmatter Generator, image alt/caption pass.
    * Should be a fast, cheap model (flash/mini tier).
    */
-  extractionModel?: string
+  extractionModel?: string;
   /**
    * Used for: Knowledge Synthesizer — the LLM authoring step.
    * Should be your best available model (pro tier).
    */
-  synthesisModel?: string
+  synthesisModel?: string;
   /**
    * Used for: Linter consistency/gap/discovery passes.
    * Should be a capable reasoning model (pro tier).
    */
-  analysisModel?: string
+  analysisModel?: string;
   /**
    * Used for: generating alt text and captions for unlabeled images.
    * Must support vision. Defaults to extractionModel.
    */
-  visionModel?: string
-}
+  visionModel?: string;
+};
 
 // ── Top-level ontology ───────────────────────────────────────────────────────
 
@@ -257,27 +257,27 @@ export type KBCompilerModelConfig = {
  * domain: TypeScript agent framework documentation
  *
  * entity_types:
- *   concept:
- *     description: A core idea or abstraction in the domain
- *     ...
- *   tool:
- *     description: A callable function exposed to the LLM
- *     ...
+ * concept:
+ * description: A core idea or abstraction in the domain
+ * ...
+ * tool:
+ * description: A callable function exposed to the LLM
+ * ...
  *
  * relationship_types:
- *   - name: BELONGS_TO
- *     from: tool
- *     to: agent
- *     ...
+ * - name: BELONGS_TO
+ * from: tool
+ * to: agent
+ * ...
  *
  * vocabulary:
- *   tool call:
- *     aliases: [function call, tool invocation]
+ * tool call:
+ * aliases: [function call, tool invocation]
  *
  * compiler:
- *   extractionModel: gemini-2.5-flash
- *   synthesisModel: gemini-2.5-pro
- *   analysisModel: gemini-2.5-pro
+ * extractionModel: gemini-2.5-flash
+ * synthesisModel: gemini-2.5-pro
+ * analysisModel: gemini-2.5-pro
  * ```
  */
 export type KBOntology = {
@@ -286,32 +286,32 @@ export type KBOntology = {
    * Fed verbatim to the Knowledge Synthesizer's system prompt.
    * @example "Large language model research, architectures, and tooling"
    */
-  domain: string
+  domain: string;
 
   /**
    * All entity types recognized in this domain.
    * Keys are the entity type identifiers used in frontmatter and wikilinks.
    */
-  entityTypes: Record<string, EntityTypeSchema>
+  entityTypes: Record<string, EntityTypeSchema>;
 
   /**
    * Directed relationship types between entity types.
    * The synthesizer uses these to write typed wikilinks.
    */
-  relationshipTypes: RelationshipType[]
+  relationshipTypes: RelationshipType[];
 
   /**
    * Canonical vocabulary: canonical term → aliases + optional article mapping.
    * Keys are lowercase canonical terms.
    */
-  vocabulary: Record<string, VocabularyEntry>
+  vocabulary: Record<string, VocabularyEntry>;
 
   /** Token budgets for compiled documents and runtime injection */
-  budget: KBBudgetConfig
+  budget: KBBudgetConfig;
 
   /** Compiler model assignments */
-  compiler: KBCompilerModelConfig
-}
+  compiler: KBCompilerModelConfig;
+};
 
 // ── Concept registry ─────────────────────────────────────────────────────────
 
@@ -322,31 +322,31 @@ export type KBOntology = {
  */
 export type ConceptRegistryEntry = {
   /** Relative path from compiled/ root, without .md extension */
-  docId: string
+  docId: string;
   /** Canonical article title */
-  canonicalTitle: string
+  canonicalTitle: string;
   /** Entity type */
-  entityType: string
+  entityType: string;
   /** All names by which this entity can be referenced (title + vocabulary aliases) */
-  aliases: string[]
+  aliases: string[];
   /** When this article was last compiled (Unix ms) */
-  compiledAt: number
+  compiledAt: number;
   /** Whether this is a stub article (written by linter gap detection) */
-  isStub: boolean
-}
+  isStub: boolean;
+};
 
 /** The in-memory concept registry indexed by docId */
-export type ConceptRegistry = Map<string, ConceptRegistryEntry>
+export type ConceptRegistry = Map<string, ConceptRegistryEntry>;
 
 // ── Validation result ────────────────────────────────────────────────────────
 
 export type OntologyValidationIssue = {
-  severity: 'error' | 'warning'
-  path: string      // e.g., "entityTypes.concept.frontmatter.fields.year"
-  message: string
-}
+  severity: "error" | "warning";
+  path: string; // e.g., "entityTypes.concept.frontmatter.fields.year"
+  message: string;
+};
 
 export type OntologyValidationResult = {
-  valid: boolean
-  issues: OntologyValidationIssue[]
-}
+  valid: boolean;
+  issues: OntologyValidationIssue[];
+};

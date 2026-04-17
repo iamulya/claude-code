@@ -10,98 +10,106 @@
  * @example
  * ```ts
  * const approvals = new ApprovalManager({
- *   requestApproval: async (request) => {
- *     // Send to user via Telegram
- *     await telegram.send(`⚠️ ${request.tool} wants to run:\n${request.description}\n\nReply "yes" or "no"`);
- *     // Wait for user response (up to 5 min)
- *     const response = await telegram.waitForReply(300_000);
- *     return response.text.toLowerCase().includes('yes') ? 'approved' : 'denied';
- *   },
+ * requestApproval: async (request) => {
+ * // Send to user via Telegram
+ * await telegram.send(`⚠️ ${request.tool} wants to run:\n${request.description}\n\nReply "yes" or "no"`);
+ * // Wait for user response (up to 5 min)
+ * const response = await telegram.waitForReply(300_000);
+ * return response.text.toLowerCase().includes('yes') ? 'approved' : 'denied';
+ * },
  * });
  *
  * // Use in AgentRunner config
  * const runner = new AgentRunner({
- *   ...config,
- *   permissions: approvals.asPermissionPolicy(),
+ * ...config,
+ * permissions: approvals.asPermissionPolicy(),
  * });
  * ```
  *
  * @module gateway/approvals
  */
 
-import type { PermissionResult } from '../tools/tool.js'
+import type { PermissionResult } from "../tools/tool.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ApprovalRequest = {
   /** Tool requesting approval */
-  tool: string
+  tool: string;
   /** Human-readable description of what will happen */
-  description: string
+  description: string;
   /** Risk level */
-  risk: 'low' | 'medium' | 'high' | 'critical'
+  risk: "low" | "medium" | "high" | "critical";
   /** The raw input arguments */
-  args: Record<string, unknown>
+  args: Record<string, unknown>;
   /** Request timestamp */
-  timestamp: number
-}
+  timestamp: number;
+};
 
-export type ApprovalDecision = 'approved' | 'denied' | 'timeout'
+export type ApprovalDecision = "approved" | "denied" | "timeout";
 
 export type ApprovalRecord = ApprovalRequest & {
-  decision: ApprovalDecision
-  decidedAt: number
+  decision: ApprovalDecision;
+  decidedAt: number;
   /** Duration in ms */
-  durationMs: number
-}
+  durationMs: number;
+};
 
 export type ApprovalTransport = {
   /**
    * Send an approval request to the user and get their decision.
    * Must handle timeout internally (return 'timeout' if no response).
    */
-  requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>
-}
+  requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
+};
 
 export type ApprovalManagerConfig = {
   /** Transport for sending approval requests (e.g., Telegram, Slack) */
-  transport: ApprovalTransport
+  transport: ApprovalTransport;
   /**
    * Tools that always require approval, regardless of other policies.
    * Matches exact names or glob patterns.
    */
-  alwaysRequire?: string[]
+  alwaysRequire?: string[];
   /**
    * Tools that never require approval (bypass).
    * Matches exact names or glob patterns.
    */
-  neverRequire?: string[]
+  neverRequire?: string[];
   /**
    * Default risk level for tools not in explicit lists.
    * Default: 'medium'.
    */
-  defaultRisk?: ApprovalRequest['risk']
+  defaultRisk?: ApprovalRequest["risk"];
   /**
    * Auto-approve low-risk tools?
    * Default: false.
    */
-  autoApproveLow?: boolean
+  autoApproveLow?: boolean;
   /**
    * Maximum pending approvals. New requests are denied if exceeded.
    * Default: 5.
    */
-  maxPending?: number
-}
+  maxPending?: number;
+};
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
 export class ApprovalManager {
-  private readonly config: ApprovalManagerConfig
-  private history: ApprovalRecord[] = []
-  private pending = 0
+  private readonly config: ApprovalManagerConfig;
+  private history: ApprovalRecord[] = [];
+  private pending = 0;
+  /**
+   * Maximum approval records to retain in memory.
+   * The history array was previously unbounded — a long-lived manager accumulates
+   * every approval including full tool args, causing steady memory growth.
+   */
+  private readonly maxHistory: number;
 
   constructor(config: ApprovalManagerConfig) {
-    this.config = config
+    this.config = config;
+    this.maxHistory =
+      (config as ApprovalManagerConfig & { maxHistory?: number }).maxHistory ?? 1_000;
   }
 
   /**
@@ -113,20 +121,20 @@ export class ApprovalManager {
     args: Record<string, unknown> = {},
   ): Promise<ApprovalDecision> {
     // Check bypass list
-    if (this.config.neverRequire?.some(p => matchPattern(p, toolName))) {
-      return 'approved'
+    if (this.config.neverRequire?.some((p) => matchPattern(p, toolName))) {
+      return "approved";
     }
 
-    const risk = this.getRisk(toolName)
+    const risk = this.getRisk(toolName);
 
     // Auto-approve low risk if configured
-    if (this.config.autoApproveLow && risk === 'low') {
-      return 'approved'
+    if (this.config.autoApproveLow && risk === "low") {
+      return "approved";
     }
 
     // Check pending limit
     if (this.pending >= (this.config.maxPending ?? 5)) {
-      return 'denied'
+      return "denied";
     }
 
     const request: ApprovalRequest = {
@@ -135,21 +143,25 @@ export class ApprovalManager {
       risk,
       args,
       timestamp: Date.now(),
-    }
+    };
 
-    this.pending++
+    this.pending++;
     try {
-      const decision = await this.config.transport.requestApproval(request)
+      const decision = await this.config.transport.requestApproval(request);
       const record: ApprovalRecord = {
         ...request,
         decision,
         decidedAt: Date.now(),
         durationMs: Date.now() - request.timestamp,
+      };
+      // Evict oldest half when at capacity.
+      if (this.history.length >= this.maxHistory) {
+        this.history = this.history.slice(Math.floor(this.maxHistory / 2));
       }
-      this.history.push(record)
-      return decision
+      this.history.push(record);
+      return decision;
     } finally {
-      this.pending--
+      this.pending--;
     }
   }
 
@@ -157,15 +169,15 @@ export class ApprovalManager {
    * Check if a tool requires approval.
    */
   requiresApproval(toolName: string): boolean {
-    if (this.config.neverRequire?.some(p => matchPattern(p, toolName))) {
-      return false
+    if (this.config.neverRequire?.some((p) => matchPattern(p, toolName))) {
+      return false;
     }
-    if (this.config.alwaysRequire?.some(p => matchPattern(p, toolName))) {
-      return true
+    if (this.config.alwaysRequire?.some((p) => matchPattern(p, toolName))) {
+      return true;
     }
-    const risk = this.getRisk(toolName)
-    if (this.config.autoApproveLow && risk === 'low') return false
-    return true
+    const risk = this.getRisk(toolName);
+    if (this.config.autoApproveLow && risk === "low") return false;
+    return true;
   }
 
   /**
@@ -173,7 +185,7 @@ export class ApprovalManager {
    * Use this with AgentRunner's `permissions` config.
    */
   asPermissionPolicy(): {
-    checkPermission(toolName: string, input: Record<string, unknown>): Promise<PermissionResult>
+    checkPermission(toolName: string, input: Record<string, unknown>): Promise<PermissionResult>;
   } {
     return {
       checkPermission: async (
@@ -181,41 +193,42 @@ export class ApprovalManager {
         input: Record<string, unknown>,
       ): Promise<PermissionResult> => {
         if (!this.requiresApproval(toolName)) {
-          return { behavior: 'allow', updatedInput: input }
+          return { behavior: "allow", updatedInput: input };
         }
 
-        const description = `Tool "${toolName}" wants to execute with: ${JSON.stringify(input).slice(0, 200)}`
-        const decision = await this.requestApproval(toolName, description, input)
+        const description = `Tool "${toolName}" wants to execute with: ${JSON.stringify(input).slice(0, 200)}`;
+        const decision = await this.requestApproval(toolName, description, input);
 
-        if (decision === 'approved') {
-          return { behavior: 'allow', updatedInput: input }
+        if (decision === "approved") {
+          return { behavior: "allow", updatedInput: input };
         }
 
         return {
-          behavior: 'deny',
-          message: decision === 'timeout'
-            ? `Approval timed out for ${toolName}`
-            : `User denied ${toolName}`,
-        }
+          behavior: "deny",
+          message:
+            decision === "timeout"
+              ? `Approval timed out for ${toolName}`
+              : `User denied ${toolName}`,
+        };
       },
-    }
+    };
   }
 
   /** Get approval history. */
   getHistory(): readonly ApprovalRecord[] {
-    return this.history
+    return this.history;
   }
 
   /** Clear history. */
   clearHistory(): void {
-    this.history = []
+    this.history = [];
   }
 
-  private getRisk(toolName: string): ApprovalRequest['risk'] {
-    if (this.config.alwaysRequire?.some(p => matchPattern(p, toolName))) {
-      return 'high'
+  private getRisk(toolName: string): ApprovalRequest["risk"] {
+    if (this.config.alwaysRequire?.some((p) => matchPattern(p, toolName))) {
+      return "high";
     }
-    return this.config.defaultRisk ?? 'medium'
+    return this.config.defaultRisk ?? "medium";
   }
 }
 
@@ -223,10 +236,10 @@ export class ApprovalManager {
 
 /** Simple glob-style pattern matching (supports * wildcard only) */
 function matchPattern(pattern: string, value: string): boolean {
-  if (pattern === value) return true
-  if (pattern === '*') return true
+  if (pattern === value) return true;
+  if (pattern === "*") return true;
 
   // Convert glob to regex
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*')
-  return new RegExp(`^${escaped}$`).test(value)
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(value);
 }
