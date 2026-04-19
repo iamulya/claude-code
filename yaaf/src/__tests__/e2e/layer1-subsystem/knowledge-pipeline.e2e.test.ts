@@ -52,8 +52,9 @@ describe("L1-12: Knowledge Pipeline E2E", () => {
       ].join("\n"),
     );
 
-    // KBStore constructor: (kbDir, compiledDirName?)
-    const store = new KBStore(kbDir);
+    // KBStore constructor: (kbDir, compiledDirName?, pluginHost?, options?)
+    // Fix L-4: use eager mode so sync search() works in tests
+    const store = new KBStore(kbDir, "compiled", undefined, { maxCachedBodies: Infinity });
     await store.load();
 
     // Should have loaded 2 documents
@@ -140,7 +141,8 @@ describe("L1-12: Knowledge Pipeline E2E", () => {
       ].join("\n"),
     );
 
-    const store = new KBStore(kbDir);
+    // Fix L-4: use eager mode so sync search() works in tests
+    const store = new KBStore(kbDir, "compiled", undefined, { maxCachedBodies: Infinity });
     await store.load();
 
     const results = store.search("quantum entanglement");

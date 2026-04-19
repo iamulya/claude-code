@@ -22,7 +22,9 @@ import { buildAliasIndex } from "./vocabulary.js";
 // ── Frontmatter parsing (minimal, local) ─────────────────────────────────────
 
 function extractFrontmatterField(raw: string, field: string): string | undefined {
-  const pattern = new RegExp(`^${field}:\\s*["']?([^"'\\n]+)["']?$`, "m");
+    // I4: [^"'\n] excluded apostrophes, truncating "Turing's Machine" -> "Turing"
+  // Changed to [^"\n] — outer ["'']? handles quote-stripping of the whole value.
+  const pattern = new RegExp(`^${field}:\\s*["']?([^"\\n]+?)["']?\s*$`, "m");
   const match = raw.match(pattern);
   return match?.[1]?.trim();
 }

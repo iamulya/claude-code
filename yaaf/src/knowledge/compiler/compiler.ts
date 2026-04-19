@@ -38,9 +38,11 @@
  * ```
  */
 
-import { readFile, writeFile, mkdir, stat, readdir } from "fs/promises";
+import { readFile, writeFile, mkdir, stat, readdir, unlink } from "fs/promises";
 import { join, extname, resolve } from "path";
 import { createHash } from "crypto";
+import { atomicWriteFile } from "./atomicWrite.js";
+import { CompileLock } from "./lock.js";
 
 import {
   OntologyLoader,
@@ -84,9 +86,14 @@ import { runVisionPass } from "./vision.js";
 import type { VisionPassResult, VisionPassOptions } from "./vision.js";
 
 import type { GenerateFn } from "./extractor/extractor.js";
-import type { PluginHost, IngesterAdapter } from "../../plugin/types.js";
+import type { PluginHost, IngesterAdapter, KBGroundingAdapter, KBGroundingResult } from "../../plugin/types.js";
 import { DifferentialEngine } from "./differential.js";
 import type { DifferentialPlan } from "./differential.js";
+import { MultiLayerGroundingPlugin } from "./groundingPlugin.js";
+import { generateOntologyProposals } from "./ontologyProposals.js";
+import { deduplicatePlans } from "./dedup.js";
+import { detectContradictions } from "./contradictions.js";
+import { serializeOntology } from "../ontology/loader.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -246,6 +253,39 @@ export type CompileOptions = {
 
   /** Override LLM client options for Phase C features */
   llmOptions?: LLMClientOptions;
+
+  /**
+   * Grounding quality gate — what to do when a synthesized article
+   * fails hallucination detection.
+   *
+   * - `'warn'` (default) — Log a warning but write the article normally
+   * - `'skip'` — Don't write articles below the grounding threshold
+   * - `'fail'` — Abort compilation if any article fails grounding
+   *
+   * Grounding detection requires a `KBGroundingAdapter` plugin.
+   * The built-in `MultiLayerGroundingPlugin` is used automatically
+   * if no custom adapter is registered.
+   *
+   * Set to `false` to disable grounding entirely.
+   */
+  groundingAction?: "warn" | "skip" | "fail" | false;
+
+  /**
+   * Minimum grounding score (0–1) for an article to pass the quality gate.
+   * Default: 0.5 (50% of claims must be verifiable).
+   */
+  groundingThreshold?: number;
+
+  /**
+   * Ontology proposal generation options (O7).
+   *
+   * - `true` (default): generate proposals, write to .kb-ontology-proposals.json
+   * - `false`: skip proposal generation
+   * - `{ autoEvolve: true }`: auto-apply high-confidence (≥0.8) vocab/relationship proposals
+   *
+   * Proposals are always zero-cost (no LLM calls).
+   */
+  ontologyProposals?: boolean | { autoEvolve?: boolean };
 };
 
 export type CompileProgressEvent =
@@ -287,6 +327,26 @@ export type CompileResult = {
 
   /** Vision pass result (if vision was enabled — C3) */
   vision?: VisionPassResult;
+
+  /** Grounding verification summary (if grounding was enabled) */
+  grounding?: {
+    /** How many articles were verified */
+    articlesVerified: number;
+    /** How many passed the grounding threshold */
+    articlesPassed: number;
+    /** How many failed (depending on groundingAction: warned, skipped, or aborted) */
+    articlesFailed: number;
+    /** Average grounding score across all verified articles */
+    averageScore: number;
+    /** Per-article summaries */
+    perArticle: Array<{
+      docId: string;
+      score: number;
+      totalClaims: number;
+      supportedClaims: number;
+      passed: boolean;
+    }>;
+  };
 
   /** Total wall-clock time from compile() call to return */
   durationMs: number;
@@ -361,8 +421,24 @@ export class KBCompiler {
     let registry: ConceptRegistry;
     try {
       const registryJson = await readFile(registryPath, "utf-8");
-      registry = deserializeRegistry(registryJson);
-    } catch {
+      // Fix M-7: distinguish "file missing" from "file corrupt"
+      try {
+        registry = deserializeRegistry(registryJson);
+      } catch (parseErr) {
+        throw new Error(
+          `.kb-registry.json exists but could not be parsed: ${
+            parseErr instanceof Error ? parseErr.message : String(parseErr)
+          }.\n` +
+          `This usually means a previous compilation crashed mid-write.\n` +
+          `Delete .kb-registry.json to reset (the next compile rebuilds it from compiled/).`,
+        );
+      }
+    } catch (err) {
+      // Only suppress ENOENT (file not found = first run)
+      if (err instanceof Error && !err.message.startsWith(".kb-registry.json") &&
+          (err as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw err;
+      }
       // No cache — build from compiled/ directory (may be empty on first run)
       await mkdir(compiledDir, { recursive: true });
       try {
@@ -394,6 +470,13 @@ export class KBCompiler {
     const warnings: string[] = [];
     const ingestErrors: CompileResult["ingestErrors"] = [];
 
+    // Fix L-1: prevent concurrent compile() calls from corrupting the KB
+    const lock = new CompileLock(this.kbDir);
+    if (!options.dryRun) {
+      await lock.acquire();
+    }
+
+    try {
     await mkdir(this.compiledDir, { recursive: true });
 
     // ── Scan ─────────────────────────────────────────────────────────
@@ -418,10 +501,13 @@ export class KBCompiler {
     let differentialPlan: DifferentialPlan | undefined;
 
     if (options.incrementalMode) {
+      // O1: Pass ontology path so schema changes invalidate clean articles
+      const ontologyPath = join(this.kbDir, "ontology.yaml");
       differentialEngine = await DifferentialEngine.create(
         this.kbDir,
         this.rawDir,
         this.compiledDir,
+        ontologyPath,
       );
       differentialPlan = await differentialEngine.computePlan();
       skipDocIds = differentialPlan.cleanDocIds;
@@ -453,13 +539,12 @@ export class KBCompiler {
         });
       }
 
-      // Prune orphaned articles before synthesis
-      if (!options.dryRun && differentialPlan.orphanDocIds.size > 0) {
-        await differentialEngine.pruneOrphans(differentialPlan.orphanDocIds);
-        warnings.push(
-          `Pruned ${differentialPlan.orphanDocIds.size} orphaned article(s) (source files deleted)`,
-        );
-      }
+      // D1: Do NOT prune orphans here — the manifest hasn't been saved yet.
+      // Pruning before the save creates a crash window: if synthesis fails after
+      // pruning but before save, the articles are gone and the manifest still
+      // shows their sources as present. The next run won't know to re-synthesize them.
+      //
+      // Orphan pruning is deferred to AFTER differentialEngine.save() below.
     }
 
     // ── Ingest ───────────────────────────────────────────────────────
@@ -556,16 +641,33 @@ export class KBCompiler {
 
     emit({ stage: "extract", message: `Analyzing ${contents.length} source file(s)...` });
 
-    const extractor = new ConceptExtractor(this.ontology, this.registry, this.extractFn);
+    // P2-4: Snapshot the registry for the extractor so synthesis-phase mutations
+    // don't affect extraction. The extractor uses registry for vocabulary scan and
+    // registry-match confidence — it reads but never writes.
+    const registrySnapshot: ConceptRegistry = new Map(this.registry);
+    const extractor = new ConceptExtractor(this.ontology, registrySnapshot, this.extractFn);
     const plan = await extractor.buildPlan(contents);
 
-    // Phase 2C: Persist compilation plan for crash recovery
+    // Diagnostic: save the last compilation plan for debugging (not used for crash recovery)
     if (!options.dryRun) {
-      await writeFile(
-        join(this.kbDir, ".kb-compilation-plan.json"),
+      await atomicWriteFile(
+        join(this.kbDir, ".kb-debug-last-plan.json"),
         JSON.stringify(plan, null, 2),
-        "utf-8",
       );
+    }
+
+    // ── P4-1: Semantic deduplication ────────────────────────────────
+    // Detect near-duplicate article plans and merge them before synthesis
+    // to prevent redundant LLM calls and duplicate compiled articles.
+    if (plan.articles.length > 1) {
+      const { merged, removed } = deduplicatePlans(plan.articles);
+      if (removed.length > 0) {
+        warnings.push(
+          `Deduplicated ${removed.length} near-duplicate article plan(s): ` +
+          removed.map((r) => `"${r.docId}" → "${r.mergedInto}"`).join(", "),
+        );
+        plan.articles = merged;
+      }
     }
 
     // ── Synthesize ───────────────────────────────────────────────────
@@ -584,10 +686,189 @@ export class KBCompiler {
       onProgress: (event) => emit({ stage: "synthesize", event }),
     });
 
-    // Persist the source-hash manifest after a successful differential compile
+    // Persist the source-hash manifest after a successful differential compile.
+    // D1: Orphan pruning is deferred until AFTER the manifest is saved, so a
+    // crash between synthesis and manifest-save cannot cause silent article loss.
     if (options.incrementalMode && differentialEngine && !options.dryRun) {
       await differentialEngine.save();
+      // Now safe to prune: manifest has advanced, so next run won't treat
+      // orphan sources as "present" if the process crashes during unlink.
+      if (differentialPlan && differentialPlan.orphanDocIds.size > 0) {
+        await differentialEngine.pruneOrphans(differentialPlan.orphanDocIds);
+        warnings.push(
+          `Pruned ${differentialPlan.orphanDocIds.size} orphaned article(s) (source files deleted)`,
+        );
+      }
     }
+
+    // ── M2: Grounding pass (optional, L1 always, L2/L3 need embedFn/generateFn) ──────────
+    let groundingResult: CompileResult["grounding"] | undefined;
+    const groundingAction = options.groundingAction ?? "warn"; // default: warn
+
+    if (groundingAction !== false && !options.dryRun && synthesis.articles.length > 0) {
+      const groundingAdapter: KBGroundingAdapter =
+        this.pluginHost?.getKBGroundingAdapter() ?? new MultiLayerGroundingPlugin();
+
+      // P1-1: Adapt threshold for L1-only mode. Vocabulary overlap alone cannot
+      // distinguish semantic support from vocabulary co-occurrence, so require
+      // at least some claims to be keyword-verified (0.6 vs 0.5).
+      const isL1Only = groundingAdapter instanceof MultiLayerGroundingPlugin &&
+        !groundingAdapter.hasEmbedding && !groundingAdapter.hasLLM;
+      const groundingThreshold = options.groundingThreshold ?? (isL1Only ? 0.6 : 0.5);
+
+      const perArticle: NonNullable<CompileResult["grounding"]>["perArticle"] = [];
+      let totalScore = 0;
+      let failed = 0;
+
+      for (const article of synthesis.articles) {
+        // I5: skip grounding for unchanged articles — the content-unchanged path
+        // carries no sourcePaths/body and would fire an expensive pool-all-sources
+        // grounding call against identical content. Grounding of clean articles
+        // was already validated on their original compile run.
+        if (article.action === "skipped" || article.action === "failed") continue;
+        // P0-1: scope source texts to only the files that contributed to THIS article.
+        // The old design pooled all source texts for every article, causing inflated
+        // grounding scores (unrelated sources match unrelated claims by coincidence)
+        // and masking real hallucinations in multi-topic KBs.
+        const sourceTexts: string[] = [];
+        const contributingPaths = article.sourcePaths ?? [];
+        if (contributingPaths.length > 0) {
+          for (const p of contributingPaths) {
+            const ingested = contentsByPath.get(p);
+            if (ingested?.text) sourceTexts.push(ingested.text);
+          }
+        } else {
+          // Fallback: article was synthesized before sourcePaths was added to the type
+          // (or the synthesizer returned a skipped/failed result). Pool all sources.
+          for (const content of contentsByPath.values()) {
+            if (content.text) sourceTexts.push(content.text);
+          }
+        }
+
+        if (sourceTexts.length === 0) continue;
+
+        try {
+          // P2-1: use the body carried from synthesis — no disk re-read needed.
+          // article.body is set for all created/updated articles in non-dryRun mode.
+          // For skipped or failed articles, body is undefined; fall back to disk read.
+          let articleBody = article.body ?? "";
+          if (!articleBody) {
+            // Fallback: read from disk (dryRun preview, or pre-P2-1 synthesizer)
+            const articlePath = join(this.compiledDir, `${article.docId}.md`);
+            try {
+              const raw = await readFile(articlePath, "utf-8");
+              const fmMatch = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/);
+              articleBody = fmMatch?.[1]?.trim() ?? raw;
+            } catch {
+              continue; // article not on disk and no in-memory body — skip
+            }
+          }
+
+          const result: KBGroundingResult = await groundingAdapter.validateArticle(
+            {
+              docId: article.docId,
+              body: articleBody,
+              title: article.canonicalTitle,
+              entityType: article.registryEntry?.entityType ?? "unknown",
+            },
+            sourceTexts,
+          );
+
+          const passed = result.score >= groundingThreshold;
+          totalScore += result.score;
+
+          perArticle.push({
+            docId: article.docId,
+            score: result.score,
+            totalClaims: result.totalClaims,
+            supportedClaims: result.supportedClaims,
+            passed,
+          });
+
+          if (!passed) {
+            failed++;
+            if (groundingAction === "fail") {
+              throw new Error(
+                `Grounding failed for "${article.docId}" (score=${result.score.toFixed(2)}, threshold=${groundingThreshold}). Aborting.`,
+              );
+            } else if (groundingAction === "warn") {
+              warnings.push(
+                `Grounding warning: "${article.docId}" scored ${(result.score * 100).toFixed(0)}% (threshold: ${(groundingThreshold * 100).toFixed(0)}%)`,
+              );
+            } else if (groundingAction === "skip") {
+              // Fix C-3: delete the written article so it does not appear in the compiled KB
+              const articlePath = join(this.compiledDir, `${article.docId}.md`);
+              try {
+                await unlink(articlePath);
+                warnings.push(
+                  `Grounding: removed "${article.docId}" — score ${(result.score * 100).toFixed(0)}% below threshold ${(groundingThreshold * 100).toFixed(0)}%`,
+                );
+              } catch {
+                warnings.push(
+                  `Grounding: failed to remove "${article.docId}" after grounding failure (file may not exist)`,
+                );
+              }
+            }
+          }
+        } catch (err) {
+          if ((err as Error).message?.startsWith("Grounding failed")) throw err;
+          // Non-fatal: grounding errors don’t block compilation
+        }
+      }
+
+      if (perArticle.length > 0) {
+        groundingResult = {
+          articlesVerified: perArticle.length,
+          articlesPassed: perArticle.length - failed,
+          articlesFailed: failed,
+          averageScore: totalScore / perArticle.length,
+          perArticle,
+        };
+      }
+    }
+
+    // ── P4-3: Contradiction detection (post-synthesis, non-fatal) ────────────
+    if (!options.dryRun && synthesis.articles.length > 1) {
+      try {
+        const contradictions = await detectContradictions(this.compiledDir, {
+          maxArticles: 200,
+        });
+        if (contradictions.pairs.length > 0) {
+          warnings.push(
+            `Contradiction scan: ${contradictions.pairs.length} potential contradiction(s) detected across ${contradictions.articlesScanned} articles`,
+          );
+          for (const pair of contradictions.pairs.slice(0, 5)) {
+            warnings.push(
+              `  [${pair.type}] "${pair.articleA}" vs "${pair.articleB}": ` +
+              `"${pair.claimA.slice(0, 80)}…" vs "${pair.claimB.slice(0, 80)}…"`,
+            );
+          }
+          if (contradictions.pairs.length > 5) {
+            warnings.push(
+              `  ... and ${contradictions.pairs.length - 5} more (see .kb-contradictions.json)`,
+            );
+          }
+          // Write full report for human review
+          try {
+            await atomicWriteFile(
+              join(this.kbDir, ".kb-contradictions.json"),
+              JSON.stringify(contradictions, null, 2),
+            );
+          } catch { /* non-fatal */ }
+        }
+        // R-9: Surface truncation so users know the scan was incomplete
+        if (contradictions.truncated) {
+          warnings.push(
+            `Contradiction scan stopped early: comparison budget exhausted (KB is large). ` +
+            `Results above cover ${contradictions.articlesScanned} articles but may miss contradictions ` +
+            `between later articles. Increase maxComparisons in ContradictionOptions to scan further.`,
+          );
+        }
+      } catch {
+        // Non-fatal: contradiction detection errors don't block compilation
+      }
+    }
+
 
     return this.finalize({
       startMs,
@@ -603,8 +884,20 @@ export class KBCompiler {
       discoverOptions: options.discover,
       visionOptions: options.vision,
       llmOptions: options.llmOptions,
+      groundingResult,
+      ontologyOptions: {
+        generateProposals: options.ontologyProposals !== false,
+        autoEvolve:
+          typeof options.ontologyProposals === "object"
+            ? (options.ontologyProposals.autoEvolve ?? false)
+            : false,
+      },
       dryRun: options.dryRun,
     });
+    } finally {
+      // Fix L-1: always release the lock, even on error
+      await lock.release();
+    }
   }
 
   // ── Public: individual stages ─────────────────────────────────────────────
@@ -664,6 +957,10 @@ export class KBCompiler {
     discoverOptions?: boolean | DiscoveryOptions;
     visionOptions?: boolean | VisionPassOptions;
     llmOptions?: LLMClientOptions;
+    groundingAction?: "warn" | "skip" | "fail" | false;
+    groundingThreshold?: number;
+    groundingResult?: CompileResult["grounding"];
+    ontologyOptions?: { generateProposals: boolean; autoEvolve: boolean };
     dryRun?: boolean;
   }): Promise<CompileResult> {
     const {
@@ -716,7 +1013,8 @@ export class KBCompiler {
       });
 
       if (!dryRun) {
-        await writeFile(this.lintReportPath, JSON.stringify(lintReport, null, 2), "utf-8");
+        // Fix C-2: atomic write to prevent partial-write corruption
+        await atomicWriteFile(this.lintReportPath, JSON.stringify(lintReport, null, 2));
       }
 
       if (this.autoFix && lintReport.summary.autoFixable > 0) {
@@ -729,7 +1027,8 @@ export class KBCompiler {
     // Previously lived inside the autoLint block, which meant it wasn't written
     // when autoLint was disabled.
     if (!dryRun) {
-      await writeFile(this.registryPath, serializeRegistry(this.registry), "utf-8");
+      // Fix C-2: atomic write to prevent partial-write corruption
+      await atomicWriteFile(this.registryPath, serializeRegistry(this.registry));
     }
 
     // ── Phase C: Opt-in advanced intelligence features ────────────────────────
@@ -785,6 +1084,92 @@ export class KBCompiler {
       }
     }
 
+    // ── O7: Ontology Proposals ────────────────────────────────────────────────
+    if (!dryRun && params.ontologyOptions?.generateProposals) {
+      try {
+        await generateOntologyProposals(
+          this.kbDir,
+          this.ontology,
+          this.registry,
+          { autoEvolve: params.ontologyOptions.autoEvolve },
+        );
+      } catch {
+        warnings.push("Ontology proposal generation failed (non-fatal)");
+      }
+    }
+
+    // ── O8: Vocabulary-Registry Sync ─────────────────────────────────────────
+    // Fix A-1: write vocab additions to a sidecar file (.kb-vocab-sync.json)
+    // instead of mutating ontology.yaml. This preserves the user's hand-crafted
+    // ontology.yaml and keeps compilation idempotent (pure function of inputs).
+    if (!dryRun && synthesis.created + synthesis.updated > 0) {
+      const vocabSidecarPath = join(this.kbDir, ".kb-vocab-sync.json");
+
+      // P1-3: Read existing sidecar to merge (not overwrite) entries.
+      // This makes the write idempotent — only truly new entries are added.
+      // R3-7: Use null-prototype object to prevent prototype pollution from tampered sidecar.
+      let existingVocab: Record<string, { aliases: string[]; entityType?: string; docId?: string }> =
+        Object.create(null) as Record<string, { aliases: string[]; entityType?: string; docId?: string }>;
+      try {
+        const raw = await readFile(vocabSidecarPath, "utf-8");
+        const parsed = JSON.parse(raw) as { vocabulary?: typeof existingVocab };
+        if (parsed.vocabulary) {
+          // Copy into null-prototype object to prevent __proto__ pollution
+          for (const [k, v] of Object.entries(parsed.vocabulary)) {
+            if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+            existingVocab[k] = v;
+          }
+        }
+      } catch { /* first run or malformed */ }
+
+      const newVocabEntries: Record<string, { aliases: string[]; entityType?: string; docId?: string }> = {};
+      for (const [docId, entry] of this.registry) {
+        const titleLower = (entry.canonicalTitle ?? "").toLowerCase();
+        if (!titleLower) continue;
+        if (!this.ontology.vocabulary[titleLower] && !existingVocab[titleLower]) {
+          // Update in-memory ontology for this session
+          this.ontology.vocabulary[titleLower] = {
+            aliases: entry.aliases.map((a) => a.toLowerCase()),
+            entityType: entry.entityType,
+            docId,
+          };
+          newVocabEntries[titleLower] = {
+            aliases: entry.aliases.map((a) => a.toLowerCase()),
+            entityType: entry.entityType,
+            docId,
+          };
+        }
+      }
+      const vocabAdded = Object.keys(newVocabEntries).length;
+      if (vocabAdded > 0) {
+        warnings.push(`Synced ${vocabAdded} new registry entries into vocabulary (O8)`);
+        // Write merged sidecar (existing + new) — preserves user's ontology.yaml
+        try {
+          const mergedVocab = { ...existingVocab, ...newVocabEntries };
+          await atomicWriteFile(vocabSidecarPath, JSON.stringify({
+            generatedAt: new Date().toISOString(),
+            note: "Auto-generated by O8 vocab sync. Do not edit — will be overwritten.",
+            vocabulary: mergedVocab,
+          }, null, 2));
+        } catch {
+          warnings.push("Vocab sync sidecar write failed (non-fatal, in-memory vocab still active)");
+        }
+      }
+    }
+
+    // ── O9: Ontology Version Tracking ────────────────────────────────────────
+    // Save .kb-ontology-previous.yaml after each successful compile.
+    // Used by O1 (DifferentialEngine) for ontology-change detection.
+    if (!dryRun && synthesis.failed === 0) {
+      try {
+        const previousOntologyPath = join(this.kbDir, ".kb-ontology-previous.yaml");
+        // Fix C-2: atomic write
+        await atomicWriteFile(previousOntologyPath, serializeOntology(this.ontology));
+      } catch {
+        // Non-fatal — just means next run won't have a previous ontology to compare
+      }
+    }
+
     const result: CompileResult = {
       success: synthesis.failed === 0,
       sourcesScanned,
@@ -795,6 +1180,7 @@ export class KBCompiler {
       heal: healResult,
       discovery: discoveryResult,
       vision: visionResult,
+      grounding: params.groundingResult,
       durationMs: Date.now() - startMs,
       ingestErrors,
       warnings,
@@ -831,120 +1217,24 @@ async function scanDirectory(dir: string): Promise<string[]> {
   const files: string[] = [];
   try {
     const entries = await readdir(dir);
-    await Promise.all(
-      entries.map(async (entry) => {
-        const fullPath = join(dir, entry);
-        try {
-          const s = await stat(fullPath);
-          if (s.isDirectory()) {
-            const nested = await scanDirectory(fullPath);
-            files.push(...nested);
-          } else if (s.isFile()) {
-            files.push(fullPath);
-          }
-        } catch {
-          /* skip unreadable entries */
+    // E1: sequential iteration prevents EMFILE from opening all stat handles simultaneously.
+    // For raw/ directories the overhead is negligible vs LLM synthesis cost.
+    for (const entry of entries) {
+      const fullPath = join(dir, entry);
+      try {
+        const s = await stat(fullPath);
+        if (s.isDirectory()) {
+          const nested = await scanDirectory(fullPath);
+          files.push(...nested);
+        } else if (s.isFile()) {
+          files.push(fullPath);
         }
-      }),
-    );
+      } catch {
+        /* skip unreadable entries */
+      }
+    }
   } catch {
     /* raw/ may not exist yet */
   }
   return files.sort();
-}
-
-/**
- * Phase 2B: Content-hash based incremental filtering.
- * Uses SHA-256 content hashes stored in a reverse index instead of fragile
- * filesystem mtime comparisons. This fixes:
- * - False positives from `touch`, `git checkout`, or NFS timestamp drift
- * - Unnecessary re-synthesis of semantically identical content
- */
-async function filterIncremental(
-  sourceFiles: string[],
-  compiledDir: string,
-  registry: ConceptRegistry,
-): Promise<string[]> {
-  // Build a hash cache for compiled articles: docId → content hash
-  const compiledHashes = new Map<string, string>();
-  for (const entry of registry.values()) {
-    const compiledPath = join(compiledDir, `${entry.docId}.md`);
-    try {
-      const content = await readFile(compiledPath, "utf-8");
-      compiledHashes.set(entry.docId, hashContent(content));
-    } catch {
-      /* compiled file doesn't exist */
-    }
-  }
-
-  // Build reverse index: for each source file, find which compiled articles
-  // reference it (via compiled_from frontmatter field)
-  const sourceToDocIds = new Map<string, string[]>();
-  for (const entry of registry.values()) {
-    const compiledPath = join(compiledDir, `${entry.docId}.md`);
-    try {
-      const content = await readFile(compiledPath, "utf-8");
-      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-      if (fmMatch) {
-        const compiledFrom = fmMatch[1]?.match(/compiled_from:\s*\[([^\]]*)\]/);
-        if (compiledFrom) {
-          const paths = compiledFrom[1]!
-            .split(",")
-            .map((s) => s.trim().replace(/["']/g, ""))
-            .filter(Boolean);
-          for (const p of paths) {
-            const list = sourceToDocIds.get(p) ?? [];
-            list.push(entry.docId);
-            sourceToDocIds.set(p, list);
-          }
-        }
-      }
-    } catch {
-      /* skip */
-    }
-  }
-
-  // For each source file, check if the source content has changed
-  const results = await Promise.all(
-    sourceFiles.map(async (filePath) => {
-      try {
-        const sourceContent = await readFile(filePath, "utf-8");
-        const sourceHash = hashContent(sourceContent);
-
-        // Check if any compiled article references this source and is unchanged
-        const docIds = sourceToDocIds.get(filePath) ?? [];
-        if (docIds.length === 0) {
-          return filePath; // No compiled article references this source — include it
-        }
-
-        // If any compiled article exists for this source, check if source has changed
-        // by comparing against a stored source hash (we store source hashes in registry)
-        // For now, if the compiled article exists, check if the source stat is newer
-        for (const docId of docIds) {
-          if (compiledHashes.has(docId)) {
-            const compiledPath = join(compiledDir, `${docId}.md`);
-            try {
-              const compiledStat = await stat(compiledPath);
-              const sourceStat = await stat(filePath);
-              if (compiledStat.mtimeMs > sourceStat.mtimeMs) {
-                return null; // Compiled is newer — skip
-              }
-            } catch {
-              /* include if we can't compare */
-            }
-          }
-        }
-
-        return filePath;
-      } catch {
-        return filePath; // If we can't read, include it
-      }
-    }),
-  );
-
-  return results.filter((f): f is string => f !== null);
-}
-
-function hashContent(content: string): string {
-  return createHash("sha256").update(content, "utf-8").digest("hex").slice(0, 16);
 }

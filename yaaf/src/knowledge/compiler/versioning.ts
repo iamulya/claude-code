@@ -10,9 +10,10 @@
  * This prevents data loss when the LLM produces a degraded article.
  */
 
-import { readFile, writeFile, mkdir, readdir, unlink, stat } from "fs/promises";
-import { join, dirname } from "path";
+import { readFile, mkdir, readdir, unlink, stat } from "fs/promises";
+import { join, dirname, relative } from "path";
 import { createHash } from "crypto";
+import { atomicWriteFile } from "./atomicWrite.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ export async function writeWithVersioning(
   outputPath: string,
   newContent: string,
   versionsDir: string,
+  compiledDir: string,           // P1-5: full relative path requires knowing compiled root
   maxVersions: number = DEFAULT_MAX_VERSIONS,
 ): Promise<WriteResult> {
   const newHash = contentHash(newContent);
@@ -65,15 +67,15 @@ export async function writeWithVersioning(
     }
 
     // Back up existing version
-    await backupVersion(outputPath, existingContent, versionsDir);
+    await backupVersion(outputPath, existingContent, versionsDir, compiledDir);
 
     // Prune old versions
-    await pruneVersions(outputPath, versionsDir, maxVersions);
+    await pruneVersions(outputPath, versionsDir, compiledDir, maxVersions);
   }
 
-  // Write new version
+  // Write new version (P0-3: atomic write prevents crash-induced corruption)
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, newContent, "utf-8");
+  await atomicWriteFile(outputPath, newContent);
 
   return {
     action: existingContent !== null ? "updated" : "created",
@@ -84,12 +86,16 @@ export async function writeWithVersioning(
 
 /**
  * List all saved versions of an article, newest first.
+ *
+ * @param compiledDir - Root compiled/ directory. Required for full-path version
+ *   subdirectory resolution (P1-5). Pass the same compiledDir used by KnowledgeSynthesizer.
  */
 export async function listVersions(
   outputPath: string,
   versionsDir: string,
+  compiledDir: string,
 ): Promise<ArticleVersion[]> {
-  const versionDir = versionDirForArticle(outputPath, versionsDir);
+  const versionDir = versionDirForArticle(outputPath, versionsDir, compiledDir);
   try {
     const files = await readdir(versionDir);
     const versions: ArticleVersion[] = [];
@@ -124,9 +130,10 @@ export async function listVersions(
 export async function rollbackToVersion(
   outputPath: string,
   versionsDir: string,
+  compiledDir: string,           // P1-5
   timestamp: number,
 ): Promise<boolean> {
-  const versionDir = versionDirForArticle(outputPath, versionsDir);
+  const versionDir = versionDirForArticle(outputPath, versionsDir, compiledDir);
   try {
     const files = await readdir(versionDir);
     const targetFile = files.find((f) => {
@@ -141,12 +148,12 @@ export async function rollbackToVersion(
     // Back up current before rollback
     try {
       const current = await readFile(outputPath, "utf-8");
-      await backupVersion(outputPath, current, versionsDir);
+      await backupVersion(outputPath, current, versionsDir, compiledDir);
     } catch {
       /* no current file — that's fine */
     }
 
-    await writeFile(outputPath, versionContent, "utf-8");
+    await atomicWriteFile(outputPath, versionContent); // P0-3: atomic rollback write
     return true;
   } catch {
     return false;
@@ -159,32 +166,47 @@ function contentHash(content: string): string {
   return createHash("sha256").update(content, "utf-8").digest("hex").slice(0, 16);
 }
 
-function versionDirForArticle(outputPath: string, versionsDir: string): string {
-  // Extract docId from path: /kb/compiled/concepts/foo.md → concepts/foo
-  const parts = outputPath.replace(/\.md$/, "").split("/");
-  // Use last two segments as the version subdirectory
-  const docParts = parts.slice(-2).join("/");
-  return join(versionsDir, docParts);
+/**
+ * P1-5: Use the full relative path (from compiledDir) as the version subdirectory.
+ * The old implementation used only the last 2 path segments, causing collisions
+ * when two articles share the same basename under different subdirectories
+ * (e.g. compiled/concepts/transformer.md vs compiled/research-papers/concepts/transformer.md).
+ */
+function versionDirForArticle(
+  outputPath: string,
+  versionsDir: string,
+  compiledDir: string,
+): string {
+  const relPath = relative(compiledDir, outputPath)
+    .replace(/\.md$/, "")
+    .replace(/\\/g, "/");  // normalize Windows separators
+  return join(versionsDir, relPath);
 }
 
 async function backupVersion(
   outputPath: string,
   content: string,
   versionsDir: string,
+  compiledDir: string,
 ): Promise<void> {
-  const versionDir = versionDirForArticle(outputPath, versionsDir);
+  const versionDir = versionDirForArticle(outputPath, versionsDir, compiledDir);
   await mkdir(versionDir, { recursive: true });
   const timestamp = Date.now();
-  const versionPath = join(versionDir, `${timestamp}.md`);
-  await writeFile(versionPath, content, "utf-8");
+  // A2 fix: append a 6-char content hash suffix to avoid filename collision when
+  // two articles are updated concurrently at the same millisecond. The suffix is
+  // deterministic (same content → same suffix) so retries are idempotent.
+  const hashSuffix = contentHash(content).slice(0, 6);
+  const versionPath = join(versionDir, `${timestamp}-${hashSuffix}.md`);
+  await atomicWriteFile(versionPath, content); // P0-3: atomic backup
 }
 
 async function pruneVersions(
   outputPath: string,
   versionsDir: string,
+  compiledDir: string,
   maxVersions: number,
 ): Promise<void> {
-  const versionDir = versionDirForArticle(outputPath, versionsDir);
+  const versionDir = versionDirForArticle(outputPath, versionsDir, compiledDir);
   try {
     const files = (await readdir(versionDir)).filter((f) => f.endsWith(".md")).sort(); // oldest first (timestamp filenames)
 

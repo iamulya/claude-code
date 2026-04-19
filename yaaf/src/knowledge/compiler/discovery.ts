@@ -299,7 +299,10 @@ async function loadAllArticles(compiledDir: string): Promise<ArticleSummary[]> {
     // Skip part files and assets
     if (docId.startsWith("assets/")) continue;
 
-    const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    // P2: CRLF normalization — same class as reader.ts/M4.
+    // Windows-format compiled files cause silent skip without this.
+    const normalized = raw.replace(/\r\n/g, "\n");
+    const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
     if (!fmMatch) continue;
 
     const fm = fmMatch[1] ?? "";

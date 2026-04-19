@@ -38,9 +38,10 @@
  * ```
  */
 
-import { readFile, writeFile, readdir, stat, unlink } from "fs/promises";
-import { join, relative } from "path";
+import { readFile, readdir, stat, unlink } from "fs/promises";
+import { join, relative, resolve, sep } from "path";
 import { createHash } from "crypto";
+import { atomicWriteFile } from "./atomicWrite.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,11 @@ export interface SourceHashManifest {
   generatedAt: number;
   /** relative path from rawDir → SHA-256 hex */
   hashes: Record<string, string>;
+  /**
+   * SHA-256 of ontology.yaml at the time of the last successful compile.
+   * When this changes, all articles are marked stale (O1).
+   */
+  ontologyHash?: string;
 }
 
 /** Output of computePlan() */
@@ -83,6 +89,8 @@ export interface DifferentialPlan {
     orphanArticles: number;
     totalRawFiles: number;
     changedRawFiles: number;
+    /** True if the ontology changed since last compile */
+    ontologyChanged: boolean;
   };
 }
 
@@ -92,9 +100,69 @@ function sha256(content: string): string {
   return createHash("sha256").update(content, "utf-8").digest("hex");
 }
 
+/**
+ * P0-5: Binary-safe SHA-256. Accepts a Buffer so binary files (PDFs, images)
+ * are hashed without UTF-8 decoding mangling their bytes.
+ */
+function sha256buf(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+// I3 / A3: shared bounded pool for all bulk I/O in this module.
+// WALK_CONCURRENCY caps stat() calls inside walkFiles.
+// IO_CONCURRENCY caps readFile() calls in computePlan and hashRawFiles.
+const WALK_CONCURRENCY = 64;
+const IO_CONCURRENCY = 64;
+
+/**
+ * Run tasks with at most `limit` in-flight at any time.
+ * Like Promise.allSettled but concurrency-bounded.
+ */
+// B2: not `async` — the function returns `new Promise(...)` directly.
+// Making it async would wrap the result in an extra Promise microtask for no benefit.
+function pAllSettled<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number,
+): Promise<Array<PromiseSettledResult<T>>> {
+  // B3: guard against limit<=0 which causes the while loop to never fire,
+  // leaving the Promise pending forever.
+  const concurrency = Math.max(1, limit);
+  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+  let next = 0;
+  let active = 0;
+  return new Promise((resolve) => {
+    const launch = () => {
+      while (active < concurrency && next < tasks.length) {
+        const i = next++;
+        active++;
+        tasks[i]!()
+          .then(
+            (v) => { results[i] = { status: "fulfilled", value: v }; },
+            (e) => { results[i] = { status: "rejected", reason: e }; },
+          )
+          .finally(() => { active--; launch(); if (active === 0 && next === tasks.length) resolve(results); });
+      }
+      if (tasks.length === 0) resolve(results);
+    };
+    launch();
+  });
+}
+
 async function walkFiles(dir: string): Promise<string[]> {
   const out: string[] = [];
-  async function recurse(d: string) {
+  let permits = WALK_CONCURRENCY;
+  const waiters: Array<() => void> = [];
+
+  const acquirePermit = (): Promise<void> => {
+    if (permits > 0) { permits--; return Promise.resolve(); }
+    return new Promise<void>((resolve) => waiters.push(resolve));
+  };
+  const releasePermit = (): void => {
+    const next = waiters.shift();
+    if (next) { next(); } else { permits++; }
+  };
+
+  async function recurse(d: string): Promise<void> {
     let entries: string[];
     try {
       entries = await readdir(d);
@@ -104,18 +172,54 @@ async function walkFiles(dir: string): Promise<string[]> {
     await Promise.all(
       entries.map(async (e) => {
         const full = join(d, e);
+        await acquirePermit();
         try {
           const s = await stat(full);
-          if (s.isDirectory()) await recurse(full);
-          else out.push(full);
+          if (s.isDirectory()) {
+            releasePermit();
+            await recurse(full);
+          } else {
+            out.push(full);
+            releasePermit();
+          }
         } catch {
-          /* skip unreadable */
+          releasePermit(); /* skip unreadable */
         }
       }),
     );
   }
   await recurse(dir);
   return out.sort();
+}
+
+/**
+ * D-2: Split a YAML inline-sequence string on commas, respecting single and
+ * double quotes so paths that contain commas (legal on all OSes) are not split.
+ *
+ * @example
+ * splitQuotedList('"/path/a,b.pdf", "/path/c.pdf"')
+ * // => ['/path/a,b.pdf', '/path/c.pdf']
+ */
+function splitQuotedList(inner: string): string[] {
+  const items: string[] = [];
+  let current = "";
+  let inDouble = false;
+  let inSingle = false;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i]!;
+    if (ch === "\"" && !inSingle) { inDouble = !inDouble; continue; }
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === "," && !inDouble && !inSingle) {
+      const trimmed = current.trim();
+      if (trimmed) items.push(trimmed);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  const last = current.trim();
+  if (last) items.push(last);
+  return items;
 }
 
 /**
@@ -145,10 +249,10 @@ function parseCompiledFrom(content: string): string[] {
   // Inline list: compiled_from: ["/path/a", "/path/b"]
   const inlineMatch = fm.match(/compiled_from:\s*\[([^\]]*)\]/);
   if (inlineMatch) {
-    return inlineMatch[1]!
-      .split(",")
-      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-      .filter(Boolean);
+    // D-2: quote-aware split — naive split(",") breaks on paths containing commas
+    // e.g. compiled_from: ["/path/a,b.pdf", "/path/c.pdf"] would yield
+    // '"path/a', 'b.pdf"', '/path/c.pdf' — both path fragments fail validation.
+    return splitQuotedList(inlineMatch[1]!).filter(Boolean);
   }
 
   return [];
@@ -160,30 +264,42 @@ export class DifferentialEngine {
   private readonly manifestPath: string;
   private readonly rawDir: string;
   private readonly compiledDir: string;
+  private readonly ontologyPath?: string;
 
   /** Current (freshly computed) hashes */
   private currentHashes: Record<string, string> = {};
   /** Previously stored hashes (undefined = first run) */
   private previousHashes: Record<string, string> | null = null;
+  /** Current ontology hash */
+  private currentOntologyHash: string | null = null;
+  /** Previous ontology hash (from manifest) */
+  private previousOntologyHash: string | null = null;
 
-  private constructor(kbDir: string, rawDir: string, compiledDir: string) {
+  private constructor(kbDir: string, rawDir: string, compiledDir: string, ontologyPath?: string) {
     this.manifestPath = join(kbDir, ".kb-source-hashes.json");
     this.rawDir = rawDir;
     this.compiledDir = compiledDir;
+    this.ontologyPath = ontologyPath;
   }
 
   /**
    * Create a DifferentialEngine, hashing all raw files and loading the
    * previous manifest from disk (if it exists).
+   *
+   * @param ontologyPath Optional path to ontology.yaml. When provided,
+   *   the engine tracks ontology changes and marks all articles stale
+   *   when the ontology schema changes.
    */
   static async create(
     kbDir: string,
     rawDir: string,
     compiledDir: string,
+    ontologyPath?: string,
   ): Promise<DifferentialEngine> {
-    const engine = new DifferentialEngine(kbDir, rawDir, compiledDir);
+    const engine = new DifferentialEngine(kbDir, rawDir, compiledDir, ontologyPath);
     await engine.hashRawFiles();
     await engine.loadPreviousManifest();
+    await engine.hashOntology();
     return engine;
   }
 
@@ -215,6 +331,11 @@ export class DifferentialEngine {
     // No previous manifest → everything is "new" → full compile
     const isFirstRun = this.previousHashes === null;
 
+    // Check if ontology changed (O1)
+    const ontologyChanged = !!(this.currentOntologyHash &&
+      this.previousOntologyHash &&
+      this.currentOntologyHash !== this.previousOntologyHash);
+
     // ── Step 2: Scan compiled articles ──────────────────────────────────────
 
     const compiledFiles = (await walkFiles(this.compiledDir)).filter((f) => f.endsWith(".md"));
@@ -222,10 +343,11 @@ export class DifferentialEngine {
     // Map: docId → set of RELATIVE source paths (relative to rawDir)
     const articleSources = new Map<string, Set<string>>();
 
-    await Promise.allSettled(
-      compiledFiles.map(async (filePath) => {
+    await pAllSettled<void>(
+      compiledFiles.map((filePath) => async () => {
         try {
-          const content = await readFile(filePath, "utf-8");
+          // P2-6: normalize CRLF so regex parsers work on Windows-edited files
+          const content = (await readFile(filePath, "utf-8")).replace(/\r\n/g, "\n");
           const sources = parseCompiledFrom(content);
           if (sources.length === 0) return;
 
@@ -233,20 +355,26 @@ export class DifferentialEngine {
           const rel = relative(this.compiledDir, filePath);
           const docId = rel.replace(/\.md$/, "").replace(/\\/g, "/");
 
-          const relSources = sources.map((abs) => {
-            // compiled_from stores absolute paths — convert to relative from rawDir
-            try {
-              return relative(this.rawDir, abs);
-            } catch {
-              return abs;
-            }
-          });
+          const rawDirResolved = resolve(this.rawDir);
+          const relSources = sources
+            .map((abs) => {
+              // P1-7: reject paths that escape rawDir (crafted compiled_from entries)
+              try {
+                const absResolved = resolve(abs);
+                if (!absResolved.startsWith(rawDirResolved + sep)) return null;
+                return relative(rawDirResolved, absResolved);
+              } catch {
+                return null;
+              }
+            })
+            .filter((p): p is string => p !== null);
 
           articleSources.set(docId, new Set(relSources));
         } catch {
           /* skip unreadable */
         }
       }),
+      IO_CONCURRENCY,
     );
 
     // ── Step 3: Classify articles ────────────────────────────────────────────
@@ -269,7 +397,7 @@ export class DifferentialEngine {
       }
 
       const anySourceChanged = [...sources].some((s) => changedRelPaths.has(s));
-      if (anySourceChanged) {
+      if (anySourceChanged || ontologyChanged) {
         staleDocIds.add(docId);
       } else {
         cleanDocIds.add(docId);
@@ -290,6 +418,7 @@ export class DifferentialEngine {
         orphanArticles: orphanDocIds.size,
         totalRawFiles: allCurrentRel.size,
         changedRawFiles: changedRelPaths.size,
+        ontologyChanged,
       },
     };
   }
@@ -303,18 +432,30 @@ export class DifferentialEngine {
       version: 1,
       generatedAt: Date.now(),
       hashes: this.currentHashes,
+      ontologyHash: this.currentOntologyHash ?? undefined,
     };
-    await writeFile(this.manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+    await atomicWriteFile(this.manifestPath, JSON.stringify(manifest, null, 2));
   }
 
   /**
    * Delete compiled articles that are orphaned (all contributing sources gone).
    * Returns the list of docIds that were pruned.
+   *
+   * P1-7: Validates each resolved file path stays within compiledDir before
+   * unlinking, preventing path traversal via crafted compiled_from frontmatter.
    */
   async pruneOrphans(orphanDocIds: Set<string>): Promise<string[]> {
     const pruned: string[] = [];
+    const compiledDirResolved = resolve(this.compiledDir);
+
     for (const docId of orphanDocIds) {
       const filePath = join(this.compiledDir, `${docId}.md`);
+      // P1-7: reject any path that escapes compiledDir
+      const filePathResolved = resolve(filePath);
+      if (!filePathResolved.startsWith(compiledDirResolved + sep)) {
+        // Path traversal detected — skip silently (do not delete)
+        continue;
+      }
       try {
         await unlink(filePath);
         pruned.push(docId);
@@ -334,8 +475,8 @@ export class DifferentialEngine {
     const neededSources = new Set<string>();
 
     const compiledFiles = (await walkFiles(compiledDir)).filter((f) => f.endsWith(".md"));
-    await Promise.allSettled(
-      compiledFiles.map(async (filePath) => {
+    await pAllSettled<void>(
+      compiledFiles.map((filePath) => async () => {
         const rel = relative(compiledDir, filePath).replace(/\.md$/, "").replace(/\\/g, "/");
         if (!staleDocIds.has(rel)) return;
 
@@ -347,6 +488,7 @@ export class DifferentialEngine {
           /* skip */
         }
       }),
+      IO_CONCURRENCY,
     );
 
     // Also include previously-unknown files (not in any compiled article yet)
@@ -364,31 +506,53 @@ export class DifferentialEngine {
 
   private async hashRawFiles(): Promise<void> {
     const files = await walkFiles(this.rawDir);
-    const entries = await Promise.all(
-      files.map(async (filePath) => {
+    // A3: bound to IO_CONCURRENCY so we don't open all source files simultaneously.
+    const results = await pAllSettled<[string, string] | null>(
+      files.map((filePath) => async () => {
         try {
-          const content = await readFile(filePath, "utf-8");
+          // P0-5: read as Buffer (no encoding) so binary files hash correctly.
+          const content = await readFile(filePath);
           const rel = relative(this.rawDir, filePath);
-          return [rel, sha256(content)] as [string, string];
+          return [rel, sha256buf(content)] as [string, string];
         } catch {
           return null;
         }
       }),
+      IO_CONCURRENCY,
     );
     this.currentHashes = Object.fromEntries(
-      entries.filter((e): e is [string, string] => e !== null),
+      results
+        .filter((r): r is PromiseFulfilledResult<[string, string]> =>
+          r.status === "fulfilled" && r.value !== null)
+        .map((r) => r.value),
     );
   }
 
   private async loadPreviousManifest(): Promise<void> {
     try {
-      const raw = await readFile(this.manifestPath, "utf-8");
+      // P2-6: normalize CRLF so JSON.parse works on Windows-edited manifests
+      const raw = (await readFile(this.manifestPath, "utf-8")).replace(/\r\n/g, "\n");
       const parsed = JSON.parse(raw) as SourceHashManifest;
       if (parsed.version === 1 && parsed.hashes) {
         this.previousHashes = parsed.hashes;
+        this.previousOntologyHash = parsed.ontologyHash ?? null;
       }
     } catch {
       this.previousHashes = null; // First run
+    }
+  }
+
+  /**
+   * Compute the SHA-256 hash of the ontology file (O1).
+   * When this changes between compiles, all articles are re-synthesized.
+   */
+  private async hashOntology(): Promise<void> {
+    if (!this.ontologyPath) return;
+    try {
+      const content = await readFile(this.ontologyPath, "utf-8");
+      this.currentOntologyHash = sha256(content);
+    } catch {
+      this.currentOntologyHash = null;
     }
   }
 }

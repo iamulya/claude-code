@@ -15,8 +15,9 @@
  * - Contradictory claims (needs human review)
  */
 
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
+import { atomicWriteFile } from "./atomicWrite.js";
 import type { LLMCallFn } from "./llmClient.js";
 import type { LintReport, LintIssue } from "./linter/index.js";
 import type { ConceptRegistry } from "../ontology/index.js";
@@ -162,7 +163,9 @@ export async function healLintIssues(
     }
 
     if (fileChanged && !options.dryRun) {
-      await writeFile(filePath, modified, "utf-8");
+      // N3: plain writeFile() risks a half-written healed article on crash.
+      // atomicWriteFile uses tmp-rename for crash safety.
+      await atomicWriteFile(filePath, modified);
     }
   }
 
@@ -231,22 +234,33 @@ What should we do? Respond with EXACTLY one line in one of these formats:
 
   const trimmed = response.trim().split("\n")[0] ?? "";
 
-  if (trimmed.startsWith("REPLACE:")) {
-    const newTarget = trimmed.match(/\[\[(.+?)\]\]/)?.[1];
-    if (newTarget) {
-      const newContent = content.replace(`[[${brokenTarget}]]`, `[[${newTarget}]]`);
-      return {
-        healed: true,
-        newContent,
-        message: `Replaced [[${brokenTarget}]] → [[${newTarget}]]`,
-      };
+    const searchStr = `[[${brokenTarget}]]`;
+    if (trimmed.startsWith("REPLACE:")) {
+      const newTarget = trimmed.match(/\[\[(.+?)\]\]/)?.[1];
+      if (newTarget) {
+        // Q3: String.replace(str, str) interprets $ sequences in the replacement
+        // ($&, $1, $', $`). KB article titles may contain $ (e.g. "$100 Strategy").
+        // Use index-based splice to suppress all $ interpolation.
+        const replaceStr = `[[${newTarget}]]`;
+        const idx = content.indexOf(searchStr);
+        const newContent = idx >= 0
+          ? content.slice(0, idx) + replaceStr + content.slice(idx + searchStr.length)
+          : content;
+        return {
+          healed: true,
+          newContent,
+          message: `Replaced [[${brokenTarget}]] → [[${newTarget}]]`,
+        };
+      }
     }
-  }
 
-  if (trimmed.startsWith("REMOVE")) {
-    const newContent = content.replace(`[[${brokenTarget}]]`, brokenTarget);
-    return { healed: true, newContent, message: `Unlinked [[${brokenTarget}]] → plain text` };
-  }
+    if (trimmed.startsWith("REMOVE")) {
+      const idx = content.indexOf(searchStr);
+      const newContent = idx >= 0
+        ? content.slice(0, idx) + brokenTarget + content.slice(idx + searchStr.length)
+        : content;
+      return { healed: true, newContent, message: `Unlinked [[${brokenTarget}]] → plain text` };
+    }
 
   return { healed: false, message: `LLM chose KEEP for [[${brokenTarget}]]` };
 }
@@ -288,6 +302,17 @@ Rules:
   const newWordCount = response.split(/\s+/).filter(Boolean).length;
   if (newWordCount <= wordCount) {
     return { healed: false, message: "LLM response was not longer than original" };
+  }
+
+  // N4: verify frontmatter block survived — LLM may return body-only expansion,
+  // stripping entity_type/title etc. An article without frontmatter triggers
+  // MISSING_ENTITY_TYPE on next lint, re-queuing this article for heal → infinite loop.
+  const hasFrontmatter = /^---\r?\n[\s\S]*?\r?\n---/.test(response);
+  if (!hasFrontmatter) {
+    return {
+      healed: false,
+      message: "LLM response is missing frontmatter block — rejecting to prevent structure corruption",
+    };
   }
 
   return {

@@ -133,7 +133,11 @@ export type PluginCapability =
   // ── Multi-agent & memory ──────────────────────────────────────────────────
   | "ipc" // IPCAdapter — swappable inter-agent message transport (S2-A)
   | "vectorstore" // VectorStoreAdapter — semantic memory retrieval (S3-A)
-  | "sandbox_backend"; // SandboxBackendAdapter — external tool execution runtime (Firecracker, gVisor)
+  | "sandbox_backend" // SandboxBackendAdapter — external tool execution runtime (Firecracker, gVisor)
+  // ── Knowledge Base ────────────────────────────────────────────────────────
+  | "kb_search" // KBSearchAdapter — pluggable KB search engine
+  | "kb_grounding" // KBGroundingAdapter — pluggable hallucination detection
+  | "kb_ontology"; // KBOntologyAdapter — pluggable ontology evolution
 
 /**
  * Base plugin interface.
@@ -1100,6 +1104,367 @@ export type LinterRuleIssue = {
   fix?: string;
 };
 
+// ── KB Search Adapter ────────────────────────────────────────────────────────
+
+/**
+ * KBSearchAdapter — pluggable search engine for the Knowledge Base runtime.
+ *
+ * The default built-in implementation uses TF-IDF with Porter stemming and a
+ * multilingual HybridTokenizer (zero dependencies). Register a custom adapter
+ * to use Elasticsearch, Typesense, Pinecone, Algolia, or any other backend.
+ *
+ * **Framework wiring:** `KBStore.load()` calls `PluginHost.getKBSearchAdapter()`.
+ * When present, the adapter's `indexDocuments()` is called during load and
+ * `search()` replaces the built-in search. Only the **first** adapter is used.
+ *
+ * @example
+ * ```ts
+ * class ElasticSearchKB implements KBSearchAdapter {
+ *   readonly name = 'elastic-kb'
+ *   readonly version = '1.0.0'
+ *   readonly capabilities = ['kb_search'] as const
+ *
+ *   async indexDocuments(docs) {
+ *     await this.client.bulk({ body: docs.flatMap(d => [
+ *       { index: { _index: 'kb', _id: d.docId } },
+ *       { title: d.title, body: d.body, entityType: d.entityType },
+ *     ]) })
+ *   }
+ *
+ *   async search(query, options) {
+ *     const { body } = await this.client.search({
+ *       index: 'kb',
+ *       body: { query: { multi_match: { query, fields: ['title^3', 'body'] } } },
+ *       size: options?.maxResults ?? 10,
+ *     })
+ *     return body.hits.hits.map(h => ({
+ *       docId: h._id!, title: h._source.title,
+ *       entityType: h._source.entityType, isStub: false,
+ *       score: h._score! / body.hits.max_score!, excerpt: '',
+ *     }))
+ *   }
+ * }
+ * ```
+ */
+export interface KBSearchAdapter extends Plugin {
+  /**
+   * Index all documents. Called once during `KBStore.load()` and again on `reload()`.
+   * The adapter should build whatever internal index it needs (inverted index,
+   * vector embeddings, external service sync, etc.).
+   */
+  indexDocuments(documents: KBSearchDocument[]): Promise<void>;
+
+  /**
+   * Search indexed documents. Returns scored results ordered by relevance.
+   */
+  search(query: string, options?: KBSearchOptions): Promise<KBSearchResult[]>;
+
+  /**
+   * Optional: expand a query using vocabulary or domain knowledge.
+   * Called before `search()` to add synonyms, aliases, etc.
+   * Default: returns the query terms unchanged.
+   */
+  expandQuery?(query: string, vocabulary?: Record<string, unknown>): string[];
+
+  /**
+   * Optional: rebuild the index (e.g., after hot-reload).
+   * If not implemented, `indexDocuments()` is called again.
+   */
+  rebuild?(documents: KBSearchDocument[]): Promise<void>;
+}
+
+/** Document representation passed to `KBSearchAdapter.indexDocuments()` */
+export type KBSearchDocument = {
+  docId: string;
+  title: string;
+  entityType: string;
+  body: string;
+  aliases: string[];
+  isStub: boolean;
+  wordCount: number;
+  frontmatter: Record<string, unknown>;
+};
+
+/** Search options */
+export type KBSearchOptions = {
+  maxResults?: number;
+  entityType?: string;
+  namespace?: string;
+};
+
+/** Search result */
+export type KBSearchResult = {
+  docId: string;
+  title: string;
+  entityType: string;
+  isStub: boolean;
+  /** Relevance score (0–1, normalized) */
+  score: number;
+  /** ~200 chars around the best match */
+  excerpt: string;
+};
+
+// ── KB Grounding Adapter ─────────────────────────────────────────────────────
+
+/**
+ * KBGroundingAdapter — pluggable hallucination detection for KB compilation.
+ *
+ * The default built-in implementation uses a three-layer scoring model:
+ *   L1: Stemmed keyword overlap (always, zero-cost)
+ *   L2: Embedding cosine similarity (opt-in via embedFn)
+ *   L3: LLM claim-level verification (opt-in via generateFn)
+ *
+ * Register a custom adapter to use an NLI model (e.g., DeBERTa), a
+ * domain-specific fact-checker, or any custom verification pipeline.
+ *
+ * **Framework wiring:** `KBCompiler.compile()` calls
+ * `PluginHost.getKBGroundingAdapter()`. When present, `validateArticle()` is
+ * invoked after each article synthesis. Only the **first** adapter is used.
+ *
+ * @example
+ * ```ts
+ * class NLIGroundingPlugin implements KBGroundingAdapter {
+ *   readonly name = 'nli-grounding'
+ *   readonly version = '1.0.0'
+ *   readonly capabilities = ['kb_grounding'] as const
+ *
+ *   async validateArticle(article, sources) {
+ *     const claims = extractSentences(article.body)
+ *     const results = await Promise.all(
+ *       claims.map(c => this.model.predict(c, sources.join('\n')))
+ *     )
+ *     return {
+ *       score: results.filter(r => r.label === 'entailment').length / results.length,
+ *       totalClaims: results.length,
+ *       supportedClaims: results.filter(r => r.label === 'entailment').length,
+ *       claims: results.map(r => ({
+ *         claim: r.premise, verdict: r.label === 'entailment' ? 'supported' : 'unsupported',
+ *         scoredBy: 'nli' as const,
+ *       })),
+ *       warnings: [],
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export interface KBGroundingAdapter extends Plugin {
+  /**
+   * Validate a synthesized article against its source material.
+   * Called after article synthesis, before the article is written to disk.
+   *
+   * @param article - The synthesized article metadata and body
+   * @param sourceTexts - Array of raw source text contents used for synthesis
+   * @returns Grounding result with per-claim breakdown
+   */
+  validateArticle(
+    article: { title: string; body: string; entityType: string; docId: string },
+    sourceTexts: string[],
+  ): Promise<KBGroundingResult>;
+}
+
+export type KBGroundingResult = {
+  /** Aggregate grounding score (0–1). 1.0 = fully grounded. */
+  score: number;
+  /** Total factual claims examined */
+  totalClaims: number;
+  /** Claims verified as supported by source material */
+  supportedClaims: number;
+  /** Per-claim breakdown */
+  claims: KBClaimVerification[];
+  /** Warnings for the compile report */
+  warnings: string[];
+};
+
+export type KBClaimVerification = {
+  claim: string;
+  verdict: "supported" | "unsupported" | "uncertain";
+  /** The source passage that supports this claim (if supported) */
+  evidence?: string;
+  /** Why the claim is unsupported (if unsupported) */
+  reason?: string;
+  /** Which verification method determined this verdict */
+  scoredBy: "keyword" | "vocabulary_overlap" | "embedding" | "llm" | "nli" | "custom";
+};
+
+// ── KB Ontology Adapter ──────────────────────────────────────────────────────
+
+import type { KBOntology, ConceptRegistry, VocabularyEntry } from "../knowledge/ontology/types.js";
+import type { CompilationPlan } from "../knowledge/compiler/extractor/types.js";
+
+/**
+ * KBOntologyAdapter — pluggable ontology evolution for KB compilation.
+ *
+ * The default built-in implementation provides:
+ *   - Ontology hash tracking (invalidate articles when schema changes)
+ *   - Non-breaking schema migration (rename entity types, add/remove fields)
+ *   - Vocabulary auto-expansion from high-confidence extraction results
+ *   - Entity type inheritance resolution
+ *
+ * Register a custom adapter for domain-specific ontology evolution, automatic
+ * entity type discovery via NER, or custom migration strategies.
+ *
+ * **Framework wiring:** `KBCompiler.compile()` calls
+ * `PluginHost.getKBOntologyAdapter()`. When present, `shouldInvalidate()`
+ * and `migrateArticles()` are called during incremental compilation.
+ * `suggestNewVocabulary()` is called when `autoExpandVocabulary` is enabled.
+ *
+ * @example
+ * ```ts
+ * class DomainOntologyPlugin implements KBOntologyAdapter {
+ *   readonly name = 'domain-ontology'
+ *   readonly version = '1.0.0'
+ *   readonly capabilities = ['kb_ontology'] as const
+ *
+ *   async shouldInvalidate(prev, cur) {
+ *     // Only invalidate for structural changes, not vocabulary additions
+ *     return this.entityTypesChanged(prev, cur) || this.schemaChanged(prev, cur)
+ *   }
+ *
+ *   async suggestNewVocabulary(plan, existingVocab) {
+ *     return this.nerModel.extract(plan).map(term => ({
+ *       term: term.text, entityType: term.type, aliases: term.variants,
+ *       confidence: term.confidence, sourceCount: term.documents.length,
+ *     }))
+ *   }
+ * }
+ * ```
+ */
+export interface KBOntologyAdapter extends Plugin {
+  /**
+   * Determine whether ontology changes require full article recompilation.
+   * Called during incremental compilation when the ontology hash has changed.
+   *
+   * @param previous - The ontology from the last successful compilation
+   * @param current - The current ontology loaded from ontology.yaml
+   * @returns `true` = invalidate all articles (full recompile);
+   *          `false` = attempt in-place migration via `migrateArticles()`
+   */
+  shouldInvalidate?(
+    previous: KBOntology,
+    current: KBOntology,
+  ): boolean | Promise<boolean>;
+
+  /**
+   * Migrate compiled articles for non-breaking ontology changes.
+   * Called instead of full recompilation when `shouldInvalidate()` returns false.
+   *
+   * Examples of migrations:
+   * - Entity type rename → update `entity_type:` in frontmatter
+   * - Field removed → strip from frontmatter
+   * - Field added (optional) → no action needed
+   * - Field added (required) → flag article for re-synthesis
+   *
+   * @param diff - Structural diff between old and new ontology
+   * @param compiledDir - Path to the compiled articles directory
+   * @param registry - Current concept registry
+   */
+  migrateArticles?(
+    diff: KBOntologyDiff,
+    compiledDir: string,
+    registry: ConceptRegistry,
+  ): Promise<KBMigrationResult>;
+
+  /**
+   * Suggest new vocabulary entries based on compilation results.
+   * Called after a successful compilation when `autoExpandVocabulary` is enabled.
+   *
+   * The compiler will auto-apply suggestions with confidence ≥ 0.8
+   * and sourceCount ≥ 2 to the ontology.yaml vocabulary section.
+   *
+   * @param plan - The compilation plan with candidate concepts
+   * @param existingVocab - Current vocabulary from ontology.yaml
+   */
+  suggestNewVocabulary?(
+    plan: CompilationPlan,
+    existingVocab: Record<string, VocabularyEntry>,
+  ): Promise<KBVocabularySuggestion[]>;
+
+  /**
+   * Generate an ontology proposal — suggestions for improving the ontology
+   * based on compilation results. Written to `.kb-ontology-proposals.json`
+   * for human review.
+   *
+   * Proposals may include:
+   * - New entity types the LLM repeatedly suggested but don't exist
+   * - New relationship patterns observed between existing entity types
+   * - Frontmatter fields the LLM consistently inferred but aren't in the schema
+   * - Vocabulary terms discovered across multiple sources
+   */
+  generateProposal?(
+    plan: CompilationPlan,
+    ontology: KBOntology,
+  ): Promise<KBOntologyProposal>;
+}
+
+/** Structural diff between two ontology versions */
+export type KBOntologyDiff = {
+  addedEntityTypes: string[];
+  removedEntityTypes: string[];
+  renamedEntityTypes: Array<{ from: string; to: string }>;
+  changedSchemas: Array<{
+    entityType: string;
+    addedFields: string[];
+    removedFields: string[];
+    changedFields: string[];
+  }>;
+  addedVocabulary: string[];
+  removedVocabulary: string[];
+  /** Whether article structure templates changed (requires re-synthesis) */
+  structureChanged: boolean;
+};
+
+/** Result of an in-place ontology migration */
+export type KBMigrationResult = {
+  /** How many compiled articles were updated in place */
+  articlesUpdated: number;
+  /** docIds that need full LLM re-synthesis (migration couldn't handle them) */
+  needsResynthesis: Set<string>;
+  /** Errors encountered during migration */
+  errors: string[];
+};
+
+/** A suggested new vocabulary entry */
+export type KBVocabularySuggestion = {
+  /** Canonical term */
+  term: string;
+  /** Suggested entity type classification */
+  entityType: string;
+  /** Alternative names / spellings */
+  aliases: string[];
+  /** Confidence score (0–1). Must be ≥ 0.8 for auto-inclusion. */
+  confidence: number;
+  /** How many source files mention this term */
+  sourceCount: number;
+};
+
+/** Post-compilation ontology improvement proposal */
+export type KBOntologyProposal = {
+  /** New entity types the LLM repeatedly suggested */
+  suggestedEntityTypes: Array<{
+    name: string;
+    description: string;
+    occurrenceCount: number;
+  }>;
+  /** Relationship patterns observed but not in the ontology */
+  suggestedRelationships: Array<{
+    from: string;
+    to: string;
+    name: string;
+    description: string;
+  }>;
+  /** Frontmatter fields the LLM consistently inferred */
+  suggestedFields: Array<{
+    entityType: string;
+    field: string;
+    type: string;
+    occurrenceCount: number;
+  }>;
+  /** Vocabulary suggestions (same as suggestNewVocabulary output) */
+  vocabulary: KBVocabularySuggestion[];
+  /** When this proposal was generated */
+  generatedAt: number;
+};
+
 // ── Plugin Host ──────────────────────────────────────────────────────────────
 
 /**
@@ -1720,5 +2085,42 @@ export class PluginHost {
    */
   getIdentityAdapter(): IdentityAdapter | null {
     return this.getAdapter<IdentityAdapter>("identity") ?? null;
+  }
+
+  // ── Knowledge Base Adapter Accessors ────────────────────────────────────────
+
+  /**
+   * Get the first registered `KBSearchAdapter`, or `null` if none.
+   *
+   * **Consumed by:** `KBStore.load()` to replace the built-in TF-IDF search.
+   * When present, `indexDocuments()` is called during store loading and
+   * `search()` delegates to the adapter. The built-in TF-IDF engine is
+   * bypassed entirely.
+   */
+  getKBSearchAdapter(): KBSearchAdapter | null {
+    return this.getAdapter<KBSearchAdapter>("kb_search") ?? null;
+  }
+
+  /**
+   * Get the first registered `KBGroundingAdapter`, or `null` if none.
+   *
+   * **Consumed by:** `KBCompiler.compile()` after each article synthesis.
+   * When present, `validateArticle()` is called to detect hallucinations
+   * before the article is written to disk.
+   */
+  getKBGroundingAdapter(): KBGroundingAdapter | null {
+    return this.getAdapter<KBGroundingAdapter>("kb_grounding") ?? null;
+  }
+
+  /**
+   * Get the first registered `KBOntologyAdapter`, or `null` if none.
+   *
+   * **Consumed by:** `KBCompiler.compile()` during incremental compilation.
+   * When present, `shouldInvalidate()` and `migrateArticles()` are called
+   * when the ontology hash has changed, and `suggestNewVocabulary()` is
+   * called when `autoExpandVocabulary` is enabled.
+   */
+  getKBOntologyAdapter(): KBOntologyAdapter | null {
+    return this.getAdapter<KBOntologyAdapter>("kb_ontology") ?? null;
   }
 }

@@ -411,7 +411,40 @@ export class KBClipper {
       throw new Error(`Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`);
     }
 
-    const html = await response.text();
+    // O1: cap fetch size to prevent OOM from servers returning huge responses.
+    // AbortSignal.timeout only stops slow connections, not fast large ones.
+    // 5MB is generous for any real article; Wikipedia article HTML is ~1-2MB.
+    const MAX_HTML_BYTES = 5 * 1024 * 1024;
+    const contentLength = parseInt(response.headers.get("content-length") ?? "0", 10);
+    if (contentLength > MAX_HTML_BYTES) {
+      throw new Error(
+        `Failed to clip ${url}: response too large (${contentLength} bytes, max ${MAX_HTML_BYTES})`,
+      );
+    }
+
+    // Stream-read with hard cap
+    let html: string;
+    if (response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      const chunks: string[] = [];
+      let totalBytes = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_HTML_BYTES) {
+          await reader.cancel();
+          throw new Error(
+            `Failed to clip ${url}: response exceeded ${MAX_HTML_BYTES} byte limit`,
+          );
+        }
+        chunks.push(decoder.decode(value, { stream: true }));
+      }
+      html = chunks.join("");
+    } else {
+      html = await response.text();
+    }
 
     // 2. Save to a temp file and run through htmlIngester
     const { tmpdir } = await import("os");
@@ -436,7 +469,9 @@ export class KBClipper {
     const now = new Date().toISOString();
     const frontmatter = [
       "---",
-      `title: "${(ingested.title ?? slug).replace(/"/g, '\\"')}"`,
+      // O4: strip newlines from title before embedding in YAML double-quoted scalar.
+      // A page title containing \n--- allows injection of arbitrary frontmatter fields.
+      `title: "${(ingested.title ?? slug).replace(/[\r\n]/g, " ").replace(/"/g, '\\"')}"`,
       `source: "${url}"`,
       `clipped_at: "${now}"`,
       `entity_type: "" # Fill in: article, research_paper, tutorial, etc.`,

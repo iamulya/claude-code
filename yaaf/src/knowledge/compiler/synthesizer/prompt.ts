@@ -135,7 +135,9 @@ export function buildSynthesisUserPrompt(params: {
   // Build source text blocks
   const sourceBlocks = sources
     .map((source, i) => {
-      const text = smartTruncate(source.text, SOURCE_TEXT_MAX_CHARS);
+      // H2/H3: guard against undefined text (image-only PDFs have IngestedContent.text = undefined)
+      const rawText = source.text ?? "";
+      const text = smartTruncate(rawText, SOURCE_TEXT_MAX_CHARS);
 
       const imageNote =
         source.images.length > 0
@@ -148,7 +150,7 @@ export function buildSynthesisUserPrompt(params: {
         source.sourceUrl ? `URL: ${source.sourceUrl}` : "",
         imageNote,
         ``,
-        source.text.startsWith("---")
+        rawText.startsWith("---")
           ? text // Already markdown with frontmatter
           : `\`\`\`\n${text}\n\`\`\``,
       ]

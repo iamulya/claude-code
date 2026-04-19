@@ -5,6 +5,8 @@
  * Centralizes duplicated logic (pluralization, docId generation).
  */
 
+import { createHash } from "crypto";
+
 // ── Irregular plurals ─────────────────────────────────────────────────────────
 
 const IRREGULAR_PLURALS: Record<string, string> = {
@@ -106,5 +108,13 @@ export function generateDocId(canonicalTitle: string, entityType: string): strin
     .replace(/^-|-$/g, "")
     .slice(0, 60);
 
-  return `${pluralizeEntityType(entityType)}/${slug}`;
+  // G4: if the title is pure emoji / CJK / punctuation, the slug may be empty after
+  // normalization. "concepts/" is a directory path, not a valid article path.
+  // Fall back to a short hash of the original title for a stable, unique docId.
+  const finalSlug = slug || createHash("sha256")
+    .update(canonicalTitle)
+    .digest("hex")
+    .slice(0, 16);
+
+  return `${pluralizeEntityType(entityType)}/${finalSlug}`;
 }

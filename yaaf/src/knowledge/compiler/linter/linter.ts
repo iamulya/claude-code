@@ -82,50 +82,68 @@ export class KBLinter {
 
     // ── Per-article checks ──────────────────────────────────────────────────────
 
-    const perArticleResults = await Promise.allSettled(
-      filteredArticles.map(async (article) => {
-        const issues: LintIssue[] = [];
+    // Q1: Correct bounded concurrency via coroutine-worker pattern.
+    // The previous Promise.race pool always removed inFlight[0] regardless of
+    // which promise won the race, silently losing results from other articles.
+    //
+    // This pattern is safe: nextIdx++ is a synchronous operation between
+    // await points, so no two workers ever claim the same article index.
+    let nextIdx = 0;
+    const perArticleResults: LintIssue[][] = new Array(filteredArticles.length);
 
-        // Structural
-        const missingET = checkMissingEntityType(article);
-        if (missingET) issues.push(missingET);
+    const runWorker = async (): Promise<void> => {
+      while (nextIdx < filteredArticles.length) {
+        const idx = nextIdx++;
+        const article = filteredArticles[idx]!;
+        try {
+          const issues: LintIssue[] = [];
 
-        const unknownET = checkUnknownEntityType(article, this.ontology);
-        if (unknownET) issues.push(unknownET);
+          // Structural
+          const missingET = checkMissingEntityType(article);
+          if (missingET) issues.push(missingET);
 
-        issues.push(...checkMissingRequiredFields(article, this.ontology));
-        issues.push(...checkInvalidFieldValues(article, this.ontology));
+          const unknownET = checkUnknownEntityType(article, this.ontology);
+          if (unknownET) issues.push(unknownET);
 
-        // Linking
-        issues.push(...checkBrokenWikilinks(article, this.registry));
-        issues.push(...checkNonCanonicalWikilinks(article, this.registry, this.aliasIndex));
-        issues.push(
-          ...checkUnlinkedMentions(article, this.ontology, this.registry, this.aliasIndex),
-        );
+          issues.push(...checkMissingRequiredFields(article, this.ontology));
+          issues.push(...checkInvalidFieldValues(article, this.ontology));
 
-        const orphan = checkOrphanedArticle(article, graph);
-        if (orphan) issues.push(orphan);
+          // Linking
+          issues.push(...checkBrokenWikilinks(article, this.registry));
+          issues.push(...checkNonCanonicalWikilinks(article, this.registry, this.aliasIndex));
+          issues.push(
+            ...checkUnlinkedMentions(article, this.ontology, this.registry, this.aliasIndex),
+          );
 
-        issues.push(...checkMissingReciprocalLinks(article, graph, this.ontology));
+          const orphan = checkOrphanedArticle(article, graph);
+          if (orphan) issues.push(orphan);
 
-        // Quality
-        const quality = checkLowArticleQuality(article, minWordCount);
-        if (quality) issues.push(quality);
+          issues.push(...checkMissingReciprocalLinks(article, graph, this.ontology));
 
-        const sourceRefIssues = await checkBrokenSourceRefs(article);
-        issues.push(...sourceRefIssues);
+          // Quality
+          const quality = checkLowArticleQuality(article, minWordCount);
+          if (quality) issues.push(quality);
 
-        const stubIssue = await checkStubWithSources(article, this.rawDir, this.registry);
-        if (stubIssue) issues.push(stubIssue);
+          const sourceRefIssues = await checkBrokenSourceRefs(article);
+          issues.push(...sourceRefIssues);
 
-        return issues;
-      }),
+          const stubIssue = await checkStubWithSources(article, this.rawDir, this.registry);
+          if (stubIssue) issues.push(stubIssue);
+
+          perArticleResults[idx] = issues;
+        } catch {
+          perArticleResults[idx] = []; // Don't let one article's failure abort the whole lint
+        }
+      }
+    };
+
+    const LINT_CONCURRENCY = 8; // Higher than LLM ops since these are local FS calls
+    await Promise.all(
+      Array.from({ length: Math.min(LINT_CONCURRENCY, filteredArticles.length) }, runWorker),
     );
 
-    for (const result of perArticleResults) {
-      if (result.status === "fulfilled") {
-        allIssues.push(...result.value);
-      }
+    for (const issues of perArticleResults) {
+      if (issues) allIssues.push(...issues);
     }
 
     // ── Cross-article checks ────────────────────────────────────────────────────

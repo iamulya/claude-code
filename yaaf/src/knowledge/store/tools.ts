@@ -55,6 +55,29 @@ export function createKBTools(
     return docId.startsWith(prefix) ? docId.slice(prefix.length) : docId;
   };
 
+  /**
+   * Fix C-1: validate docId at the tool boundary to prevent path traversal.
+   * DocIds are used to construct file paths inside compiledDir; a malicious
+   * agent could pass "../../etc/passwd" to escape the KB directory.
+   */
+  const assertSafeDocId = (docId: string): void => {
+    if (typeof docId !== "string" || docId.length === 0) {
+      throw new Error("docId must be a non-empty string.");
+    }
+    if (docId.length > 512) {
+      throw new Error(`docId exceeds maximum allowed length (512 chars).`);
+    }
+    if (docId.includes("...") || docId.includes("..\\") || docId.includes("../")) {
+      throw new Error(`Invalid docId "${docId.slice(0, 60)}": path traversal sequences are not allowed.`);
+    }
+    if (docId.startsWith("/") || docId.startsWith("\\")) {
+      throw new Error(`Invalid docId "${docId.slice(0, 60)}": absolute paths are not allowed.`);
+    }
+    if (docId.includes("\0")) {
+      throw new Error(`Invalid docId: null bytes are not allowed.`);
+    }
+  };
+
   // ── list_kb_index ─────────────────────────────────────────────────────────
 
   const listKBIndex = buildTool({
@@ -118,13 +141,15 @@ export function createKBTools(
     isReadOnly: () => true,
     isConcurrencySafe: () => true,
     async call({ docId }: { docId: string }): Promise<{ data: unknown }> {
-      const doc = store.getDocument(stripNs(docId));
+      // Fix C-1: validate before any store/filesystem access
+      assertSafeDocId(stripNs(docId));
+      const doc = await store.getDocumentAsync(stripNs(docId));
 
       if (!doc) {
-        // Try fuzzy matching
+        // Try fuzzy matching using lightweight metadata (no body loading)
         const slug = stripNs(docId).split("/").pop() ?? "";
-        const allDocs = store.getAllDocuments();
-        const suggestions = allDocs
+        const allMeta = store.getAllDocumentMeta();
+        const suggestions = allMeta
           .filter(
             (d) => d.docId.includes(slug) || d.title.toLowerCase().includes(slug.toLowerCase()),
           )
@@ -190,7 +215,7 @@ export function createKBTools(
       query: string;
       entityType?: string;
     }): Promise<{ data: unknown }> {
-      const results = store.search(query, {
+      const results = await store.searchAsync(query, {
         maxResults: maxSearchResults,
         entityType,
       });

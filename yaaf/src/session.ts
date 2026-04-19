@@ -33,7 +33,15 @@ import type { SessionAdapter } from "./plugin/types.js";
 type SessionRecord =
   | { type: "message"; message: ChatMessage }
   | { type: "compact"; summary: string; timestamp: string }
-  | { type: "meta"; id: string; createdAt: string; version: number; owner?: string; hmac?: string };
+  | { type: "meta"; id: string; createdAt: string; version: number; owner?: string; hmac?: string }
+  /**
+   * Plan record — stores the most-recently-set plan text into the session
+   * JSONL stream so it survives compaction and crash recovery.
+   *
+   * Only the *last* plan record encountered during load() wins; earlier records
+   * are superseded (plans are replaced, not versioned).
+   */
+  | { type: "plan"; plan: string; timestamp: string };
 
 /**
  * Shared interface for Session and AdapterBridgeSession.
@@ -51,6 +59,30 @@ export interface SessionLike {
   append(messages: ChatMessage[]): Promise<void>;
   compact(summary: string): Promise<void>;
   delete(): Promise<void>;
+  /**
+   * Save a plan string into this session so it survives compaction and
+   * crash recovery. The plan is appended as a `plan` record in the JSONL
+   * stream (filesystem backend) or kept in-memory and re-written into the
+   * compact record (adapter backend).
+   *
+   * Subsequent calls overwrite the previous plan — only one plan per session
+   * is kept (the most-recently-set one).
+   *
+   * @example
+   * ```ts
+   * // Store the plan after the approval gate:
+   * await session.setPlan(approvedPlan)
+   *
+   * // Retrieve it during the execution phase:
+   * const plan = session.getPlan() // → string | null
+   * ```
+   */
+  setPlan(plan: string): Promise<void>;
+  /**
+   * Retrieve the plan stored in this session, or `null` if no plan has
+   * been set yet (or the session was loaded without a plan record).
+   */
+  getPlan(): string | null;
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -61,6 +93,11 @@ export class Session {
   private _messages: ChatMessage[] = [];
   private _initialized = false;
   private _owner: string | undefined = undefined;
+  /**
+   * In-memory plan store. Populated from the JSONL stream on resume,
+   * written via setPlan(). The most-recently-set plan wins.
+   */
+  private _plan: string | null = null;
   /** Write serialization queue to prevent interleaved JSONL corruption */
   private _writeQueue: Promise<void> = Promise.resolve();
   /**
@@ -346,6 +383,47 @@ export class Session {
   }
 
   /**
+   * Persist a plan into this session.
+   *
+   * The plan is appended as a `{ type: "plan" }` record in the JSONL stream
+   * so it can be restored when the session is resumed after a crash or
+   * process restart. It also survives `compact()` — compaction re-writes
+   * the plan record into the new compact file before discarding old history.
+   *
+   * Only the *last* plan record in the stream is used on resume; earlier
+   * records are superseded automatically.
+   *
+   * @example
+   * ```ts
+   * // After plan approval:
+   * await session.setPlan(approvedPlanText)
+   *
+   * // Later, during execution or a resumed session:
+   * const plan = session.getPlan() // → string | null
+   * ```
+   */
+  async setPlan(plan: string): Promise<void> {
+    this._plan = plan;
+    const record: SessionRecord = {
+      type: "plan",
+      plan,
+      timestamp: new Date().toISOString(),
+    };
+    await this.writeLines([this.encryptLine(JSON.stringify(record))]);
+  }
+
+  /**
+   * Return the plan stored in this session, or `null` if none has been set.
+   *
+   * The plan is populated from the most-recent `plan` record in the JSONL
+   * stream when the session is resumed, and updated in-memory whenever
+   * `setPlan()` is called during the current process lifetime.
+   */
+  getPlan(): string | null {
+    return this._plan;
+  }
+
+  /**
    * Append new messages and persist them to disk.
    * Called by Agent after each run turn.
    */
@@ -427,12 +505,28 @@ export class Session {
       type: "message",
       message: { role: "system", content: `[Compacted session summary]\n${summary}` },
     };
+
+    // Build the compact file lines: compact record + summary message + plan (if any)
+    let compactContent =
+      this.encryptLine(JSON.stringify(compactRecord)) +
+      "\n" +
+      this.encryptLine(JSON.stringify(summaryMessage)) +
+      "\n";
+
+    // Plan survival across compaction: if a plan was set, re-write it into the
+    // new compact file so it is available after the compacted session is resumed.
+    // Without this, compact() would discard the plan along with the old history.
+    if (this._plan !== null) {
+      const planRecord: SessionRecord = {
+        type: "plan",
+        plan: this._plan,
+        timestamp: new Date().toISOString(),
+      };
+      compactContent += this.encryptLine(JSON.stringify(planRecord)) + "\n";
+    }
+
     await fsp.mkdir(path.dirname(tmpPath), { recursive: true });
-    await fsp.writeFile(
-      tmpPath,
-      this.encryptLine(JSON.stringify(compactRecord)) + "\n" + this.encryptLine(JSON.stringify(summaryMessage)) + "\n",
-      "utf8",
-    );
+    await fsp.writeFile(tmpPath, compactContent, "utf8");
 
     // Step 2: Archive the live session (rename, not copy — atomic on same filesystem).
     // If this fails, tmpPath exists — can be cleaned up; live session is intact.
@@ -467,6 +561,7 @@ export class Session {
     // Reset in-memory state to match the new compact file
     this._messages = [{ role: "system", content: `[Compacted session summary]\n${summary}` }];
     this._initialized = true;
+    // _plan is intentionally left unchanged — it was written into the compact file above
   }
 
   /**
@@ -558,6 +653,10 @@ export class Session {
           }
         }
         // 'compact' records are informational only
+        if (record.type === "plan") {
+          // The last plan record in the file wins — earlier records are superseded.
+          this._plan = record.plan;
+        }
       } catch (err) {
         // Security errors (HMAC verification failures, tamper detection)
         // must NOT be swallowed here. Only skip genuinely malformed JSON lines.
@@ -634,6 +733,14 @@ class AdapterBridgeSession {
   private _messages: ChatMessage[] = [];
   private _owner: string | undefined = undefined;
   private _initialized = false;
+  /**
+   * In-memory plan store for adapter-backed sessions.
+   * Not persisted to the adapter's raw message stream — instead stored in
+   * memory and re-written after each append/compact so the adapter can
+   * serialize it however it chooses. Adapters that wish to persist the plan
+   * across restarts should override saveMeta/loadMeta to include `plan`.
+   */
+  private _plan: string | null = null;
 
   constructor(
     private readonly _id: string,
@@ -725,11 +832,46 @@ class AdapterBridgeSession {
   async compact(summary: string): Promise<void> {
     await this.adapter.compact(this._id, summary);
     this._messages = [{ role: "system", content: `[Compacted session summary]\n${summary}` }];
+    // _plan is preserved in-memory across compaction — identical to the
+    // filesystem Session behaviour. Adapter implementations that want to
+    // persist it across process restarts should implement saveMeta/loadMeta
+    // with a `plan` field.
   }
 
   async delete(): Promise<void> {
     await this.adapter.delete(this._id);
     this._messages = [];
+    this._plan = null;
+  }
+
+  /**
+   * Persist a plan string into this adapter-backed session.
+   *
+   * For adapter sessions the plan is stored in-memory and optionally persisted
+   * via `adapter.saveMeta({ plan })` when the adapter supports it. It survives
+   * `compact()` because the in-memory reference is unchanged.
+   *
+   * To persist the plan across process restarts with an adapter backend,
+   * implement `saveMeta` / `loadMeta` in your `SessionAdapter` and include a
+   * `plan` field in the metadata object.
+   */
+  async setPlan(plan: string): Promise<void> {
+    this._plan = plan;
+    // Best-effort persistence via adapter.saveMeta when available
+    if (this.adapter.saveMeta) {
+      await this.adapter.saveMeta(this._id, { owner: this._owner, plan } as { owner?: string; plan?: string }).catch((err) => {
+        console.error(
+          `[yaaf/session] Warning: failed to persist plan for session "${this._id}": ` +
+            `${err instanceof Error ? err.message : String(err)}. ` +
+            "Plan is available in-memory but will be lost on process restart.",
+        );
+      });
+    }
+  }
+
+  /** Return the plan stored in this session, or `null` if none has been set. */
+  getPlan(): string | null {
+    return this._plan;
   }
 
   /**

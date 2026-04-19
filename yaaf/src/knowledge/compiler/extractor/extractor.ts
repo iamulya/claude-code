@@ -352,17 +352,41 @@ export class ConceptExtractor {
     const allArticlePlans: ArticlePlan[] = [];
     const skipped: CompilationPlan["skipped"] = [];
 
-    // Process each source file independently
-    const results = await Promise.allSettled(
-      contents.map((content) => this.extractFromContent(content)),
+    // R4: Correct bounded concurrency via coroutine-worker pattern.
+    // The previous Promise.race pool always removed inFlight[0] regardless of
+    // which promise won the race, silently losing ArticlePlan[] results for
+    // source files at other indices (up to CONCURRENCY-1 files per run).
+    const EXTRACT_CONCURRENCY = 3;
+    let nextIdx = 0;
+    const allResults: Array<{ idx: number; result: PromiseSettledResult<ArticlePlan[]> }> =
+      new Array(contents.length);
+
+    const runWorker = async (): Promise<void> => {
+      while (nextIdx < contents.length) {
+        const idx = nextIdx++;
+        const content = contents[idx]!;
+        try {
+          const plans = await this.extractFromContent(content);
+          allResults[idx] = { idx, result: { status: "fulfilled", value: plans } };
+        } catch (e) {
+          allResults[idx] = { idx, result: { status: "rejected", reason: e } };
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(EXTRACT_CONCURRENCY, contents.length) }, runWorker),
     );
 
-    for (const [i, result] of results.entries()) {
-      const content = contents[i]!;
+    for (const entry of allResults) {
+      if (!entry) continue;
+      const content = contents[entry.idx]!;
 
-      if (result.status === "rejected") {
+      if (entry.result.status === "rejected") {
         const err =
-          result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+          entry.result.reason instanceof Error
+            ? entry.result.reason
+            : new Error(String(entry.result.reason));
         skipped.push({
           sourcePath: content.sourceFile,
           reason: `Extraction failed: ${err.message}`,
@@ -370,7 +394,7 @@ export class ConceptExtractor {
         continue;
       }
 
-      const plans = result.value;
+      const plans = entry.result.value;
 
       // Separate skipped plans from actionable ones
       for (const plan of plans) {
@@ -436,7 +460,9 @@ export class ConceptExtractor {
    */
   private staticAnalyze(content: IngestedContent): StaticAnalysisResult {
     // Vocabulary scan
-    const entityMentions = scanForEntityMentions(content.text, this.ontology, this.aliasIndex);
+    // J1: guard against undefined text — image-only PDFs have IngestedContent.text = undefined.
+    // scanForEntityMentions calls sourceText.toLowerCase() immediately, throwing TypeError.
+    const entityMentions = scanForEntityMentions(content.text ?? "", this.ontology, this.aliasIndex);
 
     // Registry matches — entities mentioned that already have compiled articles
     const registryMatches = entityMentions
@@ -461,7 +487,7 @@ export class ConceptExtractor {
     const dirHint = this.detectDirectoryHint(content.sourceFile);
 
     // Token estimate
-    const tokenEstimate = estimateTokens(content.text);
+    const tokenEstimate = estimateTokens(content.text ?? "");
 
     return {
       entityMentions,

@@ -35,23 +35,44 @@ export async function readCompiledArticles(
   compiledDir: string,
   onSkip?: (docId: string, reason: string) => void,
 ): Promise<ParsedCompiledArticle[]> {
-  const results = await Promise.allSettled(
-    Array.from(registry.keys()).map(async (docId) => {
+  // Q2: Correct bounded concurrency via coroutine-worker pattern.
+  // The previous Promise.race pool (M3 fix) always removed inFlight[0]
+  // regardless of which promise won — silently dropping readFile results
+  // for articles at other indices. Fixed with the shared-counter pattern.
+  const allDocIds = Array.from(registry.keys());
+  const CONCURRENCY = 8;
+  let nextIdx = 0;
+  const results: Array<{ docId: string; result: PromiseSettledResult<ParsedCompiledArticle> }> =
+    new Array(allDocIds.length);
+
+  const runWorker = async (): Promise<void> => {
+    while (nextIdx < allDocIds.length) {
+      const idx = nextIdx++;
+      const docId = allDocIds[idx]!;
       const filePath = join(compiledDir, `${docId}.md`);
-      const raw = await readFile(filePath, "utf-8");
-      return parseCompiledArticle(docId, filePath, raw);
-    }),
+      try {
+        const raw = await readFile(filePath, "utf-8");
+        results[idx] = { docId, result: { status: "fulfilled", value: parseCompiledArticle(docId, filePath, raw) } };
+      } catch (e) {
+        results[idx] = { docId, result: { status: "rejected", reason: e } };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, allDocIds.length) }, runWorker),
   );
 
   const articles: ParsedCompiledArticle[] = [];
-
-  for (const [i, result] of results.entries()) {
-    const docId = Array.from(registry.keys())[i]!;
-    if (result.status === "fulfilled") {
-      articles.push(result.value);
+  for (const entry of results) {
+    if (!entry) continue;
+    if (entry.result.status === "fulfilled") {
+      articles.push(entry.result.value);
     } else {
-      const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
-      onSkip?.(docId, `Could not read: ${err.message}`);
+      const err = entry.result.reason instanceof Error
+        ? entry.result.reason
+        : new Error(String(entry.result.reason));
+      onSkip?.(entry.docId, `Could not read: ${err.message}`);
     }
   }
 
@@ -67,7 +88,11 @@ export function parseCompiledArticle(
   filePath: string,
   raw: string,
 ): ParsedCompiledArticle {
-  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  // M4: CRLF-blind regex -- on Windows-format files, CR before each LF
+  // causes the match to fail silently, producing empty frontmatter and
+  // hundreds of false-positive lint errors (MISSING_ENTITY_TYPE etc).
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
 
   if (!fmMatch) {
     return { docId, filePath, frontmatter: {}, body: raw.trim() };

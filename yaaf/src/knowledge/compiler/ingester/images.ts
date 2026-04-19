@@ -200,6 +200,11 @@ export async function downloadImage(
   altText: string,
   imageOutputDir: string,
 ): Promise<ImageRef | null> {
+  // N1: cap download size to prevent memory exhaustion from malicious servers.
+  // A fast server can send gigabytes before AbortSignal.timeout fires.
+  // 10MB is generous for any image used in KB source documents.
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+
   try {
     await mkdir(imageOutputDir, { recursive: true });
 
@@ -209,6 +214,12 @@ export async function downloadImage(
     });
 
     if (!response.ok) return null;
+
+    // Pre-check Content-Length header if available
+    const contentLength = parseInt(response.headers.get("content-length") ?? "0", 10);
+    if (contentLength > MAX_IMAGE_BYTES) {
+      return null; // Don't buffer oversized images
+    }
 
     const contentType = response.headers.get("content-type") ?? "image/jpeg";
     const mimeType = contentType.split(";")[0]!.trim();
@@ -223,7 +234,22 @@ export async function downloadImage(
     const filename = hasExt ? urlFilename : urlFilename + ext;
     const localPath = join(imageOutputDir, filename);
 
-    const buffer = Buffer.from(await response.arrayBuffer());
+    // Stream body with hard size cap to avoid buffering multi-GB responses
+    if (!response.body) return null;
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_IMAGE_BYTES) {
+        await reader.cancel();
+        return null; // Abort download — too large
+      }
+      chunks.push(value);
+    }
+    const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
     await writeFile(localPath, buffer);
 
     return {

@@ -3,7 +3,7 @@
  */
 
 export { KBStore } from "./store.js";
-export type { CompiledDocument, KBIndex, KBIndexEntry, SearchResult } from "./store.js";
+export type { CompiledDocument, DocumentMeta, KBIndex, KBIndexEntry, SearchResult, KBStoreOptions } from "./store.js";
 
 export { createKBTools } from "./tools.js";
 export type { KBToolOptions } from "./tools.js";
@@ -21,3 +21,22 @@ export type {
   NamespacedSearchResult,
   NamespacedIndexEntry,
 } from "./federation.js";
+
+// ── Search engine ────────────────────────────────────────────────────────────
+
+export { TfIdfSearchPlugin } from "./tfidfSearch.js";
+export type { TfIdfSearchPluginOptions } from "./tfidfSearch.js";
+
+export {
+  HybridTokenizer,
+  EnglishTokenizer,
+  UnicodeTokenizer,
+  NgramTokenizer,
+  porterStem,
+  STOP_WORDS,
+} from "./tokenizers.js";
+export type { TokenizerStrategy } from "./tokenizers.js";
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+export { LRUCache } from "./lruCache.js";

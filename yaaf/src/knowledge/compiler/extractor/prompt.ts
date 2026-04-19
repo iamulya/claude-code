@@ -137,11 +137,14 @@ export function buildExtractionUserPrompt(
     : "";
 
   // Truncate source text to token budget
+  // K1: guard against undefined text — image-only PDFs have IngestedContent.text = undefined.
+  // Both .length and .slice() throw TypeError on undefined (fifth occurrence of this class of bug).
+  const rawText = content.text ?? "";
   const sourceText =
-    content.text.length > SOURCE_TEXT_MAX_CHARS
-      ? content.text.slice(0, SOURCE_TEXT_MAX_CHARS) +
-        `\n\n[... truncated at ${SOURCE_TEXT_MAX_CHARS} chars — ${content.text.length - SOURCE_TEXT_MAX_CHARS} chars omitted ...]`
-      : content.text;
+    rawText.length > SOURCE_TEXT_MAX_CHARS
+      ? rawText.slice(0, SOURCE_TEXT_MAX_CHARS) +
+        `\n\n[... truncated at ${SOURCE_TEXT_MAX_CHARS} chars — ${rawText.length - SOURCE_TEXT_MAX_CHARS} chars omitted ...]`
+      : rawText;
 
   // Image summary (if any)
   const imageBlock =

@@ -48,6 +48,17 @@ export type ArticleSynthesisResult = {
   registryEntry?: ConceptRegistryEntry;
   /** Phase 5C: Grounding validation score (0-1) */
   groundingScore?: number;
+  /**
+   * P0-1: Absolute paths of source files that contributed to this article.
+   * Used by the grounding pass to scope validation to per-article sources only,
+   * preventing false-positive hallucination scores from unrelated source pooling.
+   */
+  sourcePaths?: string[];
+  /**
+   * P2-1: The synthesized article body (without frontmatter), available when not dryRun.
+   * Passed directly to the grounding pass so it does not need to re-read the file from disk.
+   */
+  body?: string;
 };
 
 // ── Run-level result ──────────────────────────────────────────────────────────

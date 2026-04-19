@@ -24,8 +24,7 @@ export type { RetryOptions } from "./retry.js";
 
 export { pluralizeEntityType, generateDocId } from "./utils.js";
 
-export { validateGrounding } from "./validator.js";
-export type { GroundingResult } from "./validator.js";
+// P1-1: validateGrounding removed — grounding unified in MultiLayerGroundingPlugin
 
 // ── Ingester ──────────────────────────────────────────────────────────────────
 
@@ -161,3 +160,36 @@ export type {
 
 export { DifferentialEngine } from "./differential.js";
 export type { SourceHashManifest, DifferentialPlan } from "./differential.js";
+
+// ── Grounding Plugin (Hallucination Detection) ──────────────────────────────
+
+export {
+  MultiLayerGroundingPlugin,
+  extractClaims,
+  filterFactualClaims,
+  keywordOverlap,
+  stemTokens,
+  chunkText,
+  hasNegationRisk,
+} from "./groundingPlugin.js";
+
+export type { MultiLayerGroundingOptions } from "./groundingPlugin.js";
+
+// ── Ontology Proposals (Feedback Loop) O7 ──────────────────────────────────
+
+export { generateOntologyProposals, loadProposals } from "./ontologyProposals.js";
+export type { ProposalGeneratorOptions, ProposalResult } from "./ontologyProposals.js";
+
+// ── Semantic Deduplication (P4-1) ──────────────────────────────────────────
+
+export { deduplicatePlans } from "./dedup.js";
+export type { DedupResult } from "./dedup.js";
+
+// ── Contradiction Detection (P4-3) ────────────────────────────────────────
+
+export { detectContradictions } from "./contradictions.js";
+export type {
+  ContradictionReport,
+  ContradictionPair,
+  ContradictionOptions,
+} from "./contradictions.js";

@@ -87,34 +87,49 @@ export type ArticleSection = {
 /**
  * Defines one category of knowledge entity in the domain.
  *
+ * Supports **entity type inheritance** via the `extends` field. A child type
+ * inherits all frontmatter fields and article structure sections from the parent,
+ * then adds or overrides its own. Use underscore-prefixed names (e.g., `_base`)
+ * for abstract types that should not be instantiated as articles.
+ *
  * @example
  * ```yaml
  * entity_types:
- * research_paper:
- * description: A published academic paper or preprint
- * frontmatter:
- * fields:
- * authors:
- * type: string[]
- * required: true
- * description: List of author names
- * year:
- * type: number
- * required: true
- * description: Year of publication
- * article_structure:
- * - heading: Summary
- * description: 2-3 sentence abstract in plain language
- * required: true
- * - heading: Key Contributions
- * description: Bullet list of what this paper adds to the field
- * required: true
- * linkable_to: [concept, tool, dataset]
+ *   _base:  # Abstract base — not instantiated
+ *     description: Shared fields for all entity types
+ *     frontmatter:
+ *       fields:
+ *         title: { type: string, required: true }
+ *         summary: { type: string, required: true }
+ *   research_paper:
+ *     extends: _base  # Inherits title + summary fields
+ *     description: A published academic paper or preprint
+ *     frontmatter:
+ *       fields:
+ *         authors: { type: string[], required: true }
+ *         year: { type: number, required: true }
+ *     article_structure:
+ *       - heading: Summary
+ *         description: 2-3 sentence abstract in plain language
+ *         required: true
+ *     linkable_to: [concept, tool, dataset]
  * ```
  */
 export type EntityTypeSchema = {
   /** Human-readable description — fed to the LLM during compilation and linting */
   description: string;
+  /**
+   * Optional: parent entity type to inherit fields and structure from.
+   * The parent must be defined in the same ontology. Use `_base` convention
+   * for abstract base types that should not produce articles.
+   *
+   * Inheritance rules:
+   * - Frontmatter fields are merged (child overrides parent on collision)
+   * - Article structure sections are concatenated (parent first, then child)
+   * - linkableTo is union of parent + child
+   * - description is NOT inherited (always required on the child)
+   */
+  extends?: string;
   /** Frontmatter schema for articles of this entity type */
   frontmatter: FrontmatterSchema;
   /**
@@ -291,6 +306,7 @@ export type KBOntology = {
   /**
    * All entity types recognized in this domain.
    * Keys are the entity type identifiers used in frontmatter and wikilinks.
+   * Types prefixed with `_` are abstract bases (not instantiated as articles).
    */
   entityTypes: Record<string, EntityTypeSchema>;
 
@@ -311,6 +327,23 @@ export type KBOntology = {
 
   /** Compiler model assignments */
   compiler: KBCompilerModelConfig;
+
+  /**
+   * Schema validation mode for the linter.
+   *
+   * - `'strict'` (default) — All required fields and sections must be present.
+   *   Missing required fields produce `error`-level lint issues.
+   *
+   * - `'progressive'` — New required fields are treated as `info`-level
+   *   suggestions instead of errors, giving existing articles a grace period
+   *   to be updated. The linter tracks which articles are "conforming" vs
+   *   "legacy" and suggests targeted re-synthesis. Article structure changes
+   *   are additive-only (missing sections are warnings, not errors).
+   *
+   * Progressive mode is recommended for evolving KBs where you want to
+   * add schema constraints gradually without breaking existing articles.
+   */
+  schemaMode?: "strict" | "progressive";
 };
 
 // ── Concept registry ─────────────────────────────────────────────────────────

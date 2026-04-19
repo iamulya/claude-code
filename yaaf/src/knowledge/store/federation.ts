@@ -48,6 +48,12 @@ export type FederatedKBConfig = Record<string, KnowledgeBase | FederatedKBEntry>
 export type FederatedKBOptions = {
   /** Options passed to the generated tools */
   toolOptions?: KBToolOptions;
+  /**
+   * Maximum token budget for the system prompt KB section.
+   * Same progressive degradation as KnowledgeBaseOptions.systemPromptMaxTokens.
+   * Default: 3000 tokens (federations have more namespaces to describe).
+   */
+  systemPromptMaxTokens?: number;
 };
 
 // ── Namespaced types ──────────────────────────────────────────────────────────
@@ -94,15 +100,18 @@ export type FederatedIndex = {
 export class FederatedKnowledgeBase {
   private readonly namespaces: Map<string, { kb: KnowledgeBase; label: string }>;
   private readonly toolOptions: KBToolOptions;
+  private readonly systemPromptMaxTokens: number;
   private cachedIndex?: FederatedIndex;
   private cachedTools?: Tool[];
 
   private constructor(
     namespaces: Map<string, { kb: KnowledgeBase; label: string }>,
     toolOptions: KBToolOptions = {},
+    systemPromptMaxTokens?: number,
   ) {
     this.namespaces = namespaces;
     this.toolOptions = toolOptions;
+    this.systemPromptMaxTokens = systemPromptMaxTokens ?? 3000;
   }
 
   // ── Factory ─────────────────────────────────────────────────────────────────
@@ -137,7 +146,7 @@ export class FederatedKnowledgeBase {
       throw new Error("FederatedKnowledgeBase requires at least one namespace");
     }
 
-    return new FederatedKnowledgeBase(namespaces, options?.toolOptions);
+    return new FederatedKnowledgeBase(namespaces, options?.toolOptions, options?.systemPromptMaxTokens);
   }
 
   /**
@@ -190,11 +199,16 @@ export class FederatedKnowledgeBase {
 
   /**
    * Generate a system prompt section describing all federated KBs.
+   * Progressively degrades when the index exceeds `systemPromptMaxTokens`:
+   *   1. Full listing (title + docId per article, grouped by namespace/type)
+   *   2. Compact listing (namespace → article count + type breakdown only)
+   *   3. Summary only (namespace names and counts)
    */
   systemPromptSection(): string {
     const index = this.index();
+    const maxTokens = this.systemPromptMaxTokens;
 
-    const lines = [
+    const headerLines = [
       `## Federated Knowledge Base (${index.namespaces.length} sources, ${index.totalDocuments} articles, ~${index.totalTokenEstimate.toLocaleString()} tokens)`,
       "",
       "You have access to multiple knowledge bases. Use the following tools to retrieve information:",
@@ -202,25 +216,18 @@ export class FederatedKnowledgeBase {
       "- **fetch_kb_document**: get an article by qualified ID (`namespace:docId`)",
       "- **search_kb**: search across all knowledge bases by keyword",
       "",
-      "### Knowledge Base Sources",
-      "",
     ];
 
+    // === Strategy 1: Full listing ===
+    const fullLines = [...headerLines, "### Knowledge Base Sources", ""];
     for (const ns of index.namespaces) {
-      lines.push(
-        `- **${ns.label}** (namespace: \`${ns.namespace}\`) — ${ns.documentCount} articles`,
-      );
+      fullLines.push(`- **${ns.label}** (namespace: \`${ns.namespace}\`) — ${ns.documentCount} articles`);
     }
+    fullLines.push("", "### Available Articles", "");
 
-    lines.push("");
-    lines.push("### Available Articles");
-    lines.push("");
-
-    // Group by namespace, then by entity type
     for (const ns of index.namespaces) {
-      lines.push(`#### ${ns.label} (\`${ns.namespace}:\`)`);
-      lines.push("");
-
+      fullLines.push(`#### ${ns.label} (\`${ns.namespace}:\`)`);
+      fullLines.push("");
       const nsEntries = index.entries.filter((e) => e.namespace === ns.namespace);
       const byType = new Map<string, NamespacedIndexEntry[]>();
       for (const entry of nsEntries) {
@@ -228,19 +235,45 @@ export class FederatedKnowledgeBase {
         group.push(entry);
         byType.set(entry.entityType, group);
       }
-
       for (const [type, entries] of byType) {
         const typeLabel = type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-        lines.push(`**${typeLabel}s:**`);
+        fullLines.push(`**${typeLabel}s:**`);
         for (const entry of entries) {
           const stub = entry.isStub ? " _(stub)_" : "";
-          lines.push(`- ${entry.title}${stub} \`[${entry.qualifiedId}]\``);
+          fullLines.push(`- ${entry.title}${stub} \`[${entry.qualifiedId}]\``);
         }
-        lines.push("");
+        fullLines.push("");
       }
     }
+    const fullText = fullLines.join("\n");
+    if (this.estimateTokenCount(fullText) <= maxTokens) return fullText;
 
-    return lines.join("\n");
+    // === Strategy 2: Compact (namespace + type counts, no docIds) ===
+    const compactLines = [...headerLines, "### Knowledge Base Sources", ""];
+    for (const ns of index.namespaces) {
+      const nsEntries = index.entries.filter((e) => e.namespace === ns.namespace);
+      const byType = new Map<string, number>();
+      for (const e of nsEntries) byType.set(e.entityType, (byType.get(e.entityType) ?? 0) + 1);
+      const typeBreakdown = [...byType.entries()]
+        .map(([t, n]) => `${n} ${t.replace(/_/g, " ")}`)
+        .join(", ");
+      compactLines.push(`- **${ns.label}** (\`${ns.namespace}:\`) — ${ns.documentCount} articles: ${typeBreakdown}`);
+    }
+    compactLines.push("", "_Use search_kb or list_kb_index for individual articles._");
+    const compactText = compactLines.join("\n");
+    if (this.estimateTokenCount(compactText) <= maxTokens) return compactText;
+
+    // === Strategy 3: Summary only ===
+    const summaryLines = [...headerLines, "### Available Knowledge Bases", ""];
+    for (const ns of index.namespaces) {
+      summaryLines.push(`- **${ns.label}** (\`${ns.namespace}:\`): ${ns.documentCount} articles`);
+    }
+    summaryLines.push("", "_Use search_kb to find articles, or list_kb_index for the full directory._");
+    return summaryLines.join("\n");
+  }
+
+  private estimateTokenCount(text: string): number {
+    return Math.ceil(text.length / 4);
   }
 
   // ── Direct access API ───────────────────────────────────────────────────────
@@ -256,56 +289,121 @@ export class FederatedKnowledgeBase {
   }
 
   /**
-   * Fetch a document by qualified ID (`namespace:docId`).
+   * Fetch a document by qualified ID (`namespace:docId`). Async, lazy-safe.
    */
-  getDocument(qualifiedId: string): NamespacedDocument | undefined {
+  async getDocumentAsync(qualifiedId: string): Promise<NamespacedDocument | undefined> {
     const { namespace, docId } = this.parseQualifiedId(qualifiedId);
     if (!namespace) return undefined;
 
     const ns = this.namespaces.get(namespace);
     if (!ns) return undefined;
 
-    const doc = ns.kb.getDocument(docId);
+    const doc = await ns.kb.getDocumentAsync(docId);
     if (!doc) return undefined;
 
-    return {
-      ...doc,
-      namespace,
-      qualifiedId: `${namespace}:${doc.docId}`,
-    };
+    return { ...doc, namespace, qualifiedId: `${namespace}:${doc.docId}` };
+  }
+
+  /**
+   * Fetch a document by qualified ID (`namespace:docId`).
+   * @deprecated Use `getDocumentAsync()` — returns empty body in lazy mode.
+   */
+  getDocument(qualifiedId: string): NamespacedDocument | undefined {
+    const { namespace, docId } = this.parseQualifiedId(qualifiedId);
+    if (!namespace) return undefined;
+    const ns = this.namespaces.get(namespace);
+    if (!ns) return undefined;
+    const doc = ns.kb.getDocument(docId);
+    if (!doc) return undefined;
+    return { ...doc, namespace, qualifiedId: `${namespace}:${doc.docId}` };
   }
 
   /**
    * Search across all KBs, merging and ranking results.
+   * Uses the full TF-IDF adapter (async, lazy-safe).
+   *
+   * P2-2: Applies per-KB min-max score normalization before merging so TF-IDF
+   * scores from a 3-article KB and a 3000-article KB are on the same [0,1] scale.
+   * Without normalization the small KB always wins because its IDF values are
+   * much larger (log(N/df) with N=3 vs N=3000).
    */
-  search(
+  async searchAsync(
     query: string,
     options?: {
       maxResults?: number;
       entityType?: string;
       namespace?: string;
     },
-  ): NamespacedSearchResult[] {
+  ): Promise<NamespacedSearchResult[]> {
     const { maxResults = 10, entityType, namespace: nsFilter } = options ?? {};
 
-    const allResults: NamespacedSearchResult[] = [];
+    // Collect results per namespace so we can normalize before merging (P2-2)
+    const resultsByNs: Array<NamespacedSearchResult[]> = [];
 
-    for (const [ns, { kb }] of this.namespaces) {
-      if (nsFilter && ns !== nsFilter) continue;
-
-      const results = kb.search(query, { maxResults: maxResults * 2, entityType });
-      for (const r of results) {
-        allResults.push({
+    await Promise.all(
+      Array.from(this.namespaces.entries()).map(async ([ns, { kb }]) => {
+        if (nsFilter && ns !== nsFilter) return;
+        const results = await kb.searchAsync(query, { maxResults: maxResults * 2, entityType });
+        const tagged = results.map((r) => ({
           ...r,
           namespace: ns,
           qualifiedId: `${ns}:${r.docId}`,
-        });
+        } as NamespacedSearchResult));
+        resultsByNs.push(tagged);
+      }),
+    );
+
+    // F-1: Fixed-point sigmoid normalization per KB before merging.
+    //
+    // History of decisions:
+    //  - Original: raw TF-IDF scores merged directly — small KBs always won
+    //    because log(N/df) with N=3 yields much larger IDF than N=3000.
+    //  - Min-max normalization: raised 0.5 to 1.0 if it was the local max;
+    //    erased absolute quality signals; single-result KBs always scored 1.0.
+    //  - Z-score + sigmoid: fixed the outlier problem but spread tightly-clustered
+    //    high-relevance results across [0.2, 0.8]. Five 90%-relevant results
+    //    became [0.21, 0.36, 0.50, 0.64, 0.79] — the bottom wrongly excluded.
+    //
+    // Fixed-point sigmoid: sigmoid(k×(x - 0.5)) with k=6.
+    //   x=0.95 → 0.937  (high relevance stays high)
+    //   x=0.50 → 0.500  (midpoint unchanged)
+    //   x=0.05 → 0.063  (low relevance stays low)
+    //
+    // This is NOT data-dependent (no mean/stdev computed), so absolute quality
+    // is preserved across all namespaces on the same scale.
+    const K = 6;
+    const fixedSigmoid = (x: number) => 1 / (1 + Math.exp(-K * (x - 0.5)));
+
+    const allResults: NamespacedSearchResult[] = [];
+    for (const nsResults of resultsByNs) {
+      if (nsResults.length === 0) continue;
+      for (const r of nsResults) {
+        allResults.push({ ...r, score: fixedSigmoid(r.score) });
       }
     }
 
-    // Re-sort merged results by score
     allResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+    return allResults.slice(0, maxResults);
+  }
 
+  /**
+   * @deprecated Use `searchAsync()` — uses TF-IDF plugin correctly.
+   * This sync shim iterates empty document maps in lazy mode.
+   */
+  search(
+    query: string,
+    options?: { maxResults?: number; entityType?: string; namespace?: string },
+  ): NamespacedSearchResult[] {
+    const { maxResults = 10, entityType, namespace: nsFilter } = options ?? {};
+    const allResults: NamespacedSearchResult[] = [];
+    for (const [ns, { kb }] of this.namespaces) {
+      if (nsFilter && ns !== nsFilter) continue;
+      const results = kb.search(query, { maxResults: maxResults * 2, entityType });
+      for (const r of results) {
+        allResults.push({ ...r, namespace: ns, qualifiedId: `${ns}:${r.docId}` });
+      }
+    }
+    allResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
     return allResults.slice(0, maxResults);
   }
 
@@ -391,7 +489,9 @@ export class FederatedKnowledgeBase {
         properties: {
           namespace: {
             type: "string",
-            description: `Optional: filter by KB namespace. Available: ${this.namespaceNames.join(", ")}`,
+            // P2-4: close over the live Map so reload() always reflects current namespaces,
+            // not a snapshot string captured at buildTools() call time
+            description: `Optional: filter by KB namespace. Available: ${Array.from(this.namespaces.keys()).join(", ")}`,
           },
           entityType: {
             type: "string",
@@ -460,20 +560,19 @@ export class FederatedKnowledgeBase {
       isReadOnly: () => true,
       isConcurrencySafe: () => true,
       call: async ({ docId }: { docId: string }): Promise<{ data: unknown }> => {
-        const doc = this.getDocument(docId);
+        const doc = await this.getDocumentAsync(docId);
 
         if (!doc) {
-          // Try to help with suggestions
+          // Try to help with suggestions using metadata only (no body loading)
           const { namespace, docId: rawDocId } = this.parseQualifiedId(docId);
           const suggestions: string[] = [];
 
           if (namespace && this.namespaces.has(namespace)) {
             // Namespace valid, docId wrong
             const ns = this.namespaces.get(namespace)!;
-            const allDocs = ns.kb.getAllDocuments();
             const slug = rawDocId.split("/").pop() ?? "";
             suggestions.push(
-              ...allDocs
+              ...ns.kb.getAllDocumentMeta()
                 .filter(
                   (d) =>
                     d.docId.includes(slug) || d.title.toLowerCase().includes(slug.toLowerCase()),
@@ -482,11 +581,10 @@ export class FederatedKnowledgeBase {
                 .slice(0, 5),
             );
           } else if (!namespace) {
-            // No namespace prefix — search all
+            // No namespace prefix — search all metas
             for (const [ns, { kb }] of this.namespaces) {
-              const allDocs = kb.getAllDocuments();
               suggestions.push(
-                ...allDocs
+                ...kb.getAllDocumentMeta()
                   .filter(
                     (d) =>
                       d.docId.includes(docId) ||
@@ -567,8 +665,9 @@ export class FederatedKnowledgeBase {
         query: string;
         namespace?: string;
         entityType?: string;
+        // P2-4: use live namespace keys, not snapshot from buildTools() time
       }): Promise<{ data: unknown }> => {
-        const results = this.search(query, {
+        const results = await this.searchAsync(query, {
           maxResults: maxSearchResults,
           entityType,
           namespace,
@@ -579,7 +678,7 @@ export class FederatedKnowledgeBase {
             data: {
               found: 0,
               message: `No articles match "${query}" across ${namespace ? `the ${namespace} KB` : "any KB"}.`,
-              availableNamespaces: this.namespaceNames,
+              availableNamespaces: Array.from(this.namespaces.keys()),
               hint: "Use list_kb_index to see all available topics.",
             },
           };
@@ -610,9 +709,11 @@ export class FederatedKnowledgeBase {
   private parseQualifiedId(qualifiedId: string): { namespace: string | null; docId: string } {
     const colonIdx = qualifiedId.indexOf(":");
     if (colonIdx === -1) {
-      // No namespace prefix — try to find in any KB
+      // P0-7/P3-6: Use getDocumentMeta (always safe, no body load) instead of the deprecated
+      // getDocument() whose truthy-object check returns true for ANY docId with metadata
+      // in lazy mode (body is empty string but the object itself is truthy).
       for (const [ns, { kb }] of this.namespaces) {
-        if (kb.getDocument(qualifiedId)) {
+        if (kb._getStore().getDocumentMeta(qualifiedId)) {
           return { namespace: ns, docId: qualifiedId };
         }
       }

@@ -35,8 +35,9 @@
  * Each article is an independent LLM call — no cross-article ordering required.
  */
 
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
+import { atomicWriteFile } from "../atomicWrite.js";
 import type { KBOntology, ConceptRegistry, ConceptRegistryEntry } from "../../ontology/index.js";
 import { serializeRegistry, upsertRegistryEntry } from "../../ontology/index.js";
 import type { IngestedContent } from "../ingester/index.js";
@@ -44,7 +45,7 @@ import type { CompilationPlan, ArticlePlan, CandidateConcept } from "../extracto
 import { writeWithVersioning } from "../versioning.js";
 import { withRetry } from "../retry.js";
 import { generateDocId } from "../utils.js";
-import { validateGrounding } from "../validator.js";
+// P1-1: validateGrounding removed — grounding is now unified in compiler.ts (MultiLayerGroundingPlugin)
 import {
   serializeFrontmatter,
   validateFrontmatter,
@@ -215,9 +216,13 @@ export class KnowledgeSynthesizer {
         this.createStub(candidate, [parentPlan.docId], options, emit),
       );
     const stubSettled = await Promise.allSettled(stubTasks);
+    // A5 FIX: Batch-apply stub registry entries sequentially (not inside parallel tasks)
     for (const result of stubSettled) {
       if (result.status === "fulfilled" && result.value) {
         stubResults.push(result.value);
+        if (result.value.registryEntry) {
+          upsertRegistryEntry(this.registry, result.value.registryEntry);
+        }
       }
     }
 
@@ -340,7 +345,8 @@ export class KnowledgeSynthesizer {
       // Phase 1A: Write with versioning (backs up previous version)
       if (!options.dryRun) {
         await mkdir(dirname(outputPath), { recursive: true });
-        const writeResult = await writeWithVersioning(outputPath, finalMarkdown, this.versionsDir);
+        // P1-5: pass compiledDir so versionDirForArticle uses the full relative path
+        const writeResult = await writeWithVersioning(outputPath, finalMarkdown, this.versionsDir, this.compiledDir);
         if (writeResult.action === "unchanged") {
           emit({
             type: "article:written",
@@ -359,17 +365,9 @@ export class KnowledgeSynthesizer {
         }
       }
 
-      // Phase 5C: Post-synthesis grounding validation
-      const sourceTexts = sources.map((s) => s.text);
-      const grounding = validateGrounding(parsed.body, sourceTexts);
-      if (grounding.score < 0.5) {
-        emit({
-          type: "article:warning",
-          docId: articlePlan.docId,
-          title: articlePlan.canonicalTitle,
-          message: `Low grounding score (${(grounding.score * 100).toFixed(0)}%). ${grounding.unsupportedClaims.length} potentially hallucinated claims.`,
-        });
-      }
+      // P1-1: Inline grounding validation removed. Grounding is now unified in
+      // compiler.ts via MultiLayerGroundingPlugin — runs after all articles are
+      // written, with per-article source scoping and configurable thresholds.
 
       // Build registry entry for batch application (Phase 1C)
       const registryEntry: ConceptRegistryEntry = {
@@ -399,6 +397,8 @@ export class KnowledgeSynthesizer {
         wordCount,
         outputPath: options.dryRun ? undefined : outputPath,
         registryEntry, // Phase 1C: returned for batch application
+        sourcePaths: articlePlan.sourcePaths, // P0-1: per-article source scoping for grounding
+        body: options.dryRun ? undefined : parsed.body, // P2-1: avoid disk re-read in grounding
       };
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -442,18 +442,23 @@ export class KnowledgeSynthesizer {
 
     if (!options.dryRun) {
       await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, stubMarkdown, "utf-8");
+      // F1: atomic write — plain writeFile() corrupts stubs when the process crashes
+      // mid-write. All other artifact writes (main articles, registry, versioning backup)
+      // use atomicWriteFile; this was the one missed case.
+      await atomicWriteFile(outputPath, stubMarkdown);
     }
 
-    // Register the stub
-    upsertRegistryEntry(this.registry, {
+    // A5 FIX: Return the registry entry for batch application instead of
+    // mutating the shared registry inside a parallel task. The caller
+    // (synthesize()) applies these sequentially after all stubs complete.
+    const registryEntry = {
       docId,
       canonicalTitle: candidate.name,
       entityType: candidate.entityType,
       aliases: [candidate.name.toLowerCase()],
       compiledAt: Date.now(),
       isStub: true,
-    });
+    };
 
     emit({ type: "stub:created", docId, title: candidate.name, entityType: candidate.entityType });
 
@@ -463,6 +468,7 @@ export class KnowledgeSynthesizer {
       action: "created",
       wordCount: stubMarkdown.split(/\s+/).filter(Boolean).length,
       outputPath: options.dryRun ? undefined : outputPath,
+      registryEntry, // A5: returned for sequential batch application
     };
   }
 

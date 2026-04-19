@@ -358,7 +358,10 @@ export function parseArticleOutput(raw: string): ParsedArticle {
   }
 
   // Check for YAML frontmatter block
-  const fmMatch = cleaned.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  // G1: use \r?\n throughout to handle both LF and CRLF responses from LLMs.
+  // The original /^---\n/ did not match Windows-style \r\n line endings, causing
+  // the entire frontmatter to be silently discarded on every CRLF LLM response.
+  const fmMatch = cleaned.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
 
   if (!fmMatch) {
     // No frontmatter — return empty frontmatter + whole text as body
@@ -401,10 +404,31 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
       continue;
     }
 
-    // Empty value — check if next lines define a list
+    // Empty value — check if next lines define a block scalar or list
     if (rest === "" || rest === "|") {
-      const listItems: string[] = [];
       i++;
+      // G3: handle block scalar (|) — multi-line indented text.
+      // The original code treated block scalars the same as empty values: it only
+      // looked for list-item lines (dash-prefixed) and returned null if none were found.
+      // Any multi-line `description: |\n  text` field was silently dropped → null.
+      if (rest === "|") {
+        const blockLines: string[] = [];
+        // Determine the indent level of the block from the first non-empty line
+        const firstBlockLine = lines[i];
+        const blockIndent = firstBlockLine ? firstBlockLine.match(/^(\s*)/)?.[1]?.length ?? 0 : 0;
+        while (i < lines.length) {
+          const bl = lines[i]!;
+          // Stop when indentation is less than the block's indent (back to parent level)
+          if (bl.trim() !== "" && (bl.match(/^(\s*)/)?.[1]?.length ?? 0) < blockIndent) break;
+          blockLines.push(bl.slice(blockIndent)); // strip leading indent
+          i++;
+        }
+        // Join preserving newlines (strip trailing newline per YAML block scalar semantics)
+        result[key] = blockLines.join("\n").replace(/\n+$/, "");
+        continue;
+      }
+      // Empty value — check if next lines define a list
+      const listItems: string[] = [];
       while (i < lines.length && lines[i]!.match(/^\s+-\s+/)) {
         const item = lines[i]!.replace(/^\s+-\s+/, "").trim();
         listItems.push(stripStringQuotes(item));

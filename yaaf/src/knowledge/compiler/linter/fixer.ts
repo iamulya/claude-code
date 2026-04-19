@@ -16,8 +16,9 @@
  * - Never removes content — only adds or rewrites wikilinks
  */
 
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
+import { atomicWriteFile } from "../atomicWrite.js";
 import type { LintIssue, AutoFixResult, FixedIssue } from "./types.js";
 
 // ── Auto-fixer ────────────────────────────────────────────────────────────────
@@ -67,7 +68,14 @@ export async function applyFixes(
       }
 
       if (firstOccurrenceOnly) {
-        modified = modified.replace(findText, replaceWith);
+        // M2: String.replace(string, string) interprets $ sequences in replaceWith
+        // ($&=matched, $1=group, $$=literal-$, $`=before, $'=after).
+        // A default value of "$100" would be mangled to the matched text.
+        // Pass a replacer function to suppress all $ interpolation.
+        const idx = modified.indexOf(findText);
+        if (idx !== -1) {
+          modified = modified.slice(0, idx) + replaceWith + modified.slice(idx + findText.length);
+        }
       } else {
         modified = modified.split(findText).join(replaceWith);
       }
@@ -76,8 +84,10 @@ export async function applyFixes(
     }
 
     // Write the file only if changes were made
+    // M1: plain writeFile() risks a half-written compiled article on crash.
+    // Use atomicWriteFile (tmp→rename) for crash-safe updates.
     if (!dryRun && modified !== content) {
-      await writeFile(filePath, modified, "utf-8");
+      await atomicWriteFile(filePath, modified);
     }
   }
 

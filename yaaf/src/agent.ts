@@ -116,6 +116,40 @@ export type PlanModeConfig = {
    * a numbered list of steps without executing anything.
    */
   planningPrompt?: string;
+  /**
+   * Read-only tools available to the agent during the planning phase.
+   *
+   * By default the planner runs with **no tools** (`tools: []`), meaning it can
+   * only reason about the task from the user message and system prompt context.
+   * Providing `plannerTools` lets the planner explore the codebase (search files,
+   * read documents, query APIs) before generating its plan — grounding the plan in
+   * the actual codebase rather than reasoning blindly from the user message alone.
+   *
+   * **Security:** Only pass genuinely read-only tools here. The planning phase
+   * deliberately avoids write operations so the approval gate is meaningful.
+   * Write-capable tools passed in `plannerTools` will function normally; it is
+   * the developer’s responsibility to use only safe tools.
+   *
+   * **Performance:** The planner inherits the agent’s model. For large codebases
+   * you may want a lighter/faster model for exploration — pass a pre-built
+   * `chatModel` via a separate cheap Agent or set a lower `maxIterations`.
+   *
+   * @example
+   * ```ts
+   * const agent = new Agent({
+   *   systemPrompt: 'You are a careful engineer.',
+   *   tools: [readFileTool, writeFileTool, runTestsTool],
+   *   planMode: {
+   *     // Give the planner read-only access so it can explore before planning.
+   *     // The write tools (writeFileTool, runTestsTool) are withheld until
+   *     // the user approves the plan.
+   *     plannerTools: [readFileTool, searchTool],
+   *     onPlan: async (plan) => askUserApproval(plan),
+   *   },
+   * })
+   * ```
+   */
+  plannerTools?: readonly Tool[];
 };
 
 // ── Agent Config ─────────────────────────────────────────────────────────────
@@ -1463,18 +1497,35 @@ export class Agent {
     if (pluginContext) prefixParts.push(`## Context\n${pluginContext}`);
     const prefix = prefixParts.length > 0 ? `${prefixParts.join("\n\n")}\n\n` : "";
 
-    const planSystemPrompt = `${basePrompt}\n\n${prefix}${planPrompt}`;
+    // Build the planner system prompt.
+    // When plannerTools are provided we append an exploration notice so the
+    // model knows it can (and should) use the read-only tools before producing
+    // its plan. Without this hint the model tends to skip exploration.
+    const explorationHint =
+      this.planMode!.plannerTools && this.planMode!.plannerTools.length > 0
+        ? `\n\nYou have READ-ONLY tools available for exploration. ` +
+          `Use them to understand the codebase before producing your plan. ` +
+          `DO NOT execute any write operations — those will be available after the plan is approved.`
+        : "";
 
-    // Step 1: Generate plan (no tools, reuses the already-resolved model)
-    // Plan mode runner now inherits security hooks from the main runner,
-    // preventing prompt injection via the user message in the planning phase.
-    // Plan mode runner also inherits sandbox (timeout protection),
-    // accessPolicy (IAM checks), and toolResultBoundaries for complete security.
+    const planSystemPrompt = `${basePrompt}\n\n${prefix}${planPrompt}${explorationHint}`;
+
+    // Step 1: Generate plan.
+    // plannerTools (when provided) gives the planner read-only exploration
+    // capability — search, read files, query APIs — before generating the plan.
+    // Without plannerTools the planner runs with tools: [] (text-only).
+    //
+    // Security: the planner inherits the same security hooks, sandbox, and
+    // accessPolicy as the main runner so adversarial user messages cannot bypass
+    // security boundaries during the planning phase.
     const plannerRunner = new AgentRunner({
       model: this.runner.model, // reuse — no re-construction
-      tools: [],
+      tools: [...(this.planMode!.plannerTools ?? [])],
       systemPrompt: planSystemPrompt,
-      maxIterations: 1,
+      // Allow more than 1 iteration when plannerTools are provided — tools
+      // require at least 2 turns (tool call + final answer). Cap at 5 to bound
+      // cost; callers who need more exploration turns should customise maxIterations.
+      maxIterations: this.planMode!.plannerTools?.length ? 5 : 1,
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       hooks: composeSecurityHooks(this.config, this._pluginHost),
@@ -1491,6 +1542,17 @@ export class Agent {
       if (!approved) {
         return `[Plan not approved. Execution stopped.]\n\nProposed plan:\n${plan}`;
       }
+    }
+
+    // Step 3: Persist the approved plan into the session so it survives
+    // compaction and crash/restart. The plan can be retrieved via
+    // session.getPlan() during or after the execution phase.
+    if (this.session) {
+      await (this.session as import("./session.js").SessionLike).setPlan(plan).catch((err) => {
+        // Non-fatal — plan persistence failing should not abort execution.
+        // The plan is still available in-memory for the current process lifetime.
+        logger.warn(`Plan persistence failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }
 
     // Wrap the plan in data boundaries to prevent

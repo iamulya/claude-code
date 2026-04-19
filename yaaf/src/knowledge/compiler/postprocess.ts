@@ -13,9 +13,10 @@
  * linked sub-articles with navigation headers.
  */
 
-import { readFile, writeFile, mkdir, readdir, stat } from "fs/promises";
-import { join, dirname, relative } from "path";
+import { readFile, mkdir, readdir, stat } from "fs/promises";
+import { join, dirname, relative, resolve, basename, extname } from "path";
 import type { ConceptRegistry, ConceptRegistryEntry } from "../ontology/index.js";
+import { atomicWriteFile } from "./atomicWrite.js";
 import { estimateTokens } from "../../utils/tokens.js";
 
 // ── B1: Wikilink Resolution ───────────────────────────────────────────────────
@@ -42,22 +43,33 @@ export function resolveWikilinks(
   let resolvedCount = 0;
   let unresolvedCount = 0;
 
-  const resolved = markdown.replace(WIKILINK_RE, (_match, target: string, displayText?: string) => {
-    const trimmedTarget = target.trim();
-    const docId = resolveToDocId(trimmedTarget, registry);
+  // H4: split on fenced code blocks AND inline code spans so WIKILINK_RE never
+  // matches inside either. Triple-backtick fences were protected before (Pass 14);
+  // T2 extends this to single-backtick inline spans: `[[Article]]` must stay literal.
+  // Split pattern captures both kinds — odd-indexed segments are protected zones.
+  const segments = markdown.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
 
-    if (!docId) {
-      unresolvedCount++;
-      return _match; // Leave unresolved wikilinks as-is
-    }
+  const processedSegments = segments.map((segment, idx) => {
+    // Odd segments are fenced code blocks or inline code spans — leave them untouched
+    if (idx % 2 === 1) return segment;
 
-    resolvedCount++;
-    const display = displayText?.trim() || trimmedTarget;
-    const relativePath = computeRelativePath(currentDocId, docId);
-    return `[${display}](${relativePath})`;
+    return segment.replace(WIKILINK_RE, (_match, target: string, displayText?: string) => {
+      const trimmedTarget = target.trim();
+      const docId = resolveToDocId(trimmedTarget, registry);
+
+      if (!docId) {
+        unresolvedCount++;
+        return _match; // Leave unresolved wikilinks as-is
+      }
+
+      resolvedCount++;
+      const display = displayText?.trim() || trimmedTarget;
+      const relativePath = computeRelativePath(currentDocId, docId);
+      return `[${display}](${relativePath})`;
+    });
   });
 
-  return { resolved, resolvedCount, unresolvedCount };
+  return { resolved: processedSegments.join(""), resolvedCount, unresolvedCount };
 }
 
 /**
@@ -182,7 +194,9 @@ export async function segmentOversizedArticles(
       const partContent = parts[i]!.content + "\n\n---\n\n" + navigation;
 
       await mkdir(dirname(partPath), { recursive: true });
-      await writeFile(partPath, partContent, "utf-8");
+      // S1: atomicWriteFile prevents truncated part files on crash.
+      // Part files are KB artifacts loaded by store and linter on every run.
+      await atomicWriteFile(partPath, partContent);
     }
 
     result.split++;
@@ -213,9 +227,11 @@ type ArticlePart = {
  */
 function splitArticle(raw: string, tokenBudget: number): ArticlePart[] {
   // Separate frontmatter from body
-  const fmMatch = raw.match(/^(---\n[\s\S]*?\n---\n?)([\s\S]*)$/);
+  // R2: CRLF normalization -- same class as other frontmatter regex fixes.
+  const rawNorm = raw.replace(/\r\n/g, "\n");
+  const fmMatch = rawNorm.match(/^(---\n[\s\S]*?\n---\n?)([\s\S]*)$/);
   const frontmatter = fmMatch?.[1] ?? "";
-  const body = fmMatch?.[2] ?? raw;
+  const body = fmMatch?.[2] ?? rawNorm;
 
   // Split body at H2 boundaries
   const sections = splitAtH2(body);
@@ -400,7 +416,8 @@ export async function postProcessCompiledArticles(
       const { resolved, resolvedCount, unresolvedCount } = resolveWikilinks(raw, registry, docId);
 
       if (resolvedCount > 0) {
-        await writeFile(filePath, resolved, "utf-8");
+        // S2: atomicWriteFile prevents half-rewritten compiled articles on crash.
+        await atomicWriteFile(filePath, resolved);
       }
 
       totalResolved += resolvedCount;

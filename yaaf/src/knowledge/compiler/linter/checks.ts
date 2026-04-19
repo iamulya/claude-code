@@ -179,13 +179,15 @@ export function checkMissingRequiredFields(
           ? `Add "${fieldName}: ${fieldSchema.default}" to the frontmatter`
           : `Add "${fieldName}" to the frontmatter. Type: ${fieldSchema.type}. ${fieldSchema.description}`,
         autoFixable: hasDefault,
-        // Phase 1D: Use frontmatter-aware fix that inserts before the closing ---
-        // instead of targeting the opening --- (which could match body horizontal rules)
+        // L3: firstOccurrenceOnly MUST be true. findText "\n---" also matches horizontal
+        // rules in the article body. With false, the fixer inserts frontmatter values into
+        // body section dividers, corrupting content. The YAML closing delimiter always
+        // precedes the body so the first match is always the correct target.
         fix: hasDefault
           ? {
               findText: "\n---",
               replaceWith: `\n${fieldName}: ${fieldSchema.default}\n---`,
-              firstOccurrenceOnly: false, // Target closing delimiter
+              firstOccurrenceOnly: true,
             }
           : undefined,
       });

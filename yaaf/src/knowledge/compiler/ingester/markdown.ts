@@ -26,7 +26,10 @@ function extractFrontmatterYaml(markdown: string): {
   frontmatter: Record<string, string>;
   body: string;
 } {
-  const match = markdown.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  // R1: CRLF normalization -- Windows Obsidian Web Clipper exports use \r\n.
+  // Without this, frontmatter is silently parsed as {} and body = full raw file.
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return { frontmatter: {}, body: markdown };
 
   const frontmatter: Record<string, string> = {};

@@ -17,6 +17,7 @@
 import { readFile, writeFile, readdir, stat } from "fs/promises";
 import { join, relative, dirname, resolve, extname } from "path";
 import type { VisionCallFn } from "./llmClient.js";
+import { atomicWriteFile } from "./atomicWrite.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -256,7 +257,46 @@ export async function runVisionPass(
       continue;
     }
 
-    // Read and check size
+    // P3: path traversal guard — image path comes from article markup content.
+    // An article containing ![img](../../../etc/passwd) would exfiltrate the
+    // file via base64 encoding to the vision LLM API without this check.
+    if (!imagePath.startsWith(compiledDir + "/") && !imagePath.startsWith(compiledDir + "\\")) {
+      details.push({
+        docId: candidate.docId,
+        imagePath: candidate.ref.imagePath,
+        action: "skipped",
+        message: `Image path escapes compiledDir: ${candidate.ref.imagePath}`,
+      });
+      continue;
+    }
+
+    // P4: check image size BEFORE reading — cap at 10MB to prevent OOM and
+    // oversized base64 payloads being sent to the vision API.
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    let imageSize: number;
+    try {
+      imageSize = (await stat(imagePath)).size;
+    } catch {
+      details.push({
+        docId: candidate.docId,
+        imagePath: candidate.ref.imagePath,
+        action: "failed",
+        message: `Image file not found: ${imagePath}`,
+      });
+      continue;
+    }
+    if (imageSize > MAX_IMAGE_BYTES) {
+      details.push({
+        docId: candidate.docId,
+        imagePath: candidate.ref.imagePath,
+        action: "skipped",
+        message: `Image too large (${imageSize} bytes > ${MAX_IMAGE_BYTES} limit)`,
+      });
+      emit({ type: "vision:skipped", image: candidate.ref.imagePath, reason: "too large" });
+      continue;
+    }
+
+    // Read and check minimum size
     let imageBuffer: Buffer;
     try {
       imageBuffer = await readFile(imagePath);
@@ -265,7 +305,7 @@ export async function runVisionPass(
         docId: candidate.docId,
         imagePath: candidate.ref.imagePath,
         action: "failed",
-        message: `Image file not found: ${imagePath}`,
+        message: `Could not read image: ${imagePath}`,
       });
       continue;
     }
@@ -335,9 +375,15 @@ export async function runVisionPass(
       let content = await readFile(filePath, "utf-8");
       for (const { ref, newAlt } of changes) {
         const newRef = `![${newAlt}](${ref.imagePath})`;
-        content = content.replace(ref.fullMatch, newRef);
+        // P5a: split/join replaces ALL occurrences of the same image ref.
+        // String.replace(str, str) only replaces the first — identical images
+        // appearing twice would keep their generic alt-text and re-trigger
+        // the vision pass on every subsequent run.
+        content = content.split(ref.fullMatch).join(newRef);
       }
-      await writeFile(filePath, content, "utf-8");
+      // P5b: atomicWriteFile instead of writeFile to prevent half-written
+      // articles on crash (same fix as heal.ts/N3 and fixer.ts/M1).
+      await atomicWriteFile(filePath, content);
     }
   }
 

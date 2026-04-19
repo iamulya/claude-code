@@ -122,7 +122,37 @@ export const codeIngester: Ingester = {
   requiresOptionalDeps: false,
 
   async ingest(filePath: string, options: IngesterOptions = {}): Promise<IngestedContent> {
-    const raw = await readFile(filePath, "utf-8");
+    // T3: cap source file reads to prevent OOM on minified bundles or generated files.
+    // 500KB is generous for any authored source file; minified bundles are megabytes.
+    const MAX_SOURCE_BYTES = 500 * 1024;
+    const { stat } = await import("fs/promises");
+    let raw: string;
+    try {
+      const s = await stat(filePath);
+      if (s.size > MAX_SOURCE_BYTES) {
+        // Read only the first MAX_SOURCE_BYTES -- enough to capture JSDoc + structure
+        const { createReadStream } = await import("fs");
+        const chunks: Buffer[] = [];
+        let totalRead = 0;
+        await new Promise<void>((resolve, reject) => {
+          const stream = createReadStream(filePath, { highWaterMark: 64 * 1024 });
+          stream.on("data", (chunk: unknown) => {
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+            const remaining = MAX_SOURCE_BYTES - totalRead;
+            chunks.push(buf.slice(0, remaining));
+            totalRead += Math.min(buf.length, remaining);
+            if (totalRead >= MAX_SOURCE_BYTES) stream.destroy();
+          });
+          stream.on("close", () => resolve());
+          stream.on("error", reject);
+        });
+        raw = Buffer.concat(chunks).toString("utf-8") + "\n...(file truncated — too large)";
+      } else {
+        raw = await readFile(filePath, "utf-8");
+      }
+    } catch {
+      raw = await readFile(filePath, "utf-8");
+    }
     const ext = filePath.split(".").pop()?.toLowerCase() ?? "txt";
 
     const langMap: Record<string, string> = {

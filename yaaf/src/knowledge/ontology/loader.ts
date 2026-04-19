@@ -53,17 +53,95 @@ const DEFAULT_BUDGET: KBBudgetConfig = {
   maxImagesPerFetch: 3,
 };
 
-// ── Minimal YAML parser ──────────────────────────────────────────────────────
+// ── Minimal YAML parser (hardened) ─────────────────────────────────────────
+
+/**
+ * Pre-pass: collapse block scalar indicators (`|` and `>`) into single-line
+ * quoted values so the main tokenizer (which is line-by-line) doesn't need
+ * to handle multi-line values.
+ *
+ * Example input:
+ *   description: |
+ *     Line one.
+ *     Line two.
+ * Output:
+ *   description: "Line one. Line two."
+ */
+function collapseBlockScalars(raw: string): string {
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmed = line.trimEnd();
+    // Detect block scalar: `key: |` or `key: >`
+    const blockMatch = trimmed.match(/^([ \t]*\S[^:]*:\s*)(\||>)\s*$/);
+    if (blockMatch) {
+      // P1-2: baseIndent = leading whitespace of the KEY line (not the full match group).
+      // blockMatch[1] includes the key text itself, so its length != key indentation.
+      const baseIndent = line.length - line.trimStart().length;
+      const isFolded = blockMatch[2] === ">";
+      const bodyLines: string[] = [];
+      i++;
+      // Collect subsequent lines that are more indented than the key
+      while (i < lines.length) {
+        const bodyLine = lines[i]!;
+        const bodyIndent = bodyLine.length - bodyLine.trimStart().length;
+        if (bodyLine.trim() === "" || bodyIndent > baseIndent) {
+          bodyLines.push(bodyLine.trimStart());
+          i++;
+        } else {
+          break;
+        }
+      }
+      // P2-5: literal scalars (|) preserve internal newlines.
+      // We flatten to single-line by joining with space (both folded and literal
+      // become single-line YAML values when quoted — newlines are collapsed to spaces).
+      const joined = isFolded
+        ? bodyLines.join(" ").trim()          // folded (>): lines already joined with space
+        : bodyLines.join("\n").trim();        // literal (|): newlines preserved, then flattened below
+      // Flatten newlines to space for embedding in a double-quoted single-line YAML value
+      const flattened = joined.replace(/\n/g, " ");
+      // Rewrite as a double-quoted single-line value (escape inner double-quotes)
+      const keyPart = trimmed.slice(0, trimmed.lastIndexOf(blockMatch[2]!));
+      out.push(`${keyPart}"${flattened.replace(/"/g, "'")}"`);
+      continue;
+    }
+    out.push(line);
+    i++;
+  }
+  return out.join("\n");
+}
 
 /**
  * Parses the minimal YAML subset used in ontology.yaml.
- * Handles: mappings, sequences (- item), strings, numbers, booleans, null.
- * Does NOT handle: anchors, aliases, multi-document, flow style {}, [].
  *
- * Line-by-line parser that tracks indentation to build a nested object.
- * Returns a plain JS object/array tree.
+ * Handles:
+ *  - Block mappings (key: value)
+ *  - Block sequences (- item)
+ *  - Single-quoted and double-quoted strings (with escape sequences)
+ *  - Flow sequences [a, b, c]      (Bug 3 fix)
+ *  - Block scalars | and >         (Bug 4 fix, via collapseBlockScalars)
+ *  - Strings, numbers, booleans, null
+ *  - Inline comments outside quotes (Bug 2 fix)
+ *  - Escaped quotes in double-quoted strings (W-5 fix)
+ *
+ * No longer mis-parses:
+ *  - description: "URL: https://foo.com"  (Bug 1 fix: quote-aware colon split)
+ *  - description: "hex #ff0000"           (Bug 2 fix: quote-aware comment strip)
+ *  - description: "He said \"hello\""     (W-5 fix: escaped quote tracking)
+ *  - Tab indentation throws clearly       (Bug 5 fix)
+ *
+ * Does NOT handle:
+ *  - YAML anchors/aliases (&anchor, *alias)
+ *  - Multiple documents (---)
+ *  - Flow mappings {key: value}
+ *  - \xNN and \uNNNN hex escapes
  */
 function parseYaml(raw: string): unknown {
+  // Bug 4 fix: collapse block scalars before tokenizing
+  raw = collapseBlockScalars(raw);
+
   const lines = raw
     .split("\n")
     .map((line, i) => ({ raw: line, num: i + 1 }))
@@ -71,6 +149,93 @@ function parseYaml(raw: string): unknown {
       const trimmed = l.raw.trimStart();
       return trimmed !== "" && !trimmed.startsWith("#");
     });
+
+  // ── Quote-aware helpers ────────────────────────────────────────────────────
+
+  /**
+   * Find the index of `needle` in `s`, but ONLY when outside of single/double quotes.
+   * Returns -1 if not found outside quotes.
+   *
+   * W-5 fix: properly handles escaped quotes:
+   *   - Double-quoted: backslash-escaped quotes (\" ) don't toggle state
+   *   - Single-quoted: doubled single quotes ('')  don't toggle state
+   */
+  function indexOutsideQuotes(s: string, needle: string): number {
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = 0; i <= s.length - needle.length; i++) {
+      const ch = s[i]!;
+      // W-5: Skip escaped quotes inside double-quoted strings
+      if (inDouble && ch === "\\" && i + 1 < s.length) {
+        i++; // skip the escaped character entirely
+        continue;
+      }
+      // W-5: Skip doubled single quotes ('') inside single-quoted strings
+      if (inSingle && ch === "'" && s[i + 1] === "'") {
+        i++; // skip the second quote
+        continue;
+      }
+      if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+      if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+      if (!inSingle && !inDouble && s.startsWith(needle, i)) return i;
+    }
+    return -1;
+  }
+
+  /** Strip a trailing inline comment that appears outside of quotes. */
+  function stripComment(s: string): string {
+    const idx = indexOutsideQuotes(s, " #");
+    return idx > 0 ? s.slice(0, idx).trim() : s.trim();
+  }
+
+  /**
+   * Remove surrounding matching single or double quotes from a string.
+   *
+   * P2-2: Full YAML 1.1 escape sequence support.
+   *
+   * Double-quoted strings process escape sequences:
+   *   \n, \t, \r, \\, \", \0, \a (bell), \b (backspace),
+   *   \e (escape), \v, \/, \  (space), \_ (NBSP)
+   *
+   * Single-quoted strings only escape '' → ' (YAML spec).
+   *
+   * Deliberately omits \xNN and \uNNNN hex escapes — ontology files
+   * don't use them, and supporting them requires a more complex parser.
+   * Unknown escape sequences in double-quoted strings are preserved
+   * as literal backslash+char (safe fallback).
+   */
+  function unquote(s: string): string {
+    if (s.length >= 2) {
+      const open = s[0];
+      const close = s[s.length - 1];
+      if (open === '"' && close === '"') {
+        // Double-quoted: process escape sequences
+        return s.slice(1, -1).replace(/\\(.)/g, (_, ch: string) => {
+          switch (ch) {
+            case 'n': return '\n';
+            case 't': return '\t';
+            case 'r': return '\r';
+            case '\\': return '\\';
+            case '"': return '"';
+            case '0': return '\0';
+            case 'a': return '\x07'; // bell
+            case 'b': return '\b';
+            case 'e': return '\x1B'; // escape
+            case 'v': return '\v';
+            case '/': return '/';
+            case ' ': return ' ';
+            case '_': return '\xA0'; // non-breaking space
+            default: return '\\' + ch; // unknown escape: preserve literal
+          }
+        });
+      }
+      if (open === "'" && close === "'") {
+        // Single-quoted: only escape is '' → ' (YAML spec)
+        return s.slice(1, -1).replace(/''/g, "'");
+      }
+    }
+    return s;
+  }
 
   // Parse into an intermediate token stream
   interface YamlLine {
@@ -82,15 +247,28 @@ function parseYaml(raw: string): unknown {
   }
 
   const tokens: YamlLine[] = lines.map((l) => {
-    const indent = l.raw.length - l.raw.trimStart().length;
-    const trimmed = l.raw.trimStart();
-    const isSeqItem = trimmed.startsWith("- ");
-    const content = isSeqItem ? trimmed.slice(2) : trimmed;
+    const rawLine = l.raw;
 
-    const colonIdx = content.indexOf(": ");
-    // Detect quoted key-only: "key": (ends with ": or ':)
+    // Bug 5 fix: reject tab-indented lines immediately with a clear error
+    const leadingWhitespace = rawLine.match(/^([ \t]*)/)?.[1] ?? "";
+    if (leadingWhitespace.includes("\t")) {
+      throw new Error(
+        `YAML parse error on line ${l.num}: Tab characters are not allowed in YAML indentation. ` +
+        `Replace tabs with spaces.`,
+      );
+    }
+
+    const indent = rawLine.length - rawLine.trimStart().length;
+    const trimmed = rawLine.trimStart();
+    const isSeqItem = trimmed.startsWith("- ") || trimmed === "-";
+    // W-6: Clearer sequence item content extraction
+    // Bare "-" (no value) → slice 1 to get empty string
+    // "- value" → slice 2 to skip "- " prefix
+    const content = isSeqItem ? trimmed.slice(trimmed === "-" ? 1 : 2) : trimmed;
+
+    // Detect quoted key-only: "key": or 'key':
     const quotedKeyOnlyMatch = !isSeqItem
-      ? (content.match(/^"([^"]+)":$/) ?? content.match(/^'([^']+)':$/))
+      ? (content.match(/^"([^"]+)":\s*$/) ?? content.match(/^'([^']+)':\s*$/))
       : null;
     const isKeyOnly =
       !quotedKeyOnlyMatch &&
@@ -102,64 +280,89 @@ function parseYaml(raw: string): unknown {
     let value: string | undefined;
 
     if (quotedKeyOnlyMatch) {
-      // Quoted mapping key with no value: "attention mechanism":
       key = quotedKeyOnlyMatch[1]!.trim();
     } else if (isKeyOnly && !isSeqItem) {
-      key = content.slice(0, -1).trim();
-      // Strip quotes from the key
-      if (
-        (key.startsWith('"') && key.endsWith('"')) ||
-        (key.startsWith("'") && key.endsWith("'"))
-      ) {
-        key = key.slice(1, -1);
-      }
-    } else if (colonIdx > 0) {
-      key = content.slice(0, colonIdx).trim();
-      // Strip quotes from the key
-      if (
-        (key.startsWith('"') && key.endsWith('"')) ||
-        (key.startsWith("'") && key.endsWith("'"))
-      ) {
-        key = key.slice(1, -1);
-      }
-      value = content.slice(colonIdx + 2).trim();
-    } else if (isSeqItem) {
-      // Sequence item with no colon — plain scalar
-      value = content.trim();
+      key = unquote(content.slice(0, -1).trim());
     } else {
-      // Scalar continuation or bare key
-      key = content.trim();
-    }
-
-    // Strip inline comments from value
-    if (value) {
-      const commentIdx = value.indexOf(" #");
-      if (commentIdx > 0) {
-        value = value.slice(0, commentIdx).trim();
-      }
-      // Strip quotes
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
+      // Bug 1 fix: use quote-aware colon search instead of naive indexOf
+      const colonIdx = indexOutsideQuotes(content, ": ");
+      if (colonIdx > 0) {
+        key = unquote(content.slice(0, colonIdx).trim());
+        // P3-R1 fix: stripComment MUST run before unquote.
+        // For `"URL: https://foo.com # tag"`:
+        //   - unquote-first: strips quotes → `URL: https://foo.com # tag`
+        //     then stripComment sees ` # tag` as unquoted → corrupts value.
+        //   - stripComment-first: the string is still quoted → ` # tag` is
+        //     inside a quote → preserved correctly → then unquote strips outer quotes.
+        const rawValue = content.slice(colonIdx + 2).trim();
+        value = unquote(stripComment(rawValue));
+      } else if (isSeqItem) {
+        // Bug 2 fix applies here too: strip comment, then unquote
+        value = unquote(stripComment(content.trim()));
+      } else {
+        key = content.trim();
       }
     }
 
     return { indent, key, value, isSeqItem, num: l.num };
   });
 
+  // W-3: Strict decimal number pattern.
+  // Rejects hex (0x1F), octal (0o17), binary (0b101), Infinity, and whitespace-only.
+  // Only matches valid JSON-style numbers: integers and decimals with optional exponent.
+  const STRICT_NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+  // W-7: Maximum recursion depth to prevent stack overflow from pathological input
+  const MAX_DEPTH = 64;
+
   // Recursive descent builder
   function parseValue(raw: string): unknown {
     if (raw === "true") return true;
     if (raw === "false") return false;
     if (raw === "null" || raw === "~") return null;
-    const n = Number(raw);
-    if (!Number.isNaN(n) && raw !== "") return n;
+    // Bug 3 fix: flow sequences [a, b, c] or ["a", "b"]
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      const inner = raw.slice(1, -1).trim();
+      if (inner === "") return [];
+      // Split on commas outside of quotes, with escape-aware tracking
+      const items: string[] = [];
+      let current = "";
+      let inSingle = false;
+      let inDouble = false;
+      for (let ci = 0; ci < inner.length; ci++) {
+        const ch = inner[ci]!;
+        // W-5: Skip escaped characters inside double-quoted strings
+        if (inDouble && ch === "\\" && ci + 1 < inner.length) {
+          current += ch + inner[ci + 1]!;
+          ci++;
+          continue;
+        }
+        if (ch === "'" && !inDouble) { inSingle = !inSingle; current += ch; continue; }
+        if (ch === '"' && !inSingle) { inDouble = !inDouble; current += ch; continue; }
+        if (ch === "," && !inSingle && !inDouble) {
+          // W-2: Use unquote() for proper escape processing instead of naive regex stripping
+          items.push(unquote(current.trim()));
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      if (current.trim()) items.push(unquote(current.trim()));
+      return items.filter((s) => s !== "");
+    }
+    // W-3: Use strict decimal regex instead of Number() which coerces hex, Infinity, etc.
+    if (STRICT_NUMBER_RE.test(raw)) return Number(raw);
     return raw;
   }
 
-  function buildNode(idx: number, baseIndent: number): { value: unknown; nextIdx: number } {
+  function buildNode(idx: number, baseIndent: number, depth: number = 0): { value: unknown; nextIdx: number } {
+    // W-7: Guard against stack overflow from pathological nesting
+    if (depth >= MAX_DEPTH) {
+      throw new Error(
+        `YAML parse error: nesting depth exceeds ${MAX_DEPTH} levels. ` +
+        `This likely indicates a malformed or adversarial ontology file.`,
+      );
+    }
     const token = tokens[idx]!;
 
     // Peek ahead to determine if this is a mapping or sequence parent
@@ -183,7 +386,7 @@ function parseYaml(raw: string): unknown {
             if (t.key && t.value !== undefined) {
               obj[t.key] = parseValue(t.value);
             } else if (t.key) {
-              const result = buildNode(i, t.indent);
+              const result = buildNode(i, t.indent, depth + 1);
               obj[t.key] = result.value;
               i = result.nextIdx;
               continue;
@@ -195,7 +398,7 @@ function parseYaml(raw: string): unknown {
                 obj[inner.key] = parseValue(inner.value);
                 i++;
               } else if (inner.key) {
-                const result = buildNode(i, inner.indent);
+                const result = buildNode(i, inner.indent, depth + 1);
                 obj[inner.key] = result.value;
                 i = result.nextIdx;
               } else {
@@ -209,14 +412,21 @@ function parseYaml(raw: string): unknown {
       } else {
         // Build mapping
         const obj: Record<string, unknown> = {};
+        const seenKeys = new Set<string>();
         let i = idx + 1;
         while (i < tokens.length && tokens[i]!.indent === childIndent) {
           const t = tokens[i]!;
+          if (t.key) {
+            if (seenKeys.has(t.key)) {
+              console.warn(`YAML parse warning: duplicate key "${t.key}" at line ${t.num}; last value wins.`);
+            }
+            seenKeys.add(t.key);
+          }
           if (t.key && t.value !== undefined) {
             obj[t.key] = parseValue(t.value);
             i++;
           } else if (t.key) {
-            const result = buildNode(i, t.indent);
+            const result = buildNode(i, t.indent, depth + 1);
             obj[t.key] = result.value;
             i = result.nextIdx;
           } else {
@@ -237,9 +447,16 @@ function parseYaml(raw: string): unknown {
 
   // Build root mapping
   const root: Record<string, unknown> = {};
+  const seenRootKeys = new Set<string>();
   let i = 0;
   while (i < tokens.length) {
     const t = tokens[i]!;
+    if (t.key) {
+      if (seenRootKeys.has(t.key)) {
+        console.warn(`YAML parse warning: duplicate key "${t.key}" at line ${t.num}; last value wins.`);
+      }
+      seenRootKeys.add(t.key);
+    }
     if (t.key && t.value !== undefined) {
       root[t.key] = parseValue(t.value);
       i++;
@@ -371,6 +588,7 @@ function hydrateEntityType(
 
   return {
     description: asString(r["description"]),
+    extends: asString(r["extends"]) || undefined,
     frontmatter: hydrateFrontmatterSchema(r["frontmatter"] ?? {}, `${path}.frontmatter`, issues),
     articleStructure,
     linkableTo: asStringArray(r["linkable_to"]),
@@ -543,6 +761,12 @@ function hydrateOntology(raw: unknown): {
   // Compiler config
   const compiler = hydrateCompilerConfig(asRecord(r["compiler"]));
 
+  // Schema mode (O6)
+  const schemaModeRaw = asString(r["schema_mode"]);
+  const schemaMode: "strict" | "progressive" | undefined =
+    schemaModeRaw === "progressive" ? "progressive" :
+    schemaModeRaw === "strict" ? "strict" : undefined;
+
   const ontology: KBOntology = {
     domain,
     entityTypes,
@@ -550,9 +774,133 @@ function hydrateOntology(raw: unknown): {
     vocabulary,
     budget,
     compiler,
+    schemaMode,
   };
 
+  // Resolve entity type inheritance chains (O5)
+  resolveInheritance(ontology, issues);
+
   return { ontology, issues };
+}
+
+// ── Entity Type Inheritance Resolution (O5) ─────────────────────────────────
+
+/**
+ * Resolve entity type inheritance chains.
+ *
+ * After all entity types are hydrated, this function:
+ * 1. Validates that `extends` references exist and there are no cycles
+ * 2. Merges parent fields into child (child overrides parent on collision)
+ * 3. Concatenates article structure (parent sections first, then child)
+ * 4. Unions linkableTo from parent + child
+ * 5. Marks abstract types (prefixed with `_`) as non-indexable
+ */
+function resolveInheritance(
+  ontology: KBOntology,
+  issues: OntologyValidationIssue[],
+): void {
+  const resolved = new Set<string>();
+  const resolving = new Set<string>();
+
+  function resolve(typeName: string): void {
+    if (resolved.has(typeName)) return;
+
+    const schema = ontology.entityTypes[typeName];
+    if (!schema) return;
+
+    // No parent — nothing to resolve
+    if (!schema.extends) {
+      // Mark abstract types as non-indexable
+      if (typeName.startsWith("_")) {
+        schema.indexable = false;
+      }
+      resolved.add(typeName);
+      return;
+    }
+
+    // Cycle detection
+    if (resolving.has(typeName)) {
+      issues.push({
+        severity: "error",
+        path: `entityTypes.${typeName}.extends`,
+        message: `Circular inheritance detected: ${typeName} → ${schema.extends}`,
+      });
+      resolved.add(typeName);
+      return;
+    }
+
+    // Validate parent exists
+    const parent = ontology.entityTypes[schema.extends];
+    if (!parent) {
+      issues.push({
+        severity: "error",
+        path: `entityTypes.${typeName}.extends`,
+        message: `Parent entity type "${schema.extends}" does not exist`,
+      });
+      resolved.add(typeName);
+      return;
+    }
+
+    // Resolve parent first (recursive)
+    resolving.add(typeName);
+    resolve(schema.extends);
+    resolving.delete(typeName);
+
+    // Merge frontmatter fields: parent fields first, child overrides
+    const mergedFields: Record<string, import("./types.js").FrontmatterFieldSchema> = {};
+    for (const [fieldName, field] of Object.entries(parent.frontmatter.fields)) {
+      mergedFields[fieldName] = field;
+    }
+    for (const [fieldName, field] of Object.entries(schema.frontmatter.fields)) {
+      mergedFields[fieldName] = field; // child overrides parent
+    }
+    schema.frontmatter = { fields: mergedFields };
+
+    // P3-3: Merge article structure with deterministic ordering.
+    // Parent sections come first, child overrides replace in-place,
+    // new child sections are appended at the end.
+    const childSections = new Map(
+      schema.articleStructure.map((s) => [s.heading.toLowerCase(), s] as const)
+    );
+    const mergedStructure: import("./types.js").ArticleSection[] = [];
+    const usedChildHeadings = new Set<string>();
+
+    // Parent sections first — use child override if heading matches
+    for (const parentSection of parent.articleStructure) {
+      const key = parentSection.heading.toLowerCase();
+      const childOverride = childSections.get(key);
+      if (childOverride) {
+        mergedStructure.push(childOverride);
+        usedChildHeadings.add(key);
+      } else {
+        mergedStructure.push(parentSection);
+      }
+    }
+
+    // Append remaining child sections (new sections not in parent)
+    for (const section of schema.articleStructure) {
+      if (!usedChildHeadings.has(section.heading.toLowerCase())) {
+        mergedStructure.push(section);
+      }
+    }
+    schema.articleStructure = mergedStructure;
+
+    // Union linkableTo
+    const linkSet = new Set([...parent.linkableTo, ...schema.linkableTo]);
+    schema.linkableTo = [...linkSet];
+
+    // Mark abstract types as non-indexable
+    if (typeName.startsWith("_")) {
+      schema.indexable = false;
+    }
+
+    resolved.add(typeName);
+  }
+
+  // Resolve all types
+  for (const typeName of Object.keys(ontology.entityTypes)) {
+    resolve(typeName);
+  }
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -660,6 +1008,35 @@ export class OntologyLoader {
     const { issues: validateIssues } = validateOntology(ontology);
     const allIssues = [...hydrateIssues, ...validateIssues];
 
+    // P1-3: Merge vocabulary additions from the compile-time sidecar.
+    // This file is written by the compiler's vocabulary sync (O8) and contains
+    // terms discovered from the registry that aren't in ontology.yaml.
+    // Without this read, vocab additions are lost between compiles.
+    const vocabSidecarPath = join(this.kbRoot, ".kb-vocab-sync.json");
+    try {
+      const sidecarRaw = await readFile(vocabSidecarPath, "utf-8");
+      const sidecar = JSON.parse(sidecarRaw) as {
+        vocabulary?: Record<string, { aliases: string[]; entityType?: string; docId?: string }>;
+      };
+      if (sidecar.vocabulary) {
+        for (const [term, entry] of Object.entries(sidecar.vocabulary)) {
+          const key = term.toLowerCase();
+          // R-6: Guard against prototype pollution from tampered sidecar
+          if (!key || key === "__proto__" || key === "constructor" || key === "prototype") continue;
+          // Only add entries not already in ontology.yaml (user edits take precedence)
+          if (!ontology.vocabulary[key]) {
+            ontology.vocabulary[key] = {
+              aliases: entry.aliases ?? [],
+              entityType: entry.entityType,
+              docId: entry.docId,
+            };
+          }
+        }
+      }
+    } catch {
+      // Sidecar doesn't exist or is malformed — this is fine (first run or manual KB)
+    }
+
     const errors = allIssues.filter((i) => i.severity === "error");
     if (errors.length > 0) {
       const lines = errors.map((e) => ` [error] ${e.path}: ${e.message}`);
@@ -675,11 +1052,26 @@ export class OntologyLoader {
   /** Serialize an ontology object back to YAML and write it to disk */
   async save(ontology: KBOntology): Promise<void> {
     const yaml = serializeOntology(ontology);
-    await writeFile(this.ontologyPath, yaml, "utf-8");
+    // I3: atomic write — plain writeFile() on ontology.yaml risks total data loss
+    // if the process crashes mid-write. ontology.yaml cannot be auto-rebuilt.
+    const { atomicWriteFile } = await import("../compiler/atomicWrite.js");
+    await atomicWriteFile(this.ontologyPath, yaml);
   }
 }
 
 // ── YAML serializer ──────────────────────────────────────────────────────────
+
+// ── YAML string escaping ─────────────────────────────────────────────────────
+
+/**
+ * I2: escape a string for embedding inside a YAML double-quoted scalar.
+ * Escapes backslashes first (so they don't double-escape), then double-quotes.
+ * Without this, a description like 'Represents a "core" concept' produces
+ * invalid YAML: description: "Represents a "core" concept"
+ */
+function yamlEscape(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
 
 /**
  * Serialize a KBOntology back to YAML format.
@@ -692,7 +1084,7 @@ export function serializeOntology(ontology: KBOntology): string {
     `# Reviewed and committed by: [your name]`,
     `# Last updated: ${new Date().toISOString().slice(0, 10)}`,
     ``,
-    `domain: "${ontology.domain}"`,
+    `domain: "${yamlEscape(ontology.domain)}"`,
     ``,
     `# ── Entity Types ──────────────────────────────────────────────────────────`,
     `entity_types:`,
@@ -700,7 +1092,10 @@ export function serializeOntology(ontology: KBOntology): string {
 
   for (const [typeName, schema] of Object.entries(ontology.entityTypes)) {
     lines.push(` ${typeName}:`);
-    lines.push(`  description: "${schema.description}"`);
+    lines.push(`  description: "${yamlEscape(schema.description)}"`);
+    if (schema.extends) {
+      lines.push(`  extends: ${schema.extends}`);
+    }
     if (schema.linkableTo.length > 0) {
       lines.push(`  linkable_to:`);
       for (const t of schema.linkableTo) lines.push(`   - ${t}`);
@@ -712,7 +1107,7 @@ export function serializeOntology(ontology: KBOntology): string {
     lines.push(`   fields:`);
     for (const [fieldName, field] of Object.entries(schema.frontmatter.fields)) {
       lines.push(`    ${fieldName}:`);
-      lines.push(`     description: "${field.description}"`);
+      lines.push(`     description: "${yamlEscape(field.description)}"`);
       lines.push(`     type: ${field.type}`);
       lines.push(`     required: ${field.required}`);
       if (field.enum) {
@@ -723,13 +1118,13 @@ export function serializeOntology(ontology: KBOntology): string {
         lines.push(`     target_entity_type: ${field.targetEntityType}`);
       }
       if (field.default) {
-        lines.push(`     default: "${field.default}"`);
+        lines.push(`     default: "${yamlEscape(field.default)}"`);
       }
     }
     lines.push(`  article_structure:`);
     for (const section of schema.articleStructure) {
-      lines.push(`   - heading: "${section.heading}"`);
-      lines.push(`     description: "${section.description}"`);
+      lines.push(`   - heading: "${yamlEscape(section.heading)}"`);
+      lines.push(`     description: "${yamlEscape(section.description)}"`);
       lines.push(`     required: ${section.required}`);
     }
     lines.push(``);
@@ -741,7 +1136,7 @@ export function serializeOntology(ontology: KBOntology): string {
     lines.push(` - name: ${rel.name}`);
     lines.push(`   from: ${rel.from}`);
     lines.push(`   to: ${rel.to}`);
-    lines.push(`   description: "${rel.description}"`);
+    lines.push(`   description: "${yamlEscape(rel.description)}"`);
     if (rel.reciprocal) lines.push(`   reciprocal: ${rel.reciprocal}`);
   }
 
@@ -749,16 +1144,21 @@ export function serializeOntology(ontology: KBOntology): string {
   lines.push(`# ── Vocabulary ────────────────────────────────────────────────────────────`);
   lines.push(`vocabulary:`);
   for (const [term, entry] of Object.entries(ontology.vocabulary)) {
-    lines.push(` "${term}":`);
+    lines.push(` "${yamlEscape(term)}":`);
     if (entry.entityType) lines.push(`  entity_type: ${entry.entityType}`);
     if (entry.docId) lines.push(`  doc_id: ${entry.docId}`);
     if (entry.aliases.length > 0) {
       lines.push(`  aliases:`);
-      for (const alias of entry.aliases) lines.push(`   - "${alias}"`);
+      for (const alias of entry.aliases) lines.push(`   - "${yamlEscape(alias)}"`);
     }
   }
 
   lines.push(``);
+  if (ontology.schemaMode) {
+    lines.push(`# ── Schema Mode ───────────────────────────────────────────────────────────`);
+    lines.push(`schema_mode: ${ontology.schemaMode}`);
+    lines.push(``);
+  }
   lines.push(`# ── Budget ────────────────────────────────────────────────────────────────`);
   lines.push(`budget:`);
   lines.push(`  text_document_tokens: ${ontology.budget.textDocumentTokens}`);

@@ -21,7 +21,8 @@
 
 import { KBStore } from "./store.js";
 import { createKBTools } from "./tools.js";
-import type { CompiledDocument, KBIndex, SearchResult, KBIndexEntry } from "./store.js";
+import type { CompiledDocument, KBIndex, SearchResult, KBIndexEntry, DocumentMeta } from "./store.js";
+import type { KBSearchResult } from "../../plugin/types.js";
 import type { KBToolOptions } from "./tools.js";
 import type { Tool } from "../../tools/tool.js";
 import type {
@@ -29,6 +30,7 @@ import type {
   ContextProvider,
   ContextSection,
   PluginCapability,
+  PluginHost,
 } from "../../plugin/types.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,6 +49,24 @@ export type KnowledgeBaseOptions = {
    * or any context where multiple KBs are in play.
    */
   namespace?: string;
+  /**
+   * Optional PluginHost for adapter discovery.
+   * When provided, the KBStore will use a registered `KBSearchAdapter`
+   * (if any) instead of the built-in TF-IDF search engine.
+   */
+  pluginHost?: PluginHost;
+  /**
+   * Maximum token budget for the system prompt KB section.
+   * When the full article index exceeds this budget, the system prompt
+   * progressively degrades:
+   *   1. Full listing (title + docId per article)
+   *   2. Compact listing (title only, no docId)
+   *   3. Summary only (entity type counts)
+   *
+   * Default: 2000 tokens (~8KB of text).
+   * Set to `Infinity` to always include the full listing.
+   */
+  systemPromptMaxTokens?: number;
 };
 
 // ── KnowledgeBase ─────────────────────────────────────────────────────────────
@@ -77,13 +97,20 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
   private readonly store: KBStore;
   private readonly toolOptions: KBToolOptions;
   private readonly _namespace: string | undefined;
+  private readonly systemPromptMaxTokens: number;
   private cachedIndex?: KBIndex;
   private cachedTools?: Tool[];
 
-  private constructor(store: KBStore, toolOptions: KBToolOptions = {}, namespace?: string) {
+  private constructor(
+    store: KBStore,
+    toolOptions: KBToolOptions = {},
+    namespace?: string,
+    systemPromptMaxTokens?: number,
+  ) {
     this.store = store;
     this.toolOptions = toolOptions;
     this._namespace = namespace;
+    this.systemPromptMaxTokens = systemPromptMaxTokens ?? 2000;
     // Use namespace (or directory-based name) as plugin name for PluginHost
     this.name = namespace ? `kb:${namespace}` : "kb";
   }
@@ -99,9 +126,9 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
    */
   static async load(options: string | KnowledgeBaseOptions): Promise<KnowledgeBase> {
     const opts = typeof options === "string" ? { kbDir: options } : options;
-    const store = new KBStore(opts.kbDir, opts.compiledDirName);
+    const store = new KBStore(opts.kbDir, opts.compiledDirName, opts.pluginHost);
     await store.load();
-    return new KnowledgeBase(store, opts.toolOptions, opts.namespace);
+    return new KnowledgeBase(store, opts.toolOptions, opts.namespace, opts.systemPromptMaxTokens);
   }
 
   /**
@@ -109,7 +136,7 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
    * Used internally by FederatedKnowledgeBase — avoids reloading from disk.
    */
   withNamespace(namespace: string): KnowledgeBase {
-    const kb = new KnowledgeBase(this.store, this.toolOptions, namespace);
+    const kb = new KnowledgeBase(this.store, this.toolOptions, namespace, this.systemPromptMaxTokens);
     return kb;
   }
 
@@ -137,9 +164,19 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
 
   /** Plugin lifecycle — no-op (store is loaded via KnowledgeBase.load). */
   async initialize(): Promise<void> {}
-  async destroy(): Promise<void> {}
+  /** P3-3: Release all store resources (LRU cache, search index, analytics). */
+  async destroy(): Promise<void> { await this.store.destroy(); }
   async healthCheck(): Promise<boolean> {
-    return this.store.size >= 0;
+    // Fix L-2: actually verify the store is populated and readable
+    if (this.store.size === 0) return false;
+    try {
+      const firstMeta = this.store.getAllDocumentMeta()[0];
+      if (!firstMeta) return false;
+      const doc = await this.store.getDocumentAsync(firstMeta.docId);
+      return doc !== undefined;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -175,10 +212,15 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
    * Generate a system prompt section describing the KB and available tools.
    *
    * Includes a compact index of all articles so the agent knows what it can access.
+   * Progressively degrades when the index exceeds `systemPromptMaxTokens`:
+   *   1. Full listing (title + docId per article)
+   *   2. Compact listing (title only, no docId)  
+   *   3. Summary only (entity type counts)
    */
   systemPromptSection(): string {
     const index = this.index();
     const ns = this._namespace;
+    const maxTokens = this.systemPromptMaxTokens;
 
     if (index.entries.length === 0) {
       return [
@@ -199,7 +241,7 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
     }
 
     const nsNote = ns ? ` (namespace: \`${ns}\`)` : "";
-    const lines = [
+    const headerLines = [
       `## Knowledge Base${nsNote} (${index.totalDocuments} articles, ~${index.totalTokenEstimate.toLocaleString()} tokens)`,
       "",
       "You have access to a curated knowledge base. Use the following tools to retrieve information:",
@@ -207,22 +249,63 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
       `- **fetch_kb_document**: get the full content of a specific article by docId${ns ? ` (use \`${ns}:docId\` format)` : ""}`,
       "- **search_kb**: search articles by keyword",
       "",
-      "### Available Articles",
-      "",
     ];
 
+    // === Strategy 1: Full listing (title + docId) ===
+    const fullLines = [...headerLines, "### Available Articles", ""];
     for (const [type, entries] of byType) {
       const typeLabel = type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-      lines.push(`**${typeLabel}s:**`);
+      fullLines.push(`**${typeLabel}s:**`);
       for (const entry of entries) {
         const stub = entry.isStub ? " _(stub)_" : "";
         const docId = ns ? `${ns}:${entry.docId}` : entry.docId;
-        lines.push(`- ${entry.title}${stub} \`[${docId}]\``);
+        fullLines.push(`- ${entry.title}${stub} \`[${docId}]\``);
       }
-      lines.push("");
+      fullLines.push("");
+    }
+    const fullText = fullLines.join("\n");
+    if (this.estimateTokenCount(fullText) <= maxTokens) {
+      return fullText;
     }
 
-    return lines.join("\n");
+    // === Strategy 2: Compact listing (title only, no docId) ===
+    const compactLines = [...headerLines, "### Available Articles", ""];
+    for (const [type, entries] of byType) {
+      const typeLabel = type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+      const titles = entries
+        .filter((e) => !e.isStub)
+        .map((e) => e.title);
+      if (titles.length > 0) {
+        compactLines.push(`**${typeLabel}s** (${entries.length}): ${titles.join(", ")}`);
+      }
+    }
+    compactLines.push("");
+    compactLines.push("_Use search_kb or list_kb_index for full details and docIds._");
+    const compactText = compactLines.join("\n");
+    if (this.estimateTokenCount(compactText) <= maxTokens) {
+      return compactText;
+    }
+
+    // === Strategy 3: Summary only (entity type counts) ===
+    const summaryLines = [...headerLines, "### Coverage", ""];
+    for (const [type, entries] of byType) {
+      const typeLabel = type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+      const stubs = entries.filter((e) => e.isStub).length;
+      const stubNote = stubs > 0 ? ` (${stubs} stubs)` : "";
+      summaryLines.push(`- **${typeLabel}s:** ${entries.length} articles${stubNote}`);
+    }
+    summaryLines.push("");
+    summaryLines.push("_Use search_kb to find specific articles, or list_kb_index for the full directory._");
+
+    return summaryLines.join("\n");
+  }
+
+  /**
+   * Rough token count for budget enforcement.
+   * Uses the 4 chars ≈ 1 token heuristic (same as estimateTokens).
+   */
+  private estimateTokenCount(text: string): number {
+    return Math.ceil(text.length / 4);
   }
 
   // ── Direct access API ─────────────────────────────────────────────────────
@@ -245,21 +328,49 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
   }
 
   /**
+   * Fetch a specific document by docId (async, lazy-safe).
+   */
+  async getDocumentAsync(docId: string): Promise<CompiledDocument | undefined> {
+    return this.store.getDocumentAsync(docId);
+  }
+
+  /**
    * Fetch a specific document by docId.
+   * @deprecated Prefer `getDocumentAsync()` — returns empty body in lazy mode.
    */
   getDocument(docId: string): CompiledDocument | undefined {
     return this.store.getDocument(docId);
   }
 
   /**
+   * Get lightweight metadata for all documents (no body loading, no I/O).
+   */
+  getAllDocumentMeta(): DocumentMeta[] {
+    return this.store.getAllDocumentMeta();
+  }
+
+  /**
    * Get all compiled documents.
+   * @deprecated In lazy mode, returned documents have empty bodies. Prefer `getAllDocumentMeta()`.
    */
   getAllDocuments(): CompiledDocument[] {
     return this.store.getAllDocuments();
   }
 
   /**
-   * Search the KB by keyword.
+   * Search the KB using the TF-IDF adapter (async, lazy-safe).
+   * This is the primary search API — uses the same adapter as the search_kb tool.
+   */
+  async searchAsync(
+    query: string,
+    options?: { maxResults?: number; entityType?: string },
+  ): Promise<KBSearchResult[]> {
+    return this.store.searchAsync(query, options);
+  }
+
+  /**
+   * Search the KB by keyword (sync, backward-compatible).
+   * @deprecated Use `searchAsync()` for the full TF-IDF adapter.
    */
   search(query: string, options?: { maxResults?: number; entityType?: string }): SearchResult[] {
     return this.store.search(query, options);
