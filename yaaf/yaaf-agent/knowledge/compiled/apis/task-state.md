@@ -1,111 +1,154 @@
 ---
 title: TaskState
 entity_type: api
-summary: The interface representing the current state, metadata, and lifecycle status of a managed task.
+summary: The type definition for the state object representing a single task managed by the TaskManager.
 export_name: TaskState
 source_file: src/agents/taskManager.ts
 category: type
+search_terms:
+ - task lifecycle
+ - agent task status
+ - background job state
+ - TaskManager task object
+ - track agent work
+ - task status pending running completed
+ - asynchronous task tracking
+ - task metadata
+ - job state management
+ - task properties
+ - what is a task in yaaf
+ - task cancellation
+ - task timing
 stub: false
-compiled_at: 2026-04-16T14:15:09.223Z
+compiled_at: 2026-04-24T17:43:46.139Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/taskManager.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/multi-agent.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/taskManager.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-`TaskState` is a core data structure used to track the lifecycle, execution metadata, and current status of background operations within the YAAF framework. It is designed to support various types of work, including agent runs, shell commands (bash), and complex workflows.
 
-Tasks are typically managed by a central manager and stored in the application state, allowing different components to observe their progress. The state includes support for duration tracking with pause intervals and provides an `AbortController` for task cancellation.
+`TaskState` is a TypeScript type that defines the structure of a task object within YAAF's task management system. It represents a single unit of background work, such as an agent run, a shell command, or a multi-step [workflow](../concepts/workflow.md) [Source 2].
 
-## Signature / Constructor
+Each `TaskState` object tracks the complete lifecycle of a task, from its creation (`pending`) through execution (`running`) to a terminal state (`completed`, `failed`, or `killed`). It contains essential information including a unique ID, description, timing data, an optional `AbortController` for cancellation, and a flexible metadata property for custom data [Source 2].
+
+These state objects are typically created and managed by the `TaskManager` class, which uses them to monitor and control asynchronous operations within an agent or agent swarm [Source 1, Source 2].
+
+## Signature
+
+The `TaskState` type and its related enumerations are defined as follows [Source 2]:
 
 ```typescript
+export type TaskType = "agent" | "bash" | "teammate" | "workflow" | "monitor" | "custom";
+
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "killed";
+
 export type TaskState = {
   /** Unique task ID (e.g., "a3x7k9m2") */
-  id: string
+  id: string;
   /** Task type */
-  type: TaskType
+  type: TaskType;
   /** Current lifecycle status */
-  status: TaskStatus
+  status: TaskStatus;
   /** Human-readable description */
-  description: string
-  /** When the task was created */
-  startTime: number
+  description: string;
+  /** When the task was created (Unix timestamp) */
+  startTime: number;
   /** When the task reached a terminal state */
-  endTime?: number
+  endTime?: number;
   /** Total time spent paused (for accurate elapsed time) */
-  totalPausedMs?: number
+  totalPausedMs?: number;
   /** Whether the leader/UI has been notified of completion */
-  notified: boolean
+  notified: boolean;
   /** Abort controller for cancellation */
-  abortController?: AbortController
+  abortController?: AbortController;
   /** Optional error message on failure */
-  error?: string
+  error?: string;
   /** Custom metadata bag */
-  metadata?: Record<string, unknown>
-}
-
-export type TaskType =
-  | 'agent'
-  | 'bash'
-  | 'teammate'
-  | 'workflow'
-  | 'monitor'
-  | 'custom'
-
-export type TaskStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'killed'
+  metadata?: Record<string, unknown>;
+};
 ```
 
-## Methods & Properties
-
 ### Properties
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `string` | A unique identifier for the task, often using a type-specific prefix (e.g., `b` for bash, `a` for agent). |
-| `type` | `TaskType` | Categorizes the task (e.g., `agent`, `bash`, `workflow`). |
-| `status` | `TaskStatus` | The current lifecycle phase of the task. |
-| `description` | `string` | A human-readable string describing the work being performed. |
-| `startTime` | `number` | The timestamp (ms) when the task was initialized. |
-| `endTime` | `number` | (Optional) The timestamp (ms) when the task reached a terminal state (`completed`, `failed`, or `killed`). |
-| `totalPausedMs` | `number` | (Optional) Cumulative time the task spent in a paused state, used to calculate accurate active duration. |
-| `notified` | `boolean` | Indicates if the system has already signaled the task's completion to the user interface or orchestrator. |
-| `abortController` | `AbortController` | (Optional) An instance used to trigger cancellation of the underlying operation. |
-| `error` | `string` | (Optional) A descriptive message populated if the task status transitions to `failed`. |
-| `metadata` | `Record<string, unknown>` | (Optional) A key-value store for arbitrary data associated with the task. |
+
+*   **`id`**: A unique string identifier for the task.
+*   **`type`**: A string literal indicating the category of the task.
+*   **`status`**: A string literal representing the current stage of the task in its lifecycle.
+*   **`description`**: A human-readable string explaining the purpose of the task.
+*   **`startTime`**: A number representing the Unix timestamp [when](./when.md) the task was created.
+*   **`endTime`**: An optional number representing the Unix timestamp when the task concluded.
+*   **`totalPausedMs`**: An optional number tracking the cumulative time the task has been paused.
+*   **`notified`**: A boolean flag indicating if a [Notification](./notification.md) has been sent for the task's completion.
+*   **`abortController`**: An optional `AbortController` instance that can be used to cancel the running task.
+*   **`error`**: An optional string containing an error message if the task's status is `failed`.
+*   **`metadata`**: An optional record for storing arbitrary custom data related to the task.
 
 ## Examples
 
-### Basic Task State Object
+### Basic TaskState Object
+
+A `TaskState` object for a pending agent task might look like this:
+
 ```typescript
-const agentTask: TaskState = {
-  id: "a9f2d1x0",
-  type: "agent",
-  status: "running",
-  description: "Analyzing market trends",
+import { TaskState } from 'yaaf';
+
+const pendingTask: TaskState = {
+  id: 'a3x7k9m2',
+  type: 'agent',
+  status: 'pending',
+  description: 'Research quantum computing advances in 2024',
   startTime: Date.now(),
   notified: false,
+  abortController: new AbortController(),
   metadata: {
-    model: "gpt-4",
-    priority: "high"
-  }
+    assignee: 'researcher-1',
+    priority: 'high',
+  },
 };
 ```
 
-### Failed Task State
+### Task Lifecycle with TaskManager
+
+The `TaskManager` class creates and returns `TaskState` objects to represent the work it manages.
+
 ```typescript
-const failedTask: TaskState = {
-  id: "b5k3m8z1",
-  type: "bash",
-  status: "failed",
-  description: "npm install",
-  startTime: 1715000000000,
-  endTime: 1715000005000,
-  notified: true,
-  error: "EACCES: permission denied, access '/usr/local/lib/node_modules'"
-};
+import { TaskManager, type TaskState } from 'yaaf';
+
+// This is a conceptual example of TaskManager usage.
+// The actual TaskManager class may have a different API.
+const tasks = new TaskManager({ dir: './.tasks' });
+
+async function run() {
+  // TaskManager.create would return a TaskState object
+  const task: TaskState = await tasks.create({
+    type: 'research',
+    description: 'Research quantum computing advances in 2024',
+    metadata: {
+      assignee: 'researcher-1',
+      priority: 'high',
+    }
+  });
+
+  console.log(`Task ${task.id} created with status: ${task.status}`); // status: 'pending'
+
+  // Transitioning the state updates the TaskState object
+  await tasks.transition(task.id, 'in_progress'); // Note: Source 1 uses 'in_progress', Source 2 uses 'running'
+
+  // A final state might include a result in metadata
+  await tasks.transition(task.id, 'completed', {
+    result: 'Research findings...',
+  });
+}
 ```
+*Note: The task states shown in the `TaskManager` example (`in_progress`, `completed`) are based on documentation from a multi-agent context [Source 1]. The definitive `TaskStatus` type defines the states as `pending`, `running`, `completed`, `failed`, and `killed` [Source 2].*
+
+## See Also
+
+*   **TaskManager**: The class responsible for creating, managing, and transitioning `TaskState` objects.
+
+## Sources
+
+*   [Source 1]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/multi-agent.md`
+*   [Source 2]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/taskManager.ts`

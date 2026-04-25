@@ -1,73 +1,114 @@
 ---
-title: findByWikilink
-entity_type: api
-summary: Finds a concept registry entry by matching a wikilink target against docIds, titles, or aliases.
+summary: Finds a concept registry entry by matching wikilink target text against docId, canonical title, or aliases.
 export_name: findByWikilink
 source_file: src/knowledge/ontology/registry.ts
 category: function
+title: findByWikilink
+entity_type: api
+search_terms:
+ - resolve wikilink
+ - find article by link
+ - wikilink to docId
+ - concept registry lookup
+ - match alias to article
+ - canonical title search
+ - backlink resolution
+ - find document by title
+ - knowledge base linking
+ - how to find a concept
+ - registry search function
+ - lookup entity by name
 stub: false
-compiled_at: 2026-04-16T14:28:45.036Z
+compiled_at: 2026-04-24T17:06:39.137Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/ontology/registry.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/ontology/registry.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`findByWikilink` is a utility function used to resolve the target text of a wikilink (e.g., `[[Target Text]]`) to a specific entry in the Knowledge Base (KB) concept registry. It is a critical component of the Backlink Resolver, allowing the framework to map human-readable references or internal document paths to actual registry metadata.
 
-The function performs a search across the registry using a specific priority order to ensure the most relevant match is returned.
+The `findByWikilink` function is a utility for searching the in-[Memory](../concepts/memory.md) [Concept Registry](../subsystems/concept-registry.md). It attempts to resolve the target text of a wikilink (e.g., the `My Concept` part of `My Concept`) to a specific `ConceptRegistryEntry` [Source 1].
+
+This function is a core component of the knowledge base's backlink resolution system. [when](./when.md) the compiler encounters a wikilink, it uses `findByWikilink` to determine if the link points to a known article in the registry.
+
+The search follows a specific order of priority [Source 1]:
+1.  **Exact `docId` match**: The function first checks if the target string exactly matches a document ID (e.g., "concepts/attention-mechanism").
+2.  **Canonical title match**: If no `docId` matches, it performs a case-insensitive search against the `title` field of each entry.
+3.  **Alias match**: Finally, it performs a case-insensitive search against the `aliases` array of each entry.
+
+The function returns the first entry that matches according to these rules, or `undefined` if no match is found [Source 1].
 
 ## Signature
+
 ```typescript
 export function findByWikilink(
   target: string,
   registry: ConceptRegistry,
-): ConceptRegistryEntry | undefined
+): ConceptRegistryEntry | undefined;
 ```
 
 ### Parameters
-- `target`: The string content extracted from a wikilink.
-- `registry`: The `ConceptRegistry` instance representing the "known universe" of compiled articles.
 
-### Return Value
-Returns a `ConceptRegistryEntry` if a match is found, or `undefined` if the target cannot be resolved.
+-   `target` (`string`): The text content from a wikilink to be resolved.
+-   `registry` (`ConceptRegistry`): The live, in-memory index of all compiled knowledge base articles.
 
-## Matching Priority
-The function resolves matches in the following order:
-1. **Exact docId match**: Matches the target against the internal document path (e.g., `concepts/attention-mechanism`).
-2. **Canonical title match**: Matches the target against the `title` field in the article frontmatter (case-insensitive).
-3. **Alias match**: Matches the target against any defined aliases in the article frontmatter (case-insensitive).
+### Returns
+
+-   (`ConceptRegistryEntry | undefined`): The first matching registry entry found, or `undefined` if the target cannot be resolved to any known article.
 
 ## Examples
 
-### Resolving a Wikilink by Title
-This example demonstrates finding an entry using a human-readable title.
+The following example demonstrates how to use `findByWikilink` to find entries in a mock `ConceptRegistry`.
 
 ```typescript
-import { findByWikilink } from 'yaaf/knowledge';
+import { findByWikilink } from 'yaaf';
+import type { ConceptRegistry, ConceptRegistryEntry } from 'yaaf';
 
-const targetText = "Attention Mechanism";
-const entry = findByWikilink(targetText, registry);
+// A mock ConceptRegistry for demonstration purposes.
+const mockRegistry: ConceptRegistry = {
+  'api/agent': {
+    docId: 'api/agent',
+    title: 'Agent',
+    entity_type: 'api',
+    aliases: ['Agent class', 'YAAF Agent'],
+    // ... other properties would be here
+  },
+  'concepts/tool-use': {
+    docId: 'concepts/tool-use',
+    title: 'Tool Use',
+    entity_type: 'concept',
+    aliases: ['Function Calling', 'Using Tools'],
+    // ... other properties would be here
+  }
+};
 
-if (entry) {
-  console.log(`Resolved to docId: ${entry.docId}`);
-} else {
-  console.log("No matching article found.");
-}
-```
+// 1. Find by exact docId
+const entryByDocId = findByWikilink('api/agent', mockRegistry);
+console.log(entryByDocId?.title);
+// Expected output: 'Agent'
 
-### Resolving by docId
-This example demonstrates finding an entry using its explicit document path.
+// 2. Find by canonical title (case-insensitive)
+const entryByTitle = findByWikilink('tool use', mockRegistry);
+console.log(entryByTitle?.docId);
+// Expected output: 'concepts/tool-use'
 
-```typescript
-const entry = findByWikilink("concepts/llm-orchestration", registry);
+// 3. Find by alias (case-insensitive)
+const entryByAlias = findByWikilink('function calling', mockRegistry);
+console.log(entryByAlias?.title);
+// Expected output: 'Tool Use'
 
-if (entry) {
-  // Returns the entry for the specific file path
-  console.log(entry.title); 
-}
+// 4. No match found
+const noMatch = findByWikilink('non-existent-concept', mockRegistry);
+console.log(noMatch);
+// Expected output: undefined
 ```
 
 ## See Also
-- `buildConceptRegistry`
-- `upsertRegistryEntry`
+
+-   `buildConceptRegistry`: The function used to create the `ConceptRegistry` that `findByWikilink` searches.
+-   `buildDocIdAliasMap`: A related utility for creating a fast reverse lookup map from aliases to `docId`s.
+
+## Sources
+
+[Source 1] src/knowledge/[Ontology](../concepts/ontology.md)/registry.ts

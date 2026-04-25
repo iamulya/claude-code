@@ -1,63 +1,93 @@
 ---
-summary: Generates a static rules and safety guidelines section for the system prompt.
+title: rulesSection
+entity_type: api
+summary: A factory function to create a prompt section containing a list of operational rules for the agent.
 export_name: rulesSection
 source_file: src/prompt/systemPrompt.ts
 category: function
-title: rulesSection
-entity_type: api
+search_terms:
+ - agent safety rules
+ - system prompt rules
+ - how to define agent behavior
+ - add rules to prompt
+ - prompt engineering constraints
+ - operational guidelines for LLM
+ - SystemPromptBuilder helper
+ - static prompt section
+ - agent instructions
+ - defining agent constraints
+ - safety section factory
+ - prompt section for rules
 stub: false
-compiled_at: 2026-04-16T14:32:17.916Z
+compiled_at: 2026-04-24T17:34:16.988Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/prompt/systemPrompt.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-The `rulesSection` function is a utility used to define behavioral constraints, safety guidelines, or operational rules within a system prompt. It is designed to work in conjunction with the `SystemPromptBuilder` to provide a structured "Rules" section.
 
-This section is classified as **static**, meaning it is computed once and cached for the lifetime of the session. This approach is intended to be "cheap" to render and compatible with prompt-caching mechanisms, as rules typically do not change between individual turns of a conversation.
+The `rulesSection` function is a convenience factory for creating a [System Prompt](../concepts/system-prompt.md) section that outlines an agent's operational rules or constraints. It takes an array of strings, where each string is a rule, and formats them into a markdown list under a `## Rules` heading [Source 1].
+
+This function is designed to be used with the `SystemPromptBuilder` or helper functions like `fromSections`. The section it generates is considered static, meaning its content is computed once and cached for the duration of an agent's session. This makes it efficient for defining core behaviors that do not change from one turn to the next [Source 2].
 
 ## Signature
+
+The function takes a single argument, an array of strings representing the rules.
+
 ```typescript
-export function rulesSection(rules: string[]): {
-  name: string;
-  fn: () => string;
-  cache: 'session';
-}
+export function rulesSection(rules: string[]): SystemPromptSection;
 ```
 
-### Parameters
-- `rules`: An array of strings, where each string represents an individual rule or constraint for the agent.
+**Parameters:**
 
-## Methods & Properties
-The function returns a section definition object compatible with the `SystemPromptBuilder` registry. This object includes:
-- A name identifier (typically "rules").
-- A function (`fn`) that renders the rules into a formatted string (usually a Markdown list).
-- A cache policy set to `session`.
+*   `rules` (`string[]`): An array of strings, where each string is a rule to be included in the prompt.
+
+**Returns:**
+
+*   `SystemPromptSection`: A section object compatible with `SystemPromptBuilder`. The exact type is internal, but it provides the necessary structure for the builder to consume.
 
 ## Examples
-### Basic Usage
-This example demonstrates how to define a set of rules and incorporate them into a system prompt using the builder.
+
+The most common use case is to combine `rulesSection` with other section factories inside a `fromSections` call to compose a `SystemPromptBuilder`.
 
 ```typescript
-import { SystemPromptBuilder, rulesSection } from 'yaaf';
+import {
+  fromSections,
+  identitySection,
+  dateSection,
+  envSection,
+  rulesSection,
+} from 'yaaf';
 
-const myRules = [
-  'Never make up code or libraries that do not exist.',
-  'Always ask for confirmation before deleting any files.',
-  'If you are unsure of a command, explain your uncertainty.'
-];
+// Compose a SystemPromptBuilder from pre-defined section factories
+const builder = fromSections([
+  identitySection('You are a security auditor.'),
+  dateSection(),
+  envSection({ REGION: 'us-east-1', ENVIRONMENT: 'staging' }),
+  rulesSection([
+    'Always check for SQL injection',
+    'Flag hardcoded credentials',
+    'Review error handling',
+  ]),
+]);
 
-const builder = new SystemPromptBuilder()
-  .addStatic('identity', () => 'You are a filesystem assistant.')
-  // Using the rulesSection helper
-  .addSection(rulesSection(myRules));
-
-const systemPrompt = await builder.build();
+// The builder can now be used to generate a system prompt
+// const systemPrompt = await builder.build();
 ```
+[Source 1]
 
 ## See Also
-- `SystemPromptBuilder`
-- `identitySection`
-- `envSection`
-- `dateSection`
+
+*   `SystemPromptBuilder`: The main class for assembling system prompts from sections.
+*   `fromSections`: A factory function to create a `SystemPromptBuilder` from an array of sections.
+*   `identitySection`: A factory for creating the agent's identity/persona section.
+*   `dateSection`: A factory for creating a dynamic section with the current date and time.
+*   `envSection`: A factory for creating a section with environment information.
+
+## Sources
+
+*   [Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+*   [Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts

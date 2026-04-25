@@ -1,23 +1,39 @@
 ---
-title: parseCompiledArticle
-entity_type: api
-summary: Parses a raw markdown string into a structured representation containing frontmatter and body content.
+summary: Parses a raw markdown string of a compiled article into its frontmatter and body using a shared YAML parser.
 export_name: parseCompiledArticle
 source_file: src/knowledge/compiler/linter/reader.ts
 category: function
+title: parseCompiledArticle
+entity_type: api
+search_terms:
+ - parse markdown frontmatter
+ - extract YAML from markdown
+ - read compiled knowledge base article
+ - frontmatter parsing
+ - split markdown body and metadata
+ - knowledge base file reader
+ - process compiled article string
+ - YAML frontmatter utility
+ - how to read article metadata
+ - docId and file path handling
+ - article compilation pipeline
 stub: false
-compiled_at: 2026-04-16T14:25:37.841Z
+compiled_at: 2026-04-24T17:26:09.035Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/reader.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/linter/reader.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
 ## Overview
-`parseCompiledArticle` is a utility function used within the YAAF knowledge compiler and linter subsystems. Its primary purpose is to transform a raw markdown string—typically read from a compiled article file—into a structured `ParsedCompiledArticle` object. 
 
-The function separates the YAML frontmatter block from the markdown body and parses the frontmatter into a key-value record. It is designed to maintain consistency across the framework by reusing the same minimal YAML parser employed during the knowledge synthesis phase. This ensures that the linter and the compiler interpret article metadata identically.
+The `parseCompiledArticle` function is a utility for parsing the raw string content of a compiled knowledge base article. It separates the YAML [Frontmatter](../concepts/frontmatter.md) block from the markdown body, returning a structured object containing the parsed data [Source 1].
 
-## Signature / Constructor
+This function is typically used within the YAAF knowledge base compilation and [Linting](../concepts/linting.md) process. It takes the document's identifier (`docId`), its absolute file path, and its raw content as input. It relies on a shared internal utility (`utils/frontmatter.ts`) to handle the YAML parsing, ensuring consistent behavior across the framework [Source 1].
+
+## Signature
+
+The function takes a `docId`, `filePath`, and the raw markdown `string` as arguments and returns a `ParsedCompiledArticle` object [Source 1].
 
 ```typescript
 export function parseCompiledArticle(
@@ -27,13 +43,9 @@ export function parseCompiledArticle(
 ): ParsedCompiledArticle;
 ```
 
-### Parameters
-*   **docId**: `string` — The relative document identifier (e.g., `"concepts/attention-mechanism"`), typically excluding the `.md` extension.
-*   **filePath**: `string` — The absolute filesystem path to the compiled file.
-*   **raw**: `string` — The raw, unparsed content of the markdown file including the frontmatter delimiters.
+### Return Type: `ParsedCompiledArticle`
 
-### Return Type
-The function returns a `ParsedCompiledArticle` object:
+The function returns an object with the following structure [Source 1]:
 
 ```typescript
 export type ParsedCompiledArticle = {
@@ -48,30 +60,52 @@ export type ParsedCompiledArticle = {
 };
 ```
 
+- **`docId`**: The relative identifier for the document, without the `.md` file extension.
+- **`filePath`**: The absolute path to the source file on the filesystem.
+- **`frontmatter`**: An object containing the key-value pairs parsed from the YAML frontmatter block.
+- **`body`**: A string containing the markdown content of the article that follows the frontmatter block.
+
 ## Examples
 
 ### Basic Usage
-This example demonstrates parsing a raw string into its constituent parts.
+
+Here is an example of parsing a raw article string into its components.
 
 ```typescript
-import { parseCompiledArticle } from 'yaaf/knowledge/compiler/linter/reader';
+import { parseCompiledArticle } from 'yaaf';
 
-const rawContent = `---
-title: "Agent Framework"
-entity_type: "concept"
+const rawArticleContent = `---
+title: Agent Architecture
+entity_type: concept
 ---
-# Agent Framework
-YAAF is a TypeScript-first framework...`;
 
-const result = parseCompiledArticle(
-  "concepts/agent-framework",
-  "/usr/src/app/knowledge/compiled/concepts/agent-framework.md",
-  rawContent
-);
+An agent is a system that...
+`;
 
-console.log(result.frontmatter.title); // "Agent Framework"
-console.log(result.body); // "# Agent Framework\nYAAF is a TypeScript-first framework..."
+const docId = 'concepts/agent-architecture';
+const filePath = '/path/to/compiled/concepts/agent-architecture.md';
+
+const parsedArticle = parseCompiledArticle(docId, filePath, rawArticleContent);
+
+console.log(parsedArticle);
+/*
+Output:
+{
+  docId: 'concepts/agent-architecture',
+  filePath: '/path/to/compiled/concepts/agent-architecture.md',
+  frontmatter: {
+    title: 'Agent Architecture',
+    entity_type: 'concept'
+  },
+  body: '\nAn agent is a system that...\n'
+}
+*/
 ```
 
 ## See Also
-*   `readCompiledArticles` — A function that utilizes `parseCompiledArticle` to process multiple files referenced in a registry.
+
+- The `readCompiledArticles` function, which reads multiple compiled articles from a directory and uses `parseCompiledArticle` internally.
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/[Linter](../concepts/linter.md)/reader.ts

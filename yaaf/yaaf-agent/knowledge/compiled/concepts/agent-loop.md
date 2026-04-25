@@ -1,74 +1,55 @@
 ---
+summary: The iterative process by which a YAAF agent observes, reasons, plans, acts (e.g., using tools), and reflects to achieve its goals.
 title: Agent Loop
 entity_type: concept
-summary: The iterative cycle of LLM inference and tool execution that forms the basis of YAAF agent behavior.
-stub: false
-compiled_at: 2026-04-16T14:14:03.098Z
-compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/runner.ts
-confidence: 0.9
----
-
----
-title: Agent Loop
-entity_type: concept
-summary: The iterative cycle of LLM inference and tool execution that forms the basis of YAAF agent behavior.
 related_subsystems:
-  - agents
-  - tools
-  - hooks
-  - sandbox
+ - agent_core
+see_also:
+ - "[Agent Turn](./agent-turn.md)"
+ - "[Tool Execution](./tool-execution.md)"
+ - "[LLM Call](./llm-call.md)"
+ - "[Agent](../apis/agent.md)"
+search_terms:
+ - agent execution cycle
+ - how do YAAF agents work
+ - reason-act loop
+ - observe-think-act cycle
+ - agent decision making process
+ - LLM agent iteration
+ - tool use loop
+ - self-correction in agents
+ - agent control flow
+ - YAAF agent lifecycle
+ - what is an agent turn
+ - agent core logic
+stub: false
+compiled_at: 2026-04-25T00:16:51.737Z
+compiled_from:
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/restApiTool.ts
+compiled_from_quality: unknown
+confidence: 0.95
+---
 
 ## What It Is
-The Agent Loop is the core execution mechanism in YAAF that facilitates the interaction between a Large Language Model (LLM) and external tools. It solves the problem of manual state management by providing a generic, automated cycle that sends messages to an LLM, parses tool call requests, executes those tools, feeds the results back into the model's context, and repeats the process until a final response is generated.
 
-This loop allows YAAF to be provider-agnostic, meaning it can drive agents using any LLM that supports tool calling (such as OpenAI, Gemini, Ollama, or Groq) as long as they implement the framework's standard interfaces.
+The Agent Loop is the fundamental execution model for a YAAF [Agent](../apis/agent.md). It is an iterative process where the agent repeatedly cycles through a sequence of observing its environment, reasoning about its goals, planning its next action, and executing that action. This cycle, often referred to as a "reason-act" or "observe-think-act" loop, allows an agent to break down complex tasks into a series of smaller, manageable steps. The loop continues until the agent's primary goal is achieved, a failure condition is met, or a maximum number of iterations is reached.
 
 ## How It Works in YAAF
-The Agent Loop is primarily implemented via the `AgentRunner` class. The runner orchestrates a multi-step flow for every interaction:
 
-1.  **Input Processing**: The loop begins with a user message or prompt.
-2.  **Pre-Inference Hooks**: The `beforeLLM` hook is triggered, allowing for telemetry or prompt modification.
-3.  **LLM Inference**: The runner calls the `ChatModel.complete()` (or `StreamingChatModel.stream()`) method.
-4.  **Post-Inference Hooks**: The `afterLLM` hook is triggered once the model returns a result.
-5.  **Tool Execution Cycle**: If the LLM requests tool calls, the runner enters a sub-loop:
-    *   **Permission Check**: Validates the request against the defined `PermissionPolicy`.
-    *   **Pre-Tool Hooks**: Triggers the `beforeToolCall` hook.
-    *   **Execution**: The tool is executed, typically within a `Sandbox` environment. YAAF supports concurrent tool execution and utilizes a `StreamingToolExecutor` for real-time feedback.
-    *   **Post-Tool Hooks**: Triggers the `afterToolCall` hook.
-6.  **Feedback**: The results of the tool executions are appended to the message history and sent back to the LLM.
-7.  **Termination**: The loop repeats until the LLM provides a final text response instead of further tool calls.
+In YAAF, the Agent Loop orchestrates the interaction between the core [LLM](./llm.md)'s reasoning capabilities and the agent's available [Tools](./tool-use.md). A single pass through this cycle is known as an [Agent Turn](./agent-turn.md).
 
-The loop includes built-in support for input validation, tool result budgeting (to prevent context window overflow), and retry logic via `withRetry`.
+The process typically involves the following steps:
+1.  **Reasoning**: The agent's [LLM](./llm.md) analyzes the current goal, conversation history, and available context to decide on the next action. This often results in the decision to call a specific tool with certain arguments.
+2.  **Action**: The framework performs the [Tool Execution](./tool-execution.md), invoking the chosen tool with the LLM-provided inputs. For example, it might execute a `RestApiTool` to make an HTTP request to an external service [Source 1].
+3.  **Observation**: The result of the tool execution, whether successful or not, is captured. A key principle in YAAF is that tool errors, such as HTTP error responses, are returned as data back to the loop rather than being thrown as exceptions [Source 1].
+4.  **Reflection**: The tool's output is formatted and added to the agent's context for the next iteration. This allows the [LLM](./llm.md) to observe the outcome of its previous action. By receiving errors as data, the LLM can engage in self-correction, such as retrying a failed API call with different parameters or choosing an alternative tool [Source 1].
+
+This cycle repeats, with the output of one turn serving as the input for the next, enabling the agent to progressively work towards its objective.
 
 ## Configuration
-Developers configure the Agent Loop by instantiating an `AgentRunner` with a specific model, a set of tools, and optional configurations like system prompts or retry logic.
 
-```typescript
-import { AgentRunner } from 'yaaf/agents/runner';
-import { OpenAIChatModel } from 'yaaf/providers/openai';
+The provided source material does not detail specific configuration options for the Agent Loop itself, such as setting a maximum number of iterations or defining stop conditions. However, individual components that participate in the loop, such as tools, may have their own configurations (e.g., `RestApiToolConfig` for timeouts and headers) [Source 1].
 
-const runner = new AgentRunner({
-  model: new OpenAIChatModel({ apiKey: '...' }),
-  tools: [grepTool, readTool, writeTool],
-  systemPrompt: 'You are a helpful coding assistant.',
-});
+## Sources
 
-// Standard execution
-const response = await runner.run('Find all TODO comments');
-
-// Streaming execution for progressive UI updates
-for await (const event of runner.runStream('Find all TODO comments')) {
-  if (event.type === 'text_delta') {
-    process.stdout.write(event.content);
-  }
-}
-```
-
-The loop behavior can be further customized by providing implementations for `Hooks`, `AccessPolicy`, or a `ContextManager` to handle complex conversation states.
-
-## See Also
-* [[ChatModel]]
-* [[AgentRunner]]
-* [[Tool]]
-* [[Sandbox]]
+[Source 1]: src/tools/openapi/restApiTool.ts

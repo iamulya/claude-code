@@ -367,6 +367,10 @@ export const htmlIngester: Ingester = {
 
 // ── URL Clipper ───────────────────────────────────────────────────────────────
 
+// Sprint 3.2: SSRF validation — shared with image downloader (images.ts)
+import { validateUrlForSSRF, ssrfSafeFetch } from "./ssrf.js";
+
+
 /**
  * KBClipper — programmatic equivalent of the Obsidian Web Clipper browser extension.
  *
@@ -397,8 +401,13 @@ export class KBClipper {
    * @returns Path to the saved markdown file
    */
   async clip(url: string): Promise<{ savedPath: string; title: string; imageCount: number }> {
-    // 1. Fetch HTML
-    const response = await fetch(url, {
+    // Sprint 3.2: SSRF Protection — validate URL before any network access.
+    // KBClipper accepts user-supplied URLs; without this guard, an attacker
+    // can request internal services, cloud metadata APIs, or file:// paths.
+    await validateUrlForSSRF(url);
+
+    // 1. Fetch HTML (using ssrfSafeFetch to block redirect-based SSRF)
+    const response = await ssrfSafeFetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; YAAF-KB-Clipper/1.0; +https://github.com/yaaf)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -449,62 +458,68 @@ export class KBClipper {
     // 2. Save to a temp file and run through htmlIngester
     const { tmpdir } = await import("os");
     const { join: pathJoin } = await import("path");
-    const { writeFile: wf } = await import("fs/promises");
+    const { writeFile: wf, unlink } = await import("fs/promises");
 
     const tmpPath = pathJoin(tmpdir(), `yaaf-clip-${Date.now()}.html`);
     await wf(tmpPath, html, "utf-8");
 
-    // 3. Determine output directory (use URL-derived slug)
-    const slug = slugifyUrl(url);
-    const clipDir = join(this.webClipsDir, slug);
-    await mkdir(clipDir, { recursive: true });
-
-    // 4. Ingest
-    const ingested = await htmlIngester.ingest(tmpPath, {
-      imageOutputDir: join(clipDir, "assets"),
-      sourceUrl: url,
-    });
-
-    // 5. Build the markdown file
-    const now = new Date().toISOString();
-    const frontmatter = [
-      "---",
-      // O4: strip newlines from title before embedding in YAML double-quoted scalar.
-      // A page title containing \n--- allows injection of arbitrary frontmatter fields.
-      `title: "${(ingested.title ?? slug).replace(/[\r\n]/g, " ").replace(/"/g, '\\"')}"`,
-      `source: "${url}"`,
-      `clipped_at: "${now}"`,
-      `entity_type: "" # Fill in: article, research_paper, tutorial, etc.`,
-      `tags: []`,
-      "---",
-      "",
-    ].join("\n");
-
-    // Rewrite image references in the text to point to local assets/
-    let markdownBody = ingested.text;
-    for (const img of ingested.images) {
-      const relPath = `assets/${basename(img.localPath)}`;
-      markdownBody = markdownBody.replace(img.originalSrc, relPath);
-    }
-
-    const fullMarkdown = frontmatter + markdownBody;
-
-    const savedPath = join(clipDir, "index.md");
-    await wf(savedPath, fullMarkdown, "utf-8");
-
-    // 6. Clean up temp file
+    // 8.9: Wrap in try/finally for guaranteed temp file cleanup.
+    // Previously, if ingest/markdown-build/write threw between temp file
+    // creation and the cleanup block, the temp file would leak. In CI
+    // pipelines clipping many URLs, this leaks HTML files containing
+    // potentially sensitive content (cookies, session tokens).
     try {
-      const { unlink } = await import("fs/promises");
-      await unlink(tmpPath);
-    } catch {
-      /* not critical */
-    }
+      // 3. Determine output directory (use URL-derived slug)
+      const slug = slugifyUrl(url);
+      const clipDir = join(this.webClipsDir, slug);
+      await mkdir(clipDir, { recursive: true });
 
-    return {
-      savedPath,
-      title: ingested.title ?? slug,
-      imageCount: ingested.images.length,
-    };
+      // 4. Ingest
+      const ingested = await htmlIngester.ingest(tmpPath, {
+        imageOutputDir: join(clipDir, "assets"),
+        sourceUrl: url,
+      });
+
+      // 5. Build the markdown file
+      const now = new Date().toISOString();
+      const frontmatter = [
+        "---",
+        // O4: strip newlines from title before embedding in YAML double-quoted scalar.
+        // A page title containing \n--- allows injection of arbitrary frontmatter fields.
+        `title: "${(ingested.title ?? slug).replace(/[\r\n]/g, " ").replace(/"/g, '\\"')}"`,
+        `source: "${url}"`,
+        `clipped_at: "${now}"`,
+        `entity_type: "" # Fill in: article, research_paper, tutorial, etc.`,
+        `tags: []`,
+        "---",
+        "",
+      ].join("\n");
+
+      // Rewrite image references in the text to point to local assets/
+      let markdownBody = ingested.text;
+      for (const img of ingested.images) {
+        const relPath = `assets/${basename(img.localPath)}`;
+        markdownBody = markdownBody.replace(img.originalSrc, relPath);
+      }
+
+      const fullMarkdown = frontmatter + markdownBody;
+
+      const savedPath = join(clipDir, "index.md");
+      await wf(savedPath, fullMarkdown, "utf-8");
+
+      return {
+        savedPath,
+        title: ingested.title ?? slug,
+        imageCount: ingested.images.length,
+      };
+    } finally {
+      // 6. Clean up temp file — guaranteed even on error
+      try {
+        await unlink(tmpPath);
+      } catch {
+        /* not critical */
+      }
+    }
   }
 }
 

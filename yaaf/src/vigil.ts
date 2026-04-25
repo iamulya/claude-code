@@ -83,6 +83,7 @@ import * as fsp from "fs/promises";
 import { Agent, type AgentConfig } from "./agent.js";
 import { nextCronRunMs, validateCron } from "./utils/cron.js";
 import { Logger } from "./utils/logger.js";
+import { VigilTaskJournalSchema } from "./schemas.js";
 
 const logger = new Logger("vigil");
 
@@ -839,33 +840,23 @@ export class Vigil extends Agent {
     const filePath = this.tasksFilePath();
     try {
       const raw = await fsp.readFile(filePath, "utf8");
-      const data = JSON.parse(raw) as { tasks: unknown[] };
-      if (!Array.isArray(data.tasks)) return;
-      for (const raw of data.tasks) {
-        // Strict per-field type validation. A maliciously crafted
-        // scheduled_tasks.json could inject arbitrary prompts or escalate
-        // priority. Reject any record that doesn't pass all checks.
-        const t = raw as Record<string, unknown>;
-        if (typeof t.id !== "string" || t.id.length === 0) continue;
-        if (typeof t.cron !== "string") continue;
-        if (typeof t.prompt !== "string" || t.prompt.length === 0) continue;
+      // Sprint 1b: Validate task journal with Zod schema
+      const result = VigilTaskJournalSchema.safeParse(JSON.parse(raw));
+      if (!result.success) return;
+
+      for (const t of result.data.tasks) {
+        // Additional runtime check: cron must be valid
         if (!validateCron(t.cron)) continue;
-        if (t.createdAt !== undefined && typeof t.createdAt !== "number") continue;
-        if (t.lastFiredAt !== undefined && typeof t.lastFiredAt !== "number") continue;
-        if (t.priority !== undefined && typeof t.priority !== "number") continue;
-        if (t.recurring !== undefined && typeof t.recurring !== "boolean") continue;
-        if (t.permanent !== undefined && typeof t.permanent !== "boolean") continue;
-        // Sanitize: truncate prompt to a safe max length to limit injection surface
-        const prompt = t.prompt.slice(0, 4_096);
+
         const task = {
           id: t.id,
           cron: t.cron,
-          prompt,
-          createdAt: typeof t.createdAt === "number" ? t.createdAt : Date.now(),
-          recurring: typeof t.recurring === "boolean" ? t.recurring : false,
-          lastFiredAt: typeof t.lastFiredAt === "number" ? t.lastFiredAt : undefined,
-          priority: typeof t.priority === "number" ? t.priority : undefined,
-          permanent: typeof t.permanent === "boolean" ? t.permanent : undefined,
+          prompt: t.prompt, // Already truncated to 4096 by Zod .max(4096)
+          createdAt: t.createdAt ?? Date.now(),
+          recurring: t.recurring ?? false,
+          lastFiredAt: t.lastFiredAt,
+          priority: t.priority,
+          permanent: t.permanent,
         } as ScheduledTask;
         const anchor = task.lastFiredAt ?? task.createdAt;
         const nextFireAt = nextCronRunMs(task.cron, anchor) ?? Infinity;

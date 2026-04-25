@@ -1,64 +1,102 @@
 ---
-title: OwnershipScopeStrategy
-entity_type: api
-summary: Restricts data access based on resource ownership and team membership hierarchies.
+summary: Implements user-owns-resource filtering, allowing users to see their own data and managers to see team data.
 export_name: OwnershipScopeStrategy
 source_file: src/iam/scoping.ts
 category: class
+title: OwnershipScopeStrategy
+entity_type: api
+search_terms:
+ - user ownership data filtering
+ - manager sees team data
+ - how to scope data by owner
+ - resource ownership access control
+ - team-based data visibility
+ - createdBy field filtering
+ - data scoping strategy
+ - IAM data access
+ - restrict data to owner
+ - team lead data access
+ - admin bypass ownership
+ - ownership-based authorization
 stub: false
-compiled_at: 2026-04-16T14:19:27.888Z
+compiled_at: 2026-04-25T00:10:59.743Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/scoping.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/scoping.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`OwnershipScopeStrategy` is a data scoping mechanism used to restrict the data a tool can access based on the relationship between the user and the resource. It implements a "user-owns-resource" filtering model where access is determined by ownership fields and team membership.
 
-This strategy is typically used in environments where regular users should only interact with their own data, while users with elevated roles (such as managers or administrators) require broader access to team-wide or system-wide resources. It determines what specific data records are visible to a tool during execution, rather than whether the tool itself is authorized to run.
+The `OwnershipScopeStrategy` is a class that implements the [DataScopeStrategy](./data-scope-strategy.md) interface to enforce data access rules based on resource ownership [Source 1]. It is designed for scenarios where data records have an owner, and access permissions depend on the user's relationship to that owner.
+
+This strategy supports three common access patterns:
+1.  **Individual Users**: A standard user can only access resources they personally own.
+2.  **Managers**: Users with a designated "manager" role can access resources owned by any member of their team.
+3.  **Administrators**: Users with an "admin" role can bypass all ownership checks and access all resources [Source 1].
+
+This strategy is a common component in Identity and Access Management (IAM) systems for filtering what data a tool can access, rather than whether the tool can be called [Source 1].
 
 ## Signature / Constructor
 
-### Constructor
+The `OwnershipScopeStrategy` class is instantiated with a configuration object of type `OwnershipScopeConfig`.
+
 ```typescript
-constructor(config: OwnershipScopeConfig)
+import type { DataScopeStrategy } from './data-scope';
+
+export type OwnershipScopeConfig = {
+  /** Field in data records that identifies the owner (default: 'createdBy') */
+  ownerField?: string;
+  /** Roles that can see all records (bypass ownership) */
+  adminRoles?: string[];
+  /** Roles that can see team members' resources */
+  managerRoles?: string[];
+  /** Attribute key for team membership (default: 'teamId') */
+  teamField?: string;
+};
+
+export class OwnershipScopeStrategy implements DataScopeStrategy {
+  constructor(config: OwnershipScopeConfig);
+  // ...
+}
 ```
 
-### OwnershipScopeConfig
-The configuration object defines how ownership and team relationships are identified within the data and the user context.
+### Configuration (`OwnershipScopeConfig`)
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `ownerField` | `string` | The field in data records that identifies the owner. Defaults to `'createdBy'`. |
-| `adminRoles` | `string[]` | Roles that bypass ownership restrictions to see all records. |
-| `managerRoles` | `string[]` | Roles that grant access to all resources belonging to members of the user's team. |
-| `teamField` | `string` | The attribute key in the user context used for team membership. Defaults to `'teamId'`. |
+| Property       | Type       | Description                                                                                                                            |
+| -------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `ownerField`   | `string`   | Optional. The field name in data records that identifies the resource's owner. Defaults to `'createdBy'`.                               |
+| `adminRoles`   | `string[]` | Optional. An array of role names that grant unrestricted access, bypassing all ownership checks.                                       |
+| `managerRoles` | `string[]` | Optional. An array of role names that grant access to resources owned by the user's team members.                                      |
+| `teamField`    | `string`   | Optional. The attribute key in the user's context that identifies their team, used in conjunction with `managerRoles`. Defaults to `'teamId'`. |
 
-## Methods & Properties
-`OwnershipScopeStrategy` implements the `DataScopeStrategy` interface. It processes the `UserContext` to produce filters that are applied to data queries.
-
-*   **Regular Users**: Filters data where the `ownerField` matches the user's ID.
-*   **Managers**: Filters data where the record's team identifier matches the user's `teamField`.
-*   **Admins**: Produces an unrestricted scope, bypassing ownership filters.
+[Source 1]
 
 ## Examples
 
-### Basic Ownership and Team Access
-In this example, regular users see only their own records, while team leads and admins have broader access.
+The following example demonstrates how to configure an `OwnershipScopeStrategy`. In this setup, users with the `team_lead` or `admin` roles are considered managers, and the `teamId` attribute is used to determine team membership. The `createdBy` field in the data records is used to identify the owner.
 
 ```typescript
-import { OwnershipScopeStrategy } from 'yaaf/iam/scoping';
+import { OwnershipScopeStrategy } from 'yaaf';
 
 const scope = new OwnershipScopeStrategy({
   ownerField: 'createdBy',
-  managerRoles: ['team_lead'],
-  adminRoles: ['admin'],
+  managerRoles: ['team_lead', 'admin'],
   teamField: 'teamId',
 });
+
+// When this strategy is applied for a user with the 'team_lead' role,
+// it will generate a data scope that allows access to all records
+// where the 'createdBy' field matches an ID of a user in their team.
+// A regular user will only see records where 'createdBy' matches their own ID.
 ```
+[Source 1]
 
 ## See Also
-* `TenantScopeStrategy`
-* `AttributeScopeStrategy`
-* `HierarchyScopeStrategy`
-* `CompositeScope`
+
+*   [DataScopeStrategy](./data-scope-strategy.md): The interface implemented by this and other data scoping strategies.
+*   Other strategies like `TenantScopeStrategy`, `AttributeScopeStrategy`, and `HierarchyScopeStrategy` for different data filtering models [Source 1].
+
+## Sources
+
+[Source 1]: src/iam/scoping.ts

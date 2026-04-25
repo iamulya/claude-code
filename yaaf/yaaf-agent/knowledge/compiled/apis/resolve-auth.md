@@ -1,93 +1,173 @@
 ---
+title: resolveAuth
+entity_type: api
+summary: Resolves the appropriate authentication configuration for an operation based on required security schemes, available credentials, and global fallback.
 export_name: resolveAuth
 source_file: src/tools/openapi/auth.ts
 category: function
-title: resolveAuth
-entity_type: api
-summary: Resolves authentication configuration from OpenAPI security schemes and user-provided credentials.
+search_terms:
+ - OpenAPI authentication
+ - how to authenticate OpenAPI calls
+ - security scheme resolution
+ - agent tool authentication
+ - find correct API key
+ - credential management for tools
+ - global auth fallback
+ - dynamic auth config
+ - select security scheme
+ - user-provided credentials
+ - operation-specific auth
+ - yaaf openapi auth
 stub: false
-compiled_at: 2026-04-16T14:38:01.083Z
+compiled_at: 2026-04-24T17:32:35.370Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/openapi/auth.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/auth.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`resolveAuth` is a utility function used to determine the appropriate authentication configuration for an OpenAPI operation. It reconciles the security requirements of a specific endpoint with the available security schemes defined in the OpenAPI document and the credentials provided by the user.
 
-The function prioritizes schemes required by the operation. It iterates through the `requiredSchemes` and returns the first valid `AuthConfig` generated from a scheme that has a corresponding entry in the `credentials` map. If no required schemes can be resolved, it returns the `globalAuth` fallback if one is provided.
+The `resolveAuth` function is a utility within the YAAF OpenAPI tool subsystem responsible for determining the correct authentication method for a given API operation [Source 1]. It orchestrates the selection of credentials by cross-referencing the operation's security requirements with user-provided credentials and a potential global fallback.
+
+This function is used internally by OpenAPI-based [Tools](../subsystems/tools.md) to dynamically apply authentication before making an HTTP request. Its logic is as follows:
+
+1.  It iterates through the list of security scheme names required by the specific API operation.
+2.  For each required scheme, it checks if a corresponding credential exists in the `credentials` map provided by the user.
+3.  The first scheme that has a matching credential is selected. The function then uses the scheme's definition and the credential value to construct an `AuthConfig` object.
+4.  If no match is found after checking all required schemes, it returns the `globalAuth` configuration, if one was provided.
+5.  If no specific credential matches and no global fallback is available, it returns `undefined`.
+
+This mechanism allows agents to interact with APIs that have multiple authentication methods, selecting the one for which the user has supplied credentials.
 
 ## Signature
+
 ```typescript
 export function resolveAuth(
   requiredSchemes: string[] | undefined,
   allSchemes: Record<string, SecurityScheme>,
   credentials: Record<string, string>,
   globalAuth?: AuthConfig,
-): AuthConfig | undefined
+): AuthConfig | undefined;
 ```
 
 ### Parameters
-*   **requiredSchemes**: An array of strings representing the names of security schemes required by the specific OpenAPI operation.
-*   **allSchemes**: A record of all `SecurityScheme` objects defined in the OpenAPI specification, keyed by their names.
-*   **credentials**: A record of user-provided credential values (such as API keys or tokens), keyed by the security scheme name they correspond to.
-*   **globalAuth**: An optional `AuthConfig` to use as a fallback if no specific operation-level security scheme can be resolved.
 
-### Related Types
-The function utilizes the `AuthConfig` type for its return value and fallback:
-```typescript
-export type AuthConfig =
-  | { type: 'apiKey'; in: 'header' | 'query'; name: string; value: string }
-```
+| Name              | Type                                     | Description                                                                                             |
+| ----------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `requiredSchemes` | `string[] \| undefined`                  | An array of security scheme names required by the API operation. `undefined` if no auth is required.      |
+| `allSchemes`      | `Record<string, SecurityScheme>`         | A map of all security schemes available in the OpenAPI specification, keyed by their names.             |
+| `credentials`     | `Record<string, string>`                 | A map of user-provided credentials, keyed by the name of the security scheme they apply to.             |
+| `globalAuth`      | `AuthConfig \| undefined`                | (Optional) A global `AuthConfig` object to use as a fallback if no specific credential can be resolved. |
+
+### Returns
+
+`AuthConfig | undefined`
+
+The function returns a resolved `AuthConfig` object if a suitable credential is found or a global fallback is available. It returns `undefined` if no authentication method can be determined.
 
 ## Examples
 
-### Resolving Operation-Specific Auth
-In this example, the function matches the required "ApiKeyAuth" scheme against the provided credentials.
+### Example 1: Resolving a Specific Credential
+
+This example shows `resolveAuth` successfully finding a matching credential for one of the operation's required security schemes.
 
 ```typescript
-const allSchemes = {
-  ApiKeyAuth: {
-    type: 'apiKey',
-    name: 'X-API-Key',
-    in: 'header'
-  }
+import { resolveAuth } from 'yaaf';
+import type { SecurityScheme, AuthConfig } from 'yaaf';
+
+// All schemes defined in the OpenAPI spec
+const allSchemes: Record<string, SecurityScheme> = {
+  ApiKeyAuth: { type: 'apiKey', name: 'X-API-KEY', in: 'header' },
+  BearerAuth: { type: 'http', scheme: 'bearer' },
 };
 
+// Security schemes required for a specific API operation
+const requiredSchemes = ['BearerAuth', 'ApiKeyAuth'];
+
+// User-provided credentials
 const credentials = {
-  ApiKeyAuth: 'secret-token-123'
+  ApiKeyAuth: 'my-secret-api-key-12345',
 };
 
-const required = ['ApiKeyAuth'];
+// Resolve the authentication
+const authConfig = resolveAuth(requiredSchemes, allSchemes, credentials);
 
-const auth = resolveAuth(required, allSchemes, credentials);
-/*
-Result:
-{
-  type: 'apiKey',
-  in: 'header',
-  name: 'X-API-Key',
-  value: 'secret-token-123'
-}
-*/
+console.log(authConfig);
+// Expected output:
+// {
+//   type: 'apiKey',
+//   in: 'header',
+//   name: 'X-API-KEY',
+//   value: 'my-secret-api-key-12345'
+// }
 ```
 
-### Falling Back to Global Auth
-If the operation does not specify required schemes or the provided credentials do not match the requirements, the global configuration is used.
+### Example 2: Using the Global Fallback
+
+[when](./when.md) no specific credential matches the required schemes, `resolveAuth` will use the provided `globalAuth` configuration.
 
 ```typescript
-const globalAuth = {
-  type: 'apiKey',
-  in: 'header',
-  name: 'Authorization',
-  value: 'Bearer default-token'
+import { resolveAuth } from 'yaaf';
+import type { SecurityScheme, AuthConfig } from 'yaaf';
+
+const allSchemes: Record<string, SecurityScheme> = {
+  ApiKeyAuth: { type: 'apiKey', name: 'X-API-KEY', in: 'header' },
 };
 
-const auth = resolveAuth(
-  undefined, 
-  {}, 
-  {}, 
-  globalAuth
-);
-// Returns the globalAuth object
+const requiredSchemes = ['ApiKeyAuth'];
+
+// User has not provided a credential for 'ApiKeyAuth'
+const credentials = {
+  SomeOtherAuth: 'some-other-value',
+};
+
+// A global auth config is provided as a fallback
+const globalAuth: AuthConfig = {
+  type: 'apiKey',
+  in: 'header',
+  name: 'X-API-KEY',
+  value: 'global-fallback-key',
+};
+
+const authConfig = resolveAuth(requiredSchemes, allSchemes, credentials, globalAuth);
+
+console.log(authConfig);
+// Expected output:
+// {
+//   type: 'apiKey',
+//   in: 'header',
+//   name: 'X-API-KEY',
+//   value: 'global-fallback-key'
+// }
 ```
+
+### Example 3: No Resolution
+
+If no matching credential is found and no global fallback is provided, the function returns `undefined`.
+
+```typescript
+import { resolveAuth } from 'yaaf';
+import type { SecurityScheme } from 'yaaf';
+
+const allSchemes: Record<string, SecurityScheme> = {
+  ApiKeyAuth: { type: 'apiKey', name: 'X-API-KEY', in: 'header' },
+};
+
+const requiredSchemes = ['ApiKeyAuth'];
+const credentials = {}; // No relevant credentials
+
+const authConfig = resolveAuth(requiredSchemes, allSchemes, credentials);
+
+console.log(authConfig);
+// Expected output: undefined
+```
+
+## See Also
+
+*   `applyAuth`: A function that applies a resolved `AuthConfig` to request headers and query parameters.
+*   `schemeToAuthConfig`: A utility function used internally by `resolveAuth` to convert an OpenAPI `SecurityScheme` and a credential into an `AuthConfig` object.
+
+## Sources
+
+[Source 1]: src/tools/openapi/auth.ts

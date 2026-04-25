@@ -1,91 +1,117 @@
 ---
 title: IAM System
-entity_type: subsystem
-summary: Manages identity, authentication, and data access control within the YAAF framework.
+summary: The Identity and Access Management (IAM) subsystem in YAAF provides mechanisms for user authentication, authorization, and data scoping for LLM agents.
 primary_files:
-  - src/iam/scoping.ts
+ - src/iam/types.ts
+entity_type: subsystem
 exports:
-  - TenantScopeStrategy
-  - OwnershipScopeStrategy
-  - AttributeScopeStrategy
-  - HierarchyScopeStrategy
-  - ResolverScopeStrategy
-  - CompositeScope
-  - systemAwareScope
+ - UserContext
+ - AuthorizationStrategy
+ - AuthorizationDecision
+ - DataScopeStrategy
+ - DataScope
+ - PermissionResolver
+ - IdentityProvider
+ - AccessPolicy
+search_terms:
+ - user authentication
+ - agent authorization
+ - RBAC for agents
+ - ABAC for agents
+ - data scoping
+ - multi-tenancy in agents
+ - how to secure tools
+ - tool access control
+ - identity provider integration
+ - permission resolver
+ - audit logging for agents
+ - AccessPolicy configuration
+ - UserContext object
+ - tenant isolation
 stub: false
-compiled_at: 2026-04-16T14:19:19.834Z
+compiled_at: 2026-04-24T18:13:03.128Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/scoping.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/types.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Purpose
-The IAM (Identity and Access Management) system in YAAF is responsible for managing identity and data access control. Its primary function is **Data Scoping**, which determines what specific data a tool is permitted to access during execution. This is distinct from execution authorization; while other systems may determine *whether* a tool can be called, the IAM system defines the boundaries of the data the tool can interact with based on the current user context.
+
+The Identity and Access Management (IAM) subsystem provides the core security primitives for YAAF agents. It addresses three fundamental security concerns:
+
+1.  **Authentication**: Identifying the end-user who is making a request.
+2.  **[Authorization](../concepts/authorization.md)**: Determining if the identified user is permitted to invoke a specific tool with specific arguments.
+3.  **[Data Scoping](../concepts/data-scoping.md)**: Restricting the data that a tool can access, ensuring users only see data they are entitled to, which is critical for multi-tenant and user-specific data filtering [Source 1].
+
+This subsystem enables developers to build secure, production-grade agents that can safely operate on behalf of users with varying levels of permissions.
 
 ## Architecture
-The IAM system is built around a strategy-based architecture. It utilizes the `DataScopeStrategy` interface to implement various methods of data isolation and filtering. These strategies ingest a `UserContext` and produce filters or scope definitions that tools apply to their data queries.
 
-### Data Scoping Strategies
-The framework provides several built-in strategies to handle common access control patterns:
+The IAM subsystem is designed around a set of strategy interfaces and data structures that can be composed to implement complex security policies. The central configuration point is the `AccessPolicy` object [Source 1].
 
-*   **Tenant Isolation**: Filters data based on a tenant identifier, essential for multi-tenant SaaS applications.
-*   **Ownership Filtering**: Restricts access to resources owned by the user or their immediate team.
-*   **Attribute-Based Access Control (ABAC)**: Uses arbitrary user attributes to define complex, rule-based filtering.
-*   **Hierarchical Access**: Manages access based on organizational structures (e.g., managers viewing reports' data).
-*   **External Resolution**: Delegates scoping logic to external permission providers or services.
+-   **`UserContext`**: A data structure that represents the identity of the end-user making a request. It contains a unique `userId`, optional roles for Role-Based Access Control ([rbac](../apis/rbac.md)), and a flexible `attributes` record for Attribute-Based Access Control ([abac](../apis/abac.md)). It can also carry user credentials for propagation to downstream systems [Source 1].
+
+-   **`IdentityProvider`**: An interface responsible for authentication. Its `resolve` method takes an incoming request and returns a `UserContext`. This is primarily used in server modes (e.g., HTTP, WebSocket) to translate request headers or tokens into a verified user identity [Source 1].
+
+-   **`AuthorizationStrategy`**: An interface that decides whether a user is allowed to perform an action, such as calling a tool. Its `evaluate` method returns an `AuthorizationDecision` of `allow`, `deny`, or `abstain`. The `abstain` decision allows for chaining multiple strategies together. Implementations can support RBAC (e.g., `RoleStrategy`) or ABAC (e.g., `AttributeStrategy`) [Source 1].
+
+-   **`DataScopeStrategy`**: An interface that determines the data visibility for a given request. Its `resolve` method produces a `DataScope` object, which contains filters that [Tools](./tools.md) must apply to their queries. This is the primary mechanism for implementing multi-tenancy and resource-based permissions. Examples include strategies for tenant isolation, resource ownership, or organizational hierarchy [Source 1].
+
+-   **`PermissionResolver`**: An interface for querying external systems (like Jira, Confluence, or Google Drive) to determine a user's access rights to specific resources. The results from a `PermissionResolver` are typically used by a `DataScopeStrategy` to construct the appropriate data filters [Source 1].
+
+## Integration Points
+
+The IAM subsystem is integrated into the agent's core execution loop via the `AccessPolicy` configuration object.
+
+-   **Agent Runtimes**: Server-based runtimes (A2A, HTTP, WebSocket) use the configured `IdentityProvider` to authenticate incoming requests and establish a `UserContext` [Source 1].
+-   **[Agent Core](./agent-core.md)**: Before executing a tool, the agent core invokes the `authorization` strategy from the `AccessPolicy`. If the decision is `deny`, the tool call is blocked.
+-   **[Tool Execution](../concepts/tool-execution.md) Context**: The agent core calls the `dataScope` strategy to generate a `DataScope`. This scope is then passed to the tool's execution context, making it available for the tool to use [when](../apis/when.md) filtering database queries or API calls [Source 1].
 
 ## Key APIs
-The IAM subsystem exports several classes and utility functions to manage data scoping:
 
-### Strategies
-*   `TenantScopeStrategy`: Implements multi-tenant isolation.
-*   `OwnershipScopeStrategy`: Implements user and team-based resource filtering.
-*   `AttributeScopeStrategy`: Provides a flexible, rule-based approach to scoping using user attributes.
-*   `HierarchyScopeStrategy`: Resolves access based on a tree or org-chart structure.
-*   `ResolverScopeStrategy`: Interfaces with an external `PermissionResolver` to determine scope.
-*   `CompositeScope`: A utility class used to merge multiple strategies or select the first matching strategy.
+The primary public APIs of the IAM subsystem are the interfaces and types used for configuration and extension.
 
-### Utilities
-*   `systemAwareScope(config)`: A routing function that maps specific tools (using glob patterns) to different scoping strategies based on the backing system the tool interacts with.
+-   **`AccessPolicy`**: The main configuration object for the IAM system. It combines authorization, data scoping, identity provision, and an audit callback into a single structure passed to the agent constructor [Source 1].
+-   **`UserContext`**: Represents the authenticated user. It is the central object carrying identity information, roles, and attributes used by other IAM components [Source 1].
+-   **`AuthorizationStrategy`**: The interface for implementing authorization logic. Developers can create custom strategies to enforce access control rules [Source 1].
+-   **`DataScopeStrategy`**: The interface for implementing data filtering logic. Custom implementations can enforce data isolation based on tenancy, ownership, or other business rules [Source 1].
+-   **`DataScope`**: The output of a `DataScopeStrategy`. It contains a set of filters that tools must apply to their data access operations [Source 1].
+-   **`IdentityProvider`**: The interface for integrating with authentication systems. Implementations can extract user identity from various request formats (e.g., JWT tokens, API keys) [Source 1].
+-   **`PermissionResolver`**: The interface for querying external permission systems. This allows data scoping to be based on dynamic, externally managed access rights [Source 1].
 
 ## Configuration
-Strategies are configured using specific configuration objects passed during instantiation.
 
-### Tenant Scoping
-Configured via `TenantScopeConfig`, allowing customization of the tenant key and roles that can bypass isolation.
-```ts
-const scope = new TenantScopeStrategy({
-  tenantKey: 'tenantId',
-  bypassRoles: ['super_admin'],
-})
-```
+The IAM subsystem is configured by passing an `AccessPolicy` object to the `Agent` constructor. This object specifies the strategies for authorization and data scoping, an optional identity provider, and an audit callback [Source 1].
 
-### Ownership Scoping
-Configured via `OwnershipScopeConfig` to define owner fields, team fields, and administrative bypass roles.
-```ts
-const scope = new OwnershipScopeStrategy({
-  ownerField: 'createdBy',
-  managerRoles: ['team_lead', 'admin'],
-  teamField: 'teamId',
-})
-```
+If no `AccessPolicy` is provided, the agent defaults to allowing all [Tool Calls](../concepts/tool-calls.md) and applying no data scoping [Source 1].
 
-### Attribute Scoping
-Uses `AttributeScopeConfig` containing an array of `AttributeScopeRule` objects. Each rule defines a condition and the resulting filters.
-```ts
-const scope = new AttributeScopeStrategy({
-  rules: [
-    {
-      condition: (user) => !user.roles?.includes('admin'),
-      filters: (user) => ({ department: user.attributes?.department }),
-    },
-  ],
-})
+```typescript
+const agent = new Agent({
+  tools: [...],
+  accessPolicy: {
+    // Decides if a tool call is allowed.
+    authorization: rbac({ viewer: ['read_*'], admin: ['*'] }),
+
+    // Determines what data tools can access.
+    dataScope: new TenantScopeStrategy(),
+
+    // Audit callback for logging decisions.
+    onDecision: (event) => auditLog.write(event),
+  },
+});
 ```
+[Source 1]
 
 ## Extension Points
-The IAM system is designed for extensibility through two primary mechanisms:
 
-1.  **Composite Strategies**: Developers can use `CompositeScope` to combine existing strategies. The `merge` mode runs all strategies and deep-merges their filters, while `firstMatch` uses the first strategy that returns a non-empty scope.
-2.  **External Resolvers**: The `ResolverScopeStrategy` allows the framework to integrate with third-party permission systems (e.g., Jira, Confluence, or custom internal APIs). It supports caching via `ttl` and `maxEntries` settings to optimize performance.
-3.  **System-Aware Routing**: Using `systemAwareScope`, developers can define different scoping logic for different tools within the same agent, allowing for granular control across heterogeneous data sources.
+The IAM subsystem is highly extensible through its strategy-based design. Developers can provide their own implementations for the core interfaces to integrate with existing security infrastructure or define custom logic.
+
+-   **Custom `AuthorizationStrategy`**: Implement this interface to create custom RBAC, ABAC, or other authorization models. The source material notes the existence of `RoleStrategy`, `AttributeStrategy`, and `CompositeStrategy` as potential implementations [Source 1].
+-   **Custom `DataScopeStrategy`**: Implement this interface to enforce specific data filtering rules. The source mentions `TenantScopeStrategy`, `OwnershipScopeStrategy`, `AttributeScopeStrategy`, `HierarchyScopeStrategy`, and `ResolverScopeStrategy` as examples [Source 1].
+-   **Custom `IdentityProvider`**: Implement this interface to integrate with different authentication mechanisms, such as OAuth 2.0, SAML, or custom token formats.
+-   **Custom `PermissionResolver`**: Implement this interface to connect to proprietary or unsupported external systems to fetch user permissions.
+
+## Sources
+
+[Source 1]: src/iam/types.ts

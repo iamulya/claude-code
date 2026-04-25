@@ -1,147 +1,119 @@
 ---
 title: Plugin System
 entity_type: subsystem
-summary: The central architectural component of YAAF that manages swappable backends and composable capabilities through a unified adapter interface.
+summary: The YAAF subsystem responsible for managing, loading, and orchestrating plugins and their capabilities.
 primary_files:
-  - src/plugin/types.ts
-  - src/plugin/base.ts
+ - src/plugin/base.ts
+ - src/plugin/types.ts
 exports:
-  - PluginHost
-  - PluginBase
-  - Plugin
-  - MemoryAdapter
-  - BrowserAdapter
-  - FileSystemAdapter
-  - ToolProvider
-  - ContextProvider
+ - PluginBase
+ - Plugin
+ - PluginCapability
+ - LLMAdapter
+ - KBSearchAdapter
+search_terms:
+ - YAAF plugins
+ - how to add a new backend
+ - swappable components
+ - adapter pattern in YAAF
+ - extending YAAF functionality
+ - plugin lifecycle management
+ - LLM adapter
+ - memory adapter
+ - search adapter
+ - plugin capabilities
+ - registering a plugin
+ - PluginHost
+ - PluginBase class
 stub: false
-compiled_at: 2026-04-16T14:10:12.709Z
+compiled_at: 2026-04-24T18:18:23.827Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/plugins.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/plugin/base.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/plugin/types.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/integrations/sandbox.firecracker.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/store/store.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/store/tfidfSearch.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/base.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/plugin/base.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Purpose
-The Plugin System is the architectural foundation that enables YAAF to remain provider-agnostic and production-grade. It solves the problem of hardcoded integrations by providing a unified adapter interface for all external capabilities, such as memory storage, web browsing, and filesystem access.
 
-The system is designed around four core principles:
-1.  **Swappable Backends**: Developers can switch implementations (e.g., from local file-based memory to a cloud-hosted service like Honcho) by registering a different plugin without modifying agent logic.
-2.  **Composable Capabilities**: Multiple plugins can be combined to provide a rich set of features to a single agent.
-3.  **Testability**: Any external capability can be mocked by implementing its corresponding adapter interface.
-4.  **Discoverability**: Plugins declare their capabilities upfront, allowing the framework to route requests to the appropriate adapter automatically.
+The Plugin System is a core architectural component of YAAF that provides [Adapter Interfaces](../concepts/adapter-interfaces.md) for [Swappable Backends](../concepts/swappable-backends.md) [Source 1]. Its primary purpose is to decouple the framework's core logic from concrete implementations of external services or strategies. This allows developers to extend YAAF's functionality and integrate different providers for key operations such as [LLM](../concepts/llm.md) interaction, knowledge base searching, and sandboxed code execution.
+
+By defining standardized interfaces, the Plugin System makes YAAF provider-agnostic and highly extensible. For example, a developer can replace the default [TF-IDF](../concepts/tf-idf.md) search mechanism with a different one by simply providing a new plugin that implements the `KBSearchAdapter` interface [Source 4]. The system also provides optional, centralized lifecycle management for plugins through a `PluginHost`, which can automatically initialize and dispose of registered plugins [Source 2].
 
 ## Architecture
-The subsystem follows a hub-and-spoke model where a central `PluginHost` manages a collection of plugins. Each plugin implements the base `Plugin` interface and one or more specialized adapter interfaces.
 
-### Internal Structure
-```
-                    PluginHost
-              ┌──────────────────────────┐
-              │  register(plugin)         │
-              │  getAdapter<T>(capability)│
-              │  getAllTools()            │
-              │  gatherContext(query)     │
-              │  destroyAll()            │
-              └──────┬───────────────────┘
-                     │ holds
-        ┌────────────┼─────────────┐
-        ▼            ▼             ▼
-   HonchoPlugin  AgentFSPlugin  CamoufoxPlugin
-   (memory)      (fs + tools)   (browser + tools)
-        │            │             │
-        ▼            ▼             ▼
-  MemoryAdapter  FileSystemAdapter + ToolProvider
-                                BrowserAdapter + ToolProvider
-```
+The Plugin System is designed around a set of core interfaces and a base class that standardize how extensions are built and managed.
 
-### Key Components
-*   **PluginHost**: The central registry and capability index. It maintains an O(1) lookup table of registered plugins keyed by their declared capabilities.
-*   **PluginBase**: An abstract base class that provides boilerplate implementations for versioning, capability declaration, and health checks.
-*   **Adapter Interfaces**: Strongly-typed contracts that define how the framework interacts with specific capabilities (e.g., `MemoryAdapter`, `BrowserAdapter`).
+- **`Plugin` Interface**: The fundamental contract that all plugins must adhere to. It is defined in `src/plugin/types.ts` [Source 6].
+- **`PluginBase` Class**: An abstract base class that provides boilerplate implementations for common plugin properties like `name`, `version`, `capabilities`, and a default `healthCheck()` method. Plugin authors are encouraged to extend this class to reduce redundant code [Source 6].
+- **`PluginCapability`**: A type used by plugins to declare the functionalities they provide (e.g., `'memory'`, `'llm'`). This allows other parts of the system to discover and select appropriate plugins [Source 6].
+- **Adapter Interfaces**: Specific interfaces that extend the base `Plugin` interface to define the contract for a particular capability. Examples include `LLMAdapter` for language model interactions [Source 5], `KBSearchAdapter` for knowledge base searching [Source 3], and `SandboxExternalBackend` for [Tool Execution](../concepts/tool-execution.md) environments [Source 2].
+- **`PluginHost`**: A central registry and lifecycle manager for plugins. While its own source code is not detailed in the provided materials, its role is evident. Other subsystems can register plugins with the `PluginHost`, which then manages their initialization and destruction. This also facilitates integration with framework-level features like health checks [Source 2, Source 4].
+
+Plugins in YAAF often have a dual nature: they can be instantiated and used directly by a component (standalone mode) or registered with the `PluginHost` for managed lifecycle and broader availability [Source 2].
 
 ## Integration Points
-The Plugin System integrates with other YAAF subsystems through the `PluginHost`:
-*   **Tool System**: The `PluginHost` aggregates tools from all plugins implementing the `ToolProvider` interface via `getAllTools()`.
-*   **Context Manager**: Plugins implementing `ContextProvider` can inject dynamic context sections into the system prompt during the prompt assembly phase.
-*   **Agent Runner**: Agents are typically initialized with a set of plugins which are then managed by an internal `PluginHost` instance.
+
+Various subsystems within YAAF rely on the Plugin System to acquire implementations for their dependencies.
+
+- **Knowledge Base**: The `KBStore` can be configured with a custom `KBSearchAdapter` plugin. If no custom adapter is registered with the `PluginHost`, it defaults to using the built-in `TfIdfSearchPlugin` [Source 3, Source 4].
+- **Models**: All interactions with Large Language Models are mediated through the `LLMAdapter` plugin interface. Concrete implementations for different model providers extend the `BaseLLMAdapter` class [Source 5].
+- **Sandbox**: The tool execution `Sandbox` can be configured with an external backend that implements the `SandboxExternalBackend` interface. The `FirecrackerSandboxBackend` is an example of such a plugin, which can be managed by the `PluginHost` or used in a standalone capacity [Source 2].
 
 ## Key APIs
 
-### PluginHost
-The primary interface for managing the plugin lifecycle and accessing capabilities.
-*   `register(plugin: Plugin)`: Initializes and stores a plugin.
-*   `getAdapter<T>(capability: PluginCapability)`: Retrieves the first registered plugin that provides the specified capability.
-*   `getAllTools()`: Collects all tools from every registered `ToolProvider`.
-*   `gatherContext(query: string)`: Asynchronously gathers context strings from all `ContextProvider` plugins.
-*   `destroyAll()`: Performs a graceful shutdown of all registered plugins.
-
-### Core Adapter Interfaces
-| Interface | Capability | Purpose |
-|---|---|---|
-| `MemoryAdapter` | `memory` | Persistent storage, retrieval, and search of agent memories. |
-| `BrowserAdapter` | `browser` | Web automation including navigation, interaction, and scraping. |
-| `FileSystemAdapter` | `filesystem` | Virtual filesystem operations for agent state and workspace management. |
-| `ToolProvider` | `tool_provider` | Dynamic contribution of tools to the agent's toolset. |
-| `ContextProvider` | `context_provider` | Injection of context sections into the system prompt. |
-| `LLMAdapter` | `llm` | Full LLM backend management including completion and streaming. |
+- **`PluginBase`**: The abstract base class located in `src/plugin/base.ts`. It is the recommended starting point for creating any new plugin, providing default implementations for the `Plugin` interface [Source 6].
+- **`LLMAdapter`**: An interface defining the contract for interacting with language models. Implementations of this adapter are responsible for making API calls to specific LLM providers [Source 5].
+- **`KBSearchAdapter`**: An interface for knowledge base search functionality. The `TfIdfSearchPlugin` is the default implementation provided by the framework [Source 3, Source 4].
 
 ## Configuration
-Plugins are configured during instantiation and then registered with the `PluginHost`.
 
-```typescript
-import { PluginHost, HonchoPlugin, AgentFSPlugin } from 'yaaf';
+Developers can integrate plugins in two primary ways:
 
-const host = new PluginHost();
+1.  **Standalone Instantiation**: A plugin can be instantiated directly and passed to the constructor or a setter method of the subsystem that requires it. This approach gives the developer full control over the plugin's lifecycle.
 
-await host.register(new HonchoPlugin({
-  apiKey: process.env.HONCHO_API_KEY!,
-  workspaceId: 'my-app',
-}));
+    ```typescript
+    // Example of standalone plugin usage
+    const backend = new FirecrackerSandboxBackend({
+      kernelImagePath: '/images/vmlinux.bin',
+      rootfsImagePath: '/images/yaaf-rootfs.ext4',
+    });
+    await backend.initialize(); // Manual lifecycle management
 
-await host.register(new AgentFSPlugin({
-  rootDir: './workspace'
-}));
-```
+    const sandbox = new Sandbox({ sandboxRuntime: 'external', sandboxBackend: backend });
+    ```
+    [Source 2]
+
+2.  **Registration with `PluginHost`**: A plugin instance can be registered with the central `PluginHost`. The host then manages the plugin's lifecycle, calling methods like `initialize()` and `dispose()` automatically. This is the recommended approach for integrating with framework-wide services.
+
+    ```typescript
+    // Example of PluginHost-managed usage
+    const backend = new FirecrackerSandboxBackend({ ... });
+    await host.register(backend); // host calls initialize()
+    sandbox.setBackend(backend);
+    // host.destroyAll() will call backend.destroy() at shutdown
+    ```
+    [Source 2]
 
 ## Extension Points
-Developers can extend YAAF by implementing the `Plugin` interface and any relevant adapter interfaces.
 
-### Custom Plugin Example
-A developer can create a custom storage backend by implementing the `MemoryAdapter`:
+The entire Plugin System serves as the primary extension point for the YAAF framework. To add new functionality or support for a new external provider, a developer typically performs the following steps:
 
-```typescript
-import type { Plugin, MemoryAdapter, MemoryEntry, PluginCapability } from 'yaaf';
+1.  Identify the relevant adapter interface (e.g., `LLMAdapter`, `MemoryAdapter`).
+2.  Create a new class that implements this interface.
+3.  Inherit from `PluginBase` to gain default implementations for common plugin methods [Source 6].
+4.  Implement the methods specific to the chosen adapter interface.
+5.  The new plugin can then be instantiated and provided to the framework, either directly or via the `PluginHost` [Source 2, Source 4].
 
-class RedisMemoryPlugin implements Plugin, MemoryAdapter {
-  readonly name = 'redis-memory';
-  readonly version = '1.0.0';
-  readonly capabilities: readonly PluginCapability[] = ['memory'];
+## Sources
 
-  async initialize() {
-    // Setup Redis connection
-  }
-
-  async save(entry: MemoryEntry) {
-    // Implementation for Redis SET
-  }
-
-  async search(query: string) {
-    // Implementation for Redis search
-  }
-
-  buildPrompt() {
-    return "## Memory\n...";
-  }
-}
-```
-
-### Capability Checklist
-To implement a specific capability, a plugin must provide the following methods:
-*   **memory**: `save`, `get`, `list`, `search`, `buildPrompt`.
-*   **browser**: `navigate`, `click`, `type`, `extract`, `screenshot`.
-*   **filesystem**: `read`, `write`, `list`, `tree`.
-*   **tool_provider**: `getTools()`.
-*   **context_provider**: `gatherContext(query)`.
+[Source 1]: src/index.ts
+[Source 2]: src/[Integrations](./integrations.md)/sandbox.firecracker.ts
+[Source 3]: src/knowledge/store/store.ts
+[Source 4]: src/knowledge/store/tfidfSearch.ts
+[Source 5]: src/models/base.ts
+[Source 6]: src/plugin/base.ts

@@ -137,7 +137,8 @@ export type PluginCapability =
   // ── Knowledge Base ────────────────────────────────────────────────────────
   | "kb_search" // KBSearchAdapter — pluggable KB search engine
   | "kb_grounding" // KBGroundingAdapter — pluggable hallucination detection
-  | "kb_ontology"; // KBOntologyAdapter — pluggable ontology evolution
+  | "kb_ontology" // KBOntologyAdapter — pluggable ontology evolution
+  | "kb_graph"; // KBGraphAdapter — pluggable relationship graph
 
 /**
  * Base plugin interface.
@@ -1202,6 +1203,8 @@ export type KBSearchResult = {
   score: number;
   /** ~200 chars around the best match */
   excerpt: string;
+  /** 1.1: raw frontmatter for staleness checks at query time */
+  frontmatter: Record<string, unknown>;
 };
 
 // ── KB Grounding Adapter ─────────────────────────────────────────────────────
@@ -1259,6 +1262,8 @@ export interface KBGroundingAdapter extends Plugin {
   validateArticle(
     article: { title: string; body: string; entityType: string; docId: string },
     sourceTexts: string[],
+    /** C4/A1: Trust level of the contributing sources. Applied as a score multiplier. */
+    sourceTrust?: string,
   ): Promise<KBGroundingResult>;
 }
 
@@ -1273,6 +1278,8 @@ export type KBGroundingResult = {
   claims: KBClaimVerification[];
   /** Warnings for the compile report */
   warnings: string[];
+  /** ADR-012/Fix-11: Which verification layers were used */
+  verificationLevel?: "vocabulary_only" | "vocabulary+embedding" | "vocabulary+embedding+llm" | "vocabulary+embedding+llm+nli";
 };
 
 export type KBClaimVerification = {
@@ -1283,7 +1290,108 @@ export type KBClaimVerification = {
   /** Why the claim is unsupported (if unsupported) */
   reason?: string;
   /** Which verification method determined this verdict */
-  scoredBy: "keyword" | "vocabulary_overlap" | "embedding" | "llm" | "nli" | "custom";
+  scoredBy: "keyword" | "vocabulary_overlap" | "vocabulary_overlap_only" | "embedding" | "llm" | "nli" | "custom";
+};
+
+// ── KB Graph Adapter ─────────────────────────────────────────────────────────
+
+/**
+ * KBGraphAdapter — pluggable relationship graph for Knowledge Base runtime.
+ *
+ * The default built-in implementation (`WikilinkGraphPlugin`) builds an
+ * in-memory adjacency list from `[[wikilinks]]` in compiled article bodies
+ * and infers relationship labels from the ontology's `relationship_types`.
+ *
+ * Register a custom adapter to use Neo4j, Memgraph, Amazon Neptune, or any
+ * other graph backend for relationship traversal.
+ *
+ * **Framework wiring:** `KBStore.load()` calls `PluginHost.getKBGraphAdapter()`.
+ * When present, `buildGraph()` is called during load and `query()` is used
+ * by the `query_kb_graph` tool. Only the **first** adapter is used.
+ *
+ * @example
+ * ```ts
+ * class Neo4jGraphPlugin implements KBGraphAdapter {
+ *   readonly name = 'neo4j-graph'
+ *   readonly version = '1.0.0'
+ *   readonly capabilities = ['kb_graph'] as const
+ *
+ *   async buildGraph(docs, ontology) {
+ *     const session = this.driver.session()
+ *     for (const doc of docs) {
+ *       await session.run('MERGE (a:Article {docId: $id})', { id: doc.docId })
+ *     }
+ *   }
+ *
+ *   async query(docId, options) {
+ *     const result = await session.run(
+ *       'MATCH (a {docId: $id})-[r]->(b) RETURN b, type(r)',
+ *       { id: docId }
+ *     )
+ *     return result.records.map(r => ({
+ *       docId: r.get('b').properties.docId,
+ *       title: r.get('b').properties.title,
+ *       entityType: r.get('b').properties.entityType,
+ *       relationship: r.get('type(r)'),
+ *     }))
+ *   }
+ * }
+ * ```
+ */
+export interface KBGraphAdapter extends Plugin {
+  /**
+   * Build the graph from compiled documents.
+   * Called once during `KBStore.load()` and again on `reload()`.
+   * The adapter should build whatever internal representation it needs
+   * (adjacency list, graph database sync, etc.).
+   */
+  buildGraph(
+    documents: KBSearchDocument[],
+    ontology: KBOntology,
+  ): Promise<void>;
+
+  /**
+   * Query relationships for a given document.
+   * Returns related documents with optional relationship labels.
+   */
+  query(
+    docId: string,
+    options?: KBGraphQueryOptions,
+  ): Promise<KBGraphQueryResult[]>;
+
+  /**
+   * Optional: return all edges in the graph (for debugging / visualization).
+   */
+  allEdges?(): KBGraphEdge[];
+}
+
+/** Edge in the relationship graph */
+export type KBGraphEdge = {
+  from: string;
+  to: string;
+  /** Inferred relationship name from ontology.relationshipTypes, if identifiable */
+  relationship?: string;
+};
+
+/** Options for querying the relationship graph */
+export type KBGraphQueryOptions = {
+  /** Filter to a specific relationship type (e.g., "IMPLEMENTS") */
+  relationship?: string;
+  /** Direction: "outgoing" links from this doc, "incoming" links to this doc, or "both". Default: "both" */
+  direction?: "outgoing" | "incoming" | "both";
+  /** Maximum results to return. Default: 20 */
+  maxResults?: number;
+};
+
+/** Single result from a graph query */
+export type KBGraphQueryResult = {
+  docId: string;
+  title: string;
+  entityType: string;
+  /** The relationship type connecting the queried doc to this result */
+  relationship?: string;
+  /** Whether this result is an outgoing or incoming link relative to the queried doc */
+  direction: "outgoing" | "incoming";
 };
 
 // ── KB Ontology Adapter ──────────────────────────────────────────────────────
@@ -2122,5 +2230,17 @@ export class PluginHost {
    */
   getKBOntologyAdapter(): KBOntologyAdapter | null {
     return this.getAdapter<KBOntologyAdapter>("kb_ontology") ?? null;
+  }
+
+  /**
+   * Get the first registered `KBGraphAdapter`, or `null` if none.
+   *
+   * **Consumed by:** `KBStore.load()` to build a relationship graph.
+   * When present, `buildGraph()` is called during store loading and
+   * `query()` is used by the `query_kb_graph` tool. The built-in
+   * `WikilinkGraphPlugin` is bypassed.
+   */
+  getKBGraphAdapter(): KBGraphAdapter | null {
+    return this.getAdapter<KBGraphAdapter>("kb_graph") ?? null;
   }
 }

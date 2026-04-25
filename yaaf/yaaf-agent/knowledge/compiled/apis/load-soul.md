@@ -1,60 +1,99 @@
 ---
-title: loadSoul
-entity_type: api
-summary: Asynchronously loads and parses a SOUL.md file from the filesystem into a Soul object.
+summary: An asynchronous function to load a `Soul` object from a SOUL.md file.
 export_name: loadSoul
 source_file: src/agents/soul.ts
 category: function
+title: loadSoul
+entity_type: api
+search_terms:
+ - load agent personality
+ - read SOUL.md file
+ - import agent identity
+ - parse soul from file
+ - agent configuration file
+ - how to define an agent's character
+ - soul file format
+ - loading agent traits
+ - filesystem soul loading
+ - async soul creation
+ - agent identity from disk
 stub: false
-compiled_at: 2026-04-16T14:14:28.875Z
+compiled_at: 2026-04-24T17:19:14.675Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/soul.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/soul.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`loadSoul` is a utility function used to initialize an agent's personality by reading a dedicated Markdown file (typically `SOUL.md`). This approach follows a pattern where an agent's identity (who they are) is decoupled from their specific task instructions (what they do). 
 
-The function reads the file from the local filesystem, parses the YAML frontmatter for metadata, and extracts structured content from specific Markdown headers such as "Personality", "Rules", and "Preferences".
+The `load[[[[[[[[Soul]]]]]]]]` function is an asynchronous utility that reads an agent's personality configuration from a specified file path and parses it into a `Soul` object [Source 1]. This function is the primary method for loading a predefined agent identity from the filesystem.
 
-## Signature / Constructor
+The function expects the file to be in the Soul.md format, which separates the agent's core identity (name, personality, tone) from its task-specific instructions. This separation allows for reusable and clearly defined agent personas [Source 1]. Because it performs file I/O, the function returns a `Promise` that resolves with the `Soul` object.
+
+## Signature
 
 ```typescript
 export async function loadSoul(path: string): Promise<Soul>;
 ```
 
 ### Parameters
-*   `path`: The filesystem path to the `.md` file containing the soul definition.
 
-### Return Type
-The function returns a `Promise` that resolves to a `Soul` object:
+-   `path` (`string`): The relative or absolute path to the SOUL.md file on the filesystem.
+
+### Returns
+
+-   `Promise<Soul>`: A promise that resolves to a `Soul` object representing the parsed contents of the file.
+
+The resolved `Soul` object has the following structure [Source 1]:
 
 ```typescript
 export type Soul = {
   /** Agent's name */
-  name: string
+  name: string;
   /** Core personality description */
-  personality: string
+  personality: string;
   /** Communication tone */
-  tone?: 'casual' | 'professional' | 'playful' | 'formal' | string
+  tone?: "casual" | "professional" | "playful" | "formal" | string;
   /** Behavioral rules / guardrails */
-  rules?: string[]
+  rules?: string[];
   /** User-specific preferences (overrides) */
-  preferences?: Record<string, string>
+  preferences?: Record<string, string>;
   /** Custom sections (key → markdown content) */
-  sections?: Record<string, string>
-}
+  sections?: Record<string, string>;
+};
 ```
 
-## File Format
-The target file is expected to follow a specific Markdown structure:
+## Examples
 
-1.  **Frontmatter**: A YAML block containing the `name` and optional `tone`.
-2.  **# Personality**: A section describing the core identity.
-3.  **# Rules**: A list of behavioral constraints or guardrails.
-4.  **# Preferences**: A list of key-value pairs for configuration.
+### Loading a SOUL.md file
 
-### Example SOUL.md
+The following example demonstrates how to load an agent's soul from a file named `SOUL.md` in the same directory.
+
+```typescript
+import { loadSoul } from 'yaaf';
+
+async function initializeAgent() {
+  try {
+    // Load the soul from the filesystem
+    const agentSoul = await loadSoul('./SOUL.md');
+
+    console.log(`Successfully loaded soul for: ${agentSoul.name}`);
+    console.log(`Personality: ${agentSoul.personality}`);
+
+    // The soul can now be used to configure an agent
+  } catch (error) {
+    console.error("Failed to load the agent's soul:", error);
+  }
+}
+
+initializeAgent();
+```
+
+### Example SOUL.md File Format
+
+The `loadSoul` function expects a file with YAML [Frontmatter](../concepts/frontmatter.md) for metadata and markdown sections for content, as shown below [Source 1].
+
 ```markdown
 ---
 name: Molty
@@ -73,32 +112,13 @@ Cheerful space lobster who loves helping humans.
 - language: English
 ```
 
-## Examples
+## See Also
 
-### Loading a Soul from Disk
-```typescript
-import { loadSoul } from 'yaaf';
+-   `createSoul`: For creating a `Soul` object programmatically instead of loading from a file.
+-   `parseSoulMd`: For parsing a `Soul` object from a string containing SOUL.md content.
+-   `applySoul`: For combining a `Soul` object with a task-specific [System Prompt](../concepts/system-prompt.md).
+-   `Soul`: The type definition for an agent's identity.
 
-async function initializeAgent() {
-  try {
-    const soul = await loadSoul('./agents/molty.soul.md');
-    console.log(`Loaded agent: ${soul.name}`);
-    console.log(`Tone: ${soul.tone}`);
-  } catch (error) {
-    console.error('Failed to load agent soul:', error);
-  }
-}
-```
+## Sources
 
-### Using a Loaded Soul with a System Prompt
-Once loaded, a soul is typically combined with task-specific instructions using other utilities in the framework.
-
-```typescript
-import { loadSoul, applySoul } from 'yaaf';
-
-const soul = await loadSoul('./SOUL.md');
-const taskInstructions = 'You help with calendar management.';
-
-// Combines identity preamble with task instructions
-const finalSystemPrompt = applySoul(taskInstructions, soul);
-```
+[Source 1]: src/agents/soul.ts

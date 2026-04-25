@@ -432,11 +432,23 @@ export {
   loadSkill,
   defineSkill,
   buildSkillSection,
+  buildSkillSectionFromList,
+  discoverSkillEntries,
+  deduplicateSkills,
+  parseFrontmatter,
+  buildSkillFromParsed,
   SkillRegistry,
+  MAX_SKILL_BYTES,
   type Skill,
   type SkillFrontmatter,
+  type SkillSource,
+  type SkillExecutionContext,
+  type SkillEntry,
+  type SkillToolContext,
+  type ContentBlock,
   type SkillRegistryEvents,
-} from "./skills.js";
+  type ParsedSkill,
+} from "./skills/index.js";
 
 // ── MCP Integration ───────────────────────────────────────────────────────────
 export {
@@ -452,7 +464,7 @@ export {
 
 // ── Utilities ────────────────────────────────────────────────────────────────────
 export { EventBus, type EventHandler } from "./utils/eventBus.js";
-export { Logger, type LogLevel } from "./utils/logger.js";
+export { Logger, type LogLevel, type StructuredLogBackend } from "./utils/logger.js";
 export { estimateTokens } from "./utils/tokens.js";
 export { validateCron, nextCronRunMs, describeCron } from "./utils/cron.js";
 export { withRetry, computeRetryDelay, type RetryConfig } from "./utils/retry.js";
@@ -824,3 +836,40 @@ export {
   type KBToolOptions,
   type KnowledgeBaseOptions,
 } from "./knowledge/store/index.js";
+
+// ── Outcome Evaluation (Gap #1) ─────────────────────────────────────────────
+export {
+  OutcomeRunner,
+  type OutcomeConfig,
+  type OutcomeResult,
+  type OutcomeRubric,
+  type RubricCriterion,
+  type OutcomeEvents,
+} from "./agents/outcome.js";
+
+// ── Built-in Code Tools (Gap #4) ────────────────────────────────────────────
+export {
+  codeToolset,
+  readFileTool,
+  writeFileTool,
+  editFileTool,
+  bashTool,
+  globTool,
+  grepTool,
+  webFetchTool,
+  type CodeToolsetOptions,
+} from "./tools/code/index.js";
+
+// ── Agent Registry / Versioning (Gap #5) ────────────────────────────────────
+export {
+  AgentRegistry,
+  type VersionedAgentConfig,
+  type AgentRegistryEntry,
+} from "./agents/registry.js";
+
+// ── Deliverables / Files API (Gap #6) ────────────────────────────────────────
+export {
+  Deliverables,
+  type Deliverable,
+  type AddDeliverableOptions,
+} from "./agents/deliverables.js";

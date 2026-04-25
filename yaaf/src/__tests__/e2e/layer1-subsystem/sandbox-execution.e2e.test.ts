@@ -51,7 +51,7 @@ describe("L1-09: Sandbox Execution E2E", () => {
   it("strictSandbox() creates a path-restricted sandbox", () => {
     let dir: string;
     ({ dir, cleanup } = createTestDir());
-    const sandbox = strictSandbox(dir, 5_000);
+    const sandbox = strictSandbox(dir, { timeoutMs: 5_000 });
     expect(sandbox).toBeDefined();
 
     // validate() checks args for path violations without executing
@@ -65,7 +65,7 @@ describe("L1-09: Sandbox Execution E2E", () => {
   it("strictSandbox() allows paths within root dir", () => {
     let dir: string;
     ({ dir, cleanup } = createTestDir());
-    const sandbox = strictSandbox(dir, 5_000);
+    const sandbox = strictSandbox(dir, { timeoutMs: 5_000 });
 
     // Path within the allowed directory — uses raw dir path.
     // Production normalizePath now resolves symlinks consistently for
@@ -79,7 +79,7 @@ describe("L1-09: Sandbox Execution E2E", () => {
   it("projectSandbox() creates a project-scoped sandbox", () => {
     let dir: string;
     ({ dir, cleanup } = createTestDir());
-    const sandbox = projectSandbox(dir, 5_000);
+    const sandbox = projectSandbox(dir, { timeoutMs: 5_000 });
     expect(sandbox).toBeDefined();
   });
 

@@ -1,78 +1,103 @@
 ---
-title: estimateMessageTokens
-entity_type: api
-summary: Estimate token count for a structured message, accounting for JSON overhead in tool-use.
+summary: Estimates token count for a structured message, accounting for JSON overhead in tool-use and structured messages.
 export_name: estimateMessageTokens
 source_file: src/utils/tokens.ts
 category: function
+title: estimateMessageTokens
+entity_type: api
+search_terms:
+ - token counting for messages
+ - calculate message tokens
+ - JSON token overhead
+ - tool use token estimation
+ - structured message token count
+ - how to estimate tokens for an object
+ - YAAF token utilities
+ - context window management
+ - message size calculation
+ - token estimation heuristic
+ - predict message token length
 stub: false
-compiled_at: 2026-04-16T14:40:16.463Z
+compiled_at: 2026-04-24T17:05:01.444Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/tokens.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/tokens.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`estimateMessageTokens` is a utility function used to calculate the approximate token count of a single structured message. Unlike simple string estimation, this function accounts for the metadata and structural overhead (such as JSON formatting) typically present in messages passed to Large Language Models (LLMs), particularly those involving tool-use or structured outputs.
 
-This function is part of the YAAF token management utilities, which use a conservative character-ratio heuristic (~4 characters per token) to prevent context window overflow.
+The `estimateMessageTokens` function is a utility for estimating the number of tokens a single, structured message object will consume. It is designed to be more accurate than simply counting tokens in the message's content because it also accounts for the JSON structure and metadata (like `role`) that contribute to the final token count [when](./when.md) serialized and sent to a language model [Source 1].
 
-## Signature / Constructor
+This function is particularly useful for managing the [Context Window](../concepts/context-window.md) of an [LLM](../concepts/llm.md). Before adding a new message to a conversation history, developers can use `estimateMessageTokens` to predict its token cost, helping to prevent [Context Overflow](../concepts/context-overflow.md) errors. It is especially valuable for messages involving [Tool Use](../concepts/tool-use.md) or other structured data, where the JSON overhead can be significant.
+
+## Signature
+
+The function takes a single message object and returns an estimated token count as a number.
 
 ```typescript
 export function estimateMessageTokens(message: {
   role: string;
-  content: string | any;
-  [key: string]: any;
+  content: any;
+  [key: string]: any; // Other potential fields like tool_call_id
 }): number;
 ```
 
 ### Parameters
-- `message`: An object representing a conversation turn. It must contain at least a `role` and `content` field. The `content` may be a string or a structured object (e.g., for tool calls).
+
+- **`message`**: An object representing a single message in a conversation. It typically includes `role` and `content` fields, but the function will account for any properties on the object.
 
 ### Returns
-- `number`: The estimated token count, rounded up to the nearest integer.
+
+- **`number`**: The estimated number of tokens for the entire message object.
 
 ## Examples
 
-### Estimating a Simple User Message
+### Estimating a simple user message
+
+This example shows how to estimate the token count for a standard user message. The result will include tokens for the content string as well as the overhead from the JSON keys like `"role"` and `"content"`.
+
 ```typescript
 import { estimateMessageTokens } from 'yaaf';
 
-const message = {
+const userMessage = {
   role: 'user',
-  content: 'What is the capital of France?'
+  content: 'What is the current weather in London?'
 };
 
-const tokens = estimateMessageTokens(message);
-console.log(`Estimated tokens: ${tokens}`);
+const tokenCount = estimateMessageTokens(userMessage);
+
+console.log(`Estimated tokens for the message: ${tokenCount}`);
 ```
 
-### Estimating a Tool-Use Message
-When a message contains structured data for tool-calling, the function accounts for the additional JSON overhead.
+### Estimating a tool result message
+
+This example demonstrates estimating tokens for a more complex message, such as the result from a tool call. The function correctly accounts for the entire serialized JSON structure.
 
 ```typescript
 import { estimateMessageTokens } from 'yaaf';
 
-const toolMessage = {
-  role: 'assistant',
-  content: null,
-  tool_calls: [
-    {
-      id: 'call_123',
-      type: 'function',
-      function: {
-        name: 'get_weather',
-        arguments: '{"location": "Paris"}'
-      }
-    }
-  ]
+const toolResultMessage = {
+  role: 'tool',
+  tool_call_id: 'call_xyz789',
+  content: JSON.stringify({
+    location: 'London',
+    temperature: '15°C',
+    condition: 'Partly Cloudy'
+  })
 };
 
-const tokens = estimateMessageTokens(toolMessage);
+const tokenCount = estimateMessageTokens(toolResultMessage);
+
+console.log(`Estimated tokens for the tool result: ${tokenCount}`);
 ```
 
 ## See Also
-- `estimateTokens`: Base utility for estimating tokens from raw text.
-- `estimateConversationTokens`: Utility for estimating the total tokens in an array of messages.
-- `exceedsBudget`: A boolean check to determine if text fits within a specific token limit.
+
+- `estimateTokens`: For estimating tokens from a plain text string.
+- `estimateConversationTokens`: For estimating the total token count of an array of messages.
+- `exceedsBudget`: A more efficient check to see if text exceeds a token limit without calculating the exact count.
+
+## Sources
+
+[Source 1] src/utils/tokens.ts

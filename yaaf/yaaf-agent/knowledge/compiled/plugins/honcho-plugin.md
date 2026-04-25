@@ -1,73 +1,100 @@
 ---
-title: HonchoPlugin
-entity_type: plugin
-summary: A plugin providing cloud-based memory and user modeling via the Honcho service.
+summary: A YAAF plugin that integrates with Honcho for cloud memory, reasoning, and user modeling, implementing MemoryAdapter and ContextProvider capabilities.
 capabilities:
-  - memory
-  - context
+ - memory
+ - context
+title: Honcho Plugin
+entity_type: plugin
+search_terms:
+ - Honcho integration
+ - cloud memory for agents
+ - user modeling plugin
+ - long-term memory for YAAF
+ - how to add memory to an agent
+ - context provider plugin
+ - persistent agent memory
+ - Honcho API key
+ - workspaceId configuration
+ - peerId for memory
+ - agent reasoning service
+ - automatic context injection
 stub: false
-compiled_at: 2026-04-16T14:10:20.540Z
+compiled_at: 2026-04-24T18:08:36.500Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/plugins.md
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/integrations/honcho.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
-
----
-title: "HonchoPlugin"
-entity_type: "plugin"
-summary: "A plugin providing cloud-based memory and user modeling via the Honcho service."
-capabilities: ["memory", "context"]
-built_in: true
 
 ## Overview
-The `HonchoPlugin` is a built-in YAAF plugin that integrates with the Honcho service to provide persistent cloud-based memory and automated user modeling. It implements the `MemoryAdapter` and `ContextProvider` interfaces, allowing agents to store information, perform semantic searches, and retrieve synthesized user context for prompt construction.
+
+The Honcho Plugin integrates YAAF with the Honcho platform, providing cloud-based [Memory](../concepts/memory.md), reasoning, and user modeling services [Source 1]. It is a single-class integration that implements two standard YAAF capabilities: `[[[[[[[[MemoryAdapter]]]]]]]]` for framework-level memory management and `[[[[[[[[ContextProvider]]]]]]]]` for automatic context injection into agent prompts. In addition to these standard interfaces, the plugin instance also exposes Honcho-specific APIs directly, such as `chat`, `search`, and [Session Management](../subsystems/session-management.md) [Source 1].
 
 ## Installation
-The `HonchoPlugin` is included in the core `yaaf` package. It can be imported directly alongside other framework components.
+
+The source material does not specify a package name or installation command. The plugin is imported from the project's integration files [Source 1].
 
 ```typescript
-import { HonchoPlugin } from 'yaaf';
+import { HonchoPlugin } from 'path/to/yaaf/Integrations/honcho.js';
 ```
 
 ## Configuration
-The plugin requires a Honcho API key and a workspace identifier. It can optionally be scoped to specific users and sessions.
 
-### Constructor Parameters
-| Parameter | Type | Description |
-|---|---|---|
-| `apiKey` | `string` | The API key for the Honcho service. |
-| `workspaceId` | `string` | The identifier for the Honcho workspace. |
-| `userId` | `string` | (Optional) The user identifier. Defaults to `'default'`. |
-| `sessionId` | `string` | (Optional) The session identifier. Auto-generated if omitted. |
+The `HonchoPlugin` is configured via a `HonchoConfig` object passed to its constructor. The available configuration options are detailed below [Source 1].
+
+*   `apiKey` (string, required): The Honcho API key, which can be obtained from `app.honcho.dev`.
+*   `workspaceId` (string, required): The top-level isolation unit for data within Honcho.
+*   `baseUrl` (string, optional): The base URL for the Honcho API. Defaults to `https://api.honcho.dev`.
+*   `timeoutMs` (number, optional): The request timeout in milliseconds. Defaults to `30000`.
+*   `defaultPeerId` (string, optional): The default peer identifier to use for memory operations [when](../apis/when.md) one is not otherwise specified.
+*   `defaultSessionId` (string, optional): The default session identifier.
+*   `contextTokens` (number, optional): The [Token Budget](../concepts/token-budget.md) to use for context. Defaults to `10000`.
 
 ### Example
-```typescript
-import { HonchoPlugin } from 'yaaf';
 
-const honcho = new HonchoPlugin({
-  apiKey:      process.env.HONCHO_API_KEY!,
-  workspaceId: 'my-workspace',
-  userId:      'user-123',
-  sessionId:   'session-abc',
+The following example demonstrates how to register the `HonchoPlugin` with a `PluginHost` and access its capabilities [Source 1].
+
+```typescript
+import { PluginHost } from 'path/to/yaaf/plugin/host.js';
+import { HonchoPlugin } from 'path/to/yaaf/Integrations/honcho.js';
+import { MemoryAdapter } from 'path/to/yaaf/plugin/memory.js';
+
+const host = new PluginHost();
+await host.register(new HonchoPlugin({
+  apiKey: process.env.HONCHO_API_KEY!,
+  workspaceId: 'my-app',
+  defaultPeerId: 'alice',
+}));
+
+// Access the standard memory adapter interface
+const memory = host.getAdapter<MemoryAdapter>('memory')!;
+await memory.save({ 
+  peerId: 'alice',
+  content: 'User prefers dark mode',
+  role: 'system',
 });
 
-await honcho.initialize();
+// Access Honcho-specific features directly from the plugin
+const honcho = host.getPlugin<HonchoPlugin>('honcho')!;
+const insight = await honcho.chat('alice', 'What motivates this user?');
 ```
 
 ## Capabilities
 
-### Memory (MemoryAdapter)
-As a `MemoryAdapter`, the plugin provides methods to persist and retrieve data. It supports semantic search, which returns relevant memory entries along with a generated user representation paragraph synthesized by the Honcho service.
+The Honcho Plugin implements two standard YAAF capabilities and provides direct access to its own methods [Source 1].
 
-Key methods implemented:
-- `save(entry)`: Persists a `MemoryEntry` to the cloud.
-- `get(id)`: Retrieves a specific entry by ID.
-- `search(query)`: Performs a semantic search for relevant memories.
-- `buildPrompt(entries)`: Formats retrieved entries into a string suitable for LLM prompts.
+### MemoryAdapter
 
-### Context (ContextProvider)
-As a `ContextProvider`, the plugin participates in the framework's context gathering phase. When the `PluginHost` calls `gatherContext()`, the `HonchoPlugin` retrieves relevant user models and historical data to inject into the prompt assembly process.
+As a `MemoryAdapter`, the plugin provides a standardized interface for the agent framework to save and retrieve memories. All memory operations are persisted to the Honcho cloud platform, enabling long-term, cross-session memory for agents.
 
-## Limitations
-- **External Dependency**: Requires an active internet connection and a valid Honcho service account.
-- **Latency**: As a cloud-based provider, operations are subject to network latency compared to local memory implementations.
+### ContextProvider
+
+As a `ContextProvider`, the plugin facilitates automatic context injection. This allows the framework to enrich agent prompts with relevant information from Honcho's user models and memory stores, tailored to the current interaction.
+
+### Direct API Access
+
+Beyond the standard [Adapter Interfaces](../concepts/adapter-interfaces.md), the `HonchoPlugin` instance can be retrieved from the `PluginHost` to access platform-specific features. These include methods for chat-based reasoning (`chat`), semantic search over memories (`search`), and session management [Source 1].
+
+## Sources
+
+[Source 1] src/[Integrations](../subsystems/integrations.md)/honcho.ts

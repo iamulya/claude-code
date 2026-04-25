@@ -12,6 +12,12 @@
  * Synthesizer — the plan is guidance, not content.
  */
 
+import type { SourceTrustLevel } from "../ingester/types.js";
+
+// Re-export for consumers who import from this module
+export type { SourceTrustLevel } from "../ingester/types.js";
+
+
 // ── Candidate new concept ─────────────────────────────────────────────────────
 
 /**
@@ -109,6 +115,16 @@ export type ArticlePlan = {
    * Plans below 0.5 are flagged in the compilation report for human review.
    */
   confidence: number;
+
+  /**
+   * C4/A1: Aggregate trust level of all contributing source files.
+   *
+   * When multiple sources contribute to one article (via mergeByDocId),
+   * the lowest trust level of any source wins (conservative approach).
+   *
+   * Default: 'unknown'
+   */
+  sourceTrust: SourceTrustLevel;
 };
 
 // ── Compilation plan ──────────────────────────────────────────────────────────
@@ -132,6 +148,23 @@ export type CompilationPlan = {
    * (e.g., .html files when @mozilla/readability is not installed)
    */
   blockedByMissingDeps: Array<{ sourcePath: string; deps: string[] }>;
+
+  /**
+   * 1.2 fix: Entity types suggested by the LLM that are NOT in ontology.yaml.
+   * These are surfaced as structured warnings in CompileResult so the user
+   * knows exactly which types to add to ontology.yaml to stop the fallback.
+   *
+   * Each entry records how many articles were coerced and example titles,
+   * giving the user enough context to decide whether to add the type.
+   */
+  proposedEntityTypes: Array<{
+    /** The entity type the LLM suggested (not in ontology.yaml) */
+    entityType: string;
+    /** Number of articles that were coerced to the fallback type */
+    count: number;
+    /** Up to 3 article titles that triggered this suggestion */
+    examples: string[];
+  }>;
 
   /** Timestamp of when this plan was created */
   createdAt: number;

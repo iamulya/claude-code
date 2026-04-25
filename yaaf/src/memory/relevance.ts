@@ -14,6 +14,7 @@
  */
 
 import type { MemoryHeader } from "./memoryStore.js";
+import { safeParseJson, MemoryRelevanceResponseSchema } from "../schemas.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,12 +125,12 @@ export class MemoryRelevanceEngine {
         signal,
       });
 
-      const parsed = JSON.parse(result) as {
-        selected_memories: string[];
-      };
+      // Sprint 1b: Validate LLM output with Zod schema
+      const parsed = safeParseJson(result, MemoryRelevanceResponseSchema);
+      if (!parsed.success) return [];
 
       const validFilenames = new Set(cappedCandidates.map((m) => m.filename));
-      const selected = parsed.selected_memories.filter((f) => validFilenames.has(f)).slice(0, 5);
+      const selected = parsed.data.selected_memories.filter((f) => validFilenames.has(f)).slice(0, 5);
 
       const byFilename = new Map(cappedCandidates.map((m) => [m.filename, m]));
       return selected

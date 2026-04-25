@@ -34,6 +34,7 @@ import type { LintIssue, LinkGraph, LintOptions } from "./types.js";
 import type { ParsedCompiledArticle } from "./reader.js";
 import { readdir, readFile } from "fs/promises";
 import { join } from "path";
+import { diceCoefficient, stemmedJaccard } from "../../utils/stringDistance.js";
 
 // ── Wikilink extraction ───────────────────────────────────────────────────────
 
@@ -43,14 +44,32 @@ const WIKILINK_RE = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
  * Extract all wikilink targets from article body text.
  * Handles [[Target]] and [[Target|Display Text]] syntax.
  * Returns the target portion (before any pipe).
+ *
+ * Skips wikilinks inside fenced code blocks (```...```) and inline code
+ * spans (`...`). These are illustrative examples, not actual links.
+ * Without this protection, KB-about-KB articles (e.g., buildAliasIndex)
+ * that use [[self-attention]] as an example of wikilink syntax would
+ * generate false-positive BROKEN_WIKILINK errors.
  */
 export function extractWikilinks(body: string): Array<{ target: string; fullMatch: string }> {
   const links: Array<{ target: string; fullMatch: string }> = [];
-  let match: RegExpExecArray | null;
-  const re = new RegExp(WIKILINK_RE.source, "g");
-  while ((match = re.exec(body)) !== null) {
-    links.push({ target: match[1]!.trim(), fullMatch: match[0] });
+
+  // Split on fenced code blocks and inline code spans so WIKILINK_RE
+  // never matches inside either. Odd-indexed segments are protected zones.
+  const segments = body.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+
+  for (let i = 0; i < segments.length; i++) {
+    // Odd segments are code blocks/spans — skip them
+    if (i % 2 === 1) continue;
+
+    const segment = segments[i]!;
+    let match: RegExpExecArray | null;
+    const re = new RegExp(WIKILINK_RE.source, "g");
+    while ((match = re.exec(segment)) !== null) {
+      links.push({ target: match[1]!.trim(), fullMatch: match[0] });
+    }
   }
+
   return links;
 }
 
@@ -165,13 +184,43 @@ export function checkMissingRequiredFields(
 
   for (const [fieldName, fieldSchema] of Object.entries(schema.frontmatter.fields)) {
     if (!fieldSchema.required) continue;
+
+    // Stubs are inherently incomplete placeholders. Quality fields like
+    // export_name, source_file, and category can't be populated without
+    // source analysis or LLM synthesis. Only enforce structurally necessary
+    // fields (title, entity_type — severity 'error') on stub articles.
+    // Without this guard, every stub generates 3-5 unfixable warnings that
+    // drown out real issues.
+    const isStub = article.frontmatter["stub"] === true || article.frontmatter["stub"] === "true";
+    const fieldSeverity = fieldSchema.missing_severity ?? "error";
+    if (isStub && fieldSeverity !== "error") continue;
+
     const value = article.frontmatter[fieldName];
-    if (value === undefined || value === null || value === "") {
+
+    // Determine if the field is truly missing.
+    // An explicitly present empty array (e.g., `primary_files: []`) is NOT missing —
+    // the author intentionally set the field to empty. Only flag fields that are
+    // absent from the frontmatter entirely, or whose scalar value is empty/null.
+    const isMissing =
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      // Edge: YAML parsers sometimes serialize `[]` as the string "[]" —
+      // treat that as present (it was intentionally written).
+      false;
+
+    if (isMissing) {
       const hasDefault = fieldSchema.default !== undefined;
+
+      // Use the ontology's missing_severity if specified, otherwise default to 'error'.
+      // This lets the ontology distinguish between structurally necessary fields
+      // (title, entity_type → error) and quality fields the LLM may not always
+      // produce (summary, export_name → warning).
+      const severity = fieldSchema.missing_severity ?? "error";
 
       issues.push({
         code: "MISSING_REQUIRED_FIELD",
-        severity: "error",
+        severity,
         message: `Required frontmatter field "${fieldName}" is missing or empty`,
         docId: article.docId,
         field: fieldName,
@@ -268,8 +317,13 @@ export function checkBrokenWikilinks(
         message: `Wikilink [[${target}]] cannot be resolved — no matching article in the KB`,
         docId: article.docId,
         relatedTarget: target,
-        suggestion: `Remove [[${target}]] or create an article for it. Run "kb compile" on source material about "${target}".`,
-        autoFixable: false,
+        suggestion: `Remove [[${target}]] brackets or create an article for it.`,
+        autoFixable: true,
+        fix: {
+          findText: fullMatch,
+          replaceWith: target,
+          firstOccurrenceOnly: true,
+        },
       });
     }
   }
@@ -358,10 +412,44 @@ export function checkUnlinkedMentions(
       existingLinks.has(canonicalTerm.toLowerCase()) || existingLinks.has(docId.toLowerCase());
     if (isLinked) continue;
 
-    // Find the first occurrence of the term in the text for the fix
-    const termPattern = new RegExp(`\\b(${escapeRegex(canonicalTerm)})\\b`, "i");
-    const termMatch = article.body.match(termPattern);
-    if (!termMatch) continue; // Paranoia check
+    // Find the first occurrence of the term NOT inside an existing [[wikilink]]
+    // or fenced code block. Pre-compute all wikilink spans for precise rejection.
+    const wikilinkSpans: Array<[number, number]> = [];
+    const wlRe = /\[\[[^\]]*\]\]/g;
+    let wlMatch;
+    while ((wlMatch = wlRe.exec(article.body)) !== null) {
+      wikilinkSpans.push([wlMatch.index, wlMatch.index + wlMatch[0].length]);
+    }
+    // Also exclude fenced code blocks
+    const codeSpans: Array<[number, number]> = [];
+    const codeRe = /```[\s\S]*?```|`[^`\n]+`/g;
+    let codeMatch;
+    while ((codeMatch = codeRe.exec(article.body)) !== null) {
+      codeSpans.push([codeMatch.index, codeMatch.index + codeMatch[0].length]);
+    }
+    // Also exclude markdown link text: [text](url) — postprocessing converts
+    // [[wikilinks]] to markdown links, so terms appear inside [link text].
+    const mdLinkSpans: Array<[number, number]> = [];
+    const mdLinkRe = /\[([^\]]+)\]\([^)]+\)/g;
+    let mdLinkMatch;
+    while ((mdLinkMatch = mdLinkRe.exec(article.body)) !== null) {
+      mdLinkSpans.push([mdLinkMatch.index, mdLinkMatch.index + mdLinkMatch[0].length]);
+    }
+    const excludedSpans = [...wikilinkSpans, ...codeSpans, ...mdLinkSpans];
+
+    const termPattern = new RegExp(`\\b(${escapeRegex(canonicalTerm)})\\b`, "gi");
+    let termExec: RegExpExecArray | null;
+    let termMatch: RegExpExecArray | null = null;
+    while ((termExec = termPattern.exec(article.body)) !== null) {
+      const pos = termExec.index;
+      const end = pos + termExec[0].length;
+      // Reject if this match falls inside any wikilink or code span
+      const insideExcluded = excludedSpans.some(([s, e]) => pos >= s && end <= e);
+      if (insideExcluded) continue;
+      termMatch = termExec;
+      break;
+    }
+    if (!termMatch) continue;
 
     const entry = registry.get(docId);
     if (!entry) continue;
@@ -378,6 +466,7 @@ export function checkUnlinkedMentions(
         findText: termMatch[0]!,
         replaceWith: `[[${entry.canonicalTitle}]]`,
         firstOccurrenceOnly: true,
+        bodyOffset: termMatch.index,
       },
     });
   }
@@ -400,7 +489,7 @@ export function checkOrphanedArticle(
   if (!node || node.incoming.size === 0) {
     return {
       code: "ORPHANED_ARTICLE",
-      severity: "warning",
+      severity: "info",
       message: `Article "${article.docId}" has no incoming wikilinks from other articles`,
       docId: article.docId,
       suggestion:
@@ -589,12 +678,25 @@ export function checkDuplicateCandidates(
       const a = articles[i]!;
       const b = articles[j]!;
 
-      const titleA = String(a.frontmatter["title"] ?? "").toLowerCase();
-      const titleB = String(b.frontmatter["title"] ?? "").toLowerCase();
+      const titleA = String(a.frontmatter["title"] ?? "");
+      const titleB = String(b.frontmatter["title"] ?? "");
 
       if (!titleA || !titleB) continue;
 
-      const similarity = titleSimilarity(titleA, titleB);
+      // Cross-entity-type pairs are never duplicates by design.
+      // apis/tool (the Tool type) and subsystems/tools (the Tools subsystem)
+      // are legitimately distinct articles, not duplicates.
+      const etA = String(a.frontmatter["entity_type"] ?? "");
+      const etB = String(b.frontmatter["entity_type"] ?? "");
+      if (etA && etB && etA !== etB) continue;
+
+      // Combined score: Dice (character surface) + stemmed Jaccard (word semantics).
+      // Dice alone can't distinguish serialize/deserialize (0.94) from true duplicates.
+      // stemmedJaccard catches the word-level difference: "serial" ≠ "deserial".
+      const diceSim = diceCoefficient(titleA, titleB);
+      const jaccardSim = stemmedJaccard(titleA, titleB);
+      const similarity = 0.5 * diceSim + 0.5 * jaccardSim;
+
       if (similarity >= 1 - threshold) {
         const key = [a.docId, b.docId].sort().join("|");
         if (!seen.has(key)) {
@@ -622,62 +724,6 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Phase 3A: Word n-gram based title similarity.
- * Much more accurate than character-level Jaccard:
- * - "React" vs "React Native" → low similarity (different word sets)
- * - "PyTorch" vs "TorchPy" → low similarity (different words)
- *
- * For short titles (< 4 words): uses word-level Jaccard
- * For longer titles: uses word 2-gram Jaccard
- */
-function titleSimilarity(a: string, b: string): number {
-  if (a === b) return 1;
-
-  const aWords = a
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 1)
-    .map(stemWord);
-  const bWords = b
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 1)
-    .map(stemWord);
-
-  // For short titles, use word-level Jaccard
-  if (aWords.length < 4 || bWords.length < 4) {
-    const setA = new Set(aWords);
-    const setB = new Set(bWords);
-    const intersection = new Set([...setA].filter((w) => setB.has(w)));
-    const union = new Set([...setA, ...setB]);
-    return union.size > 0 ? intersection.size / union.size : 0;
-  }
-
-  // For longer titles, use 2-gram Jaccard
-  const ngramsA = wordNgrams(aWords, 2);
-  const ngramsB = wordNgrams(bWords, 2);
-  const intersection = new Set([...ngramsA].filter((ng) => ngramsB.has(ng)));
-  const union = new Set([...ngramsA, ...ngramsB]);
-  return union.size > 0 ? intersection.size / union.size : 0;
-}
-
-/** Basic plural stemming — strips trailing 's', 'es', 'ies' for Jaccard comparison */
-function stemWord(word: string): string {
-  if (word.length <= 3) return word;
-  if (word.endsWith("ies")) return word.slice(0, -3) + "y";
-  if (word.endsWith("es") && !word.endsWith("ses")) return word.slice(0, -2);
-  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
-  return word;
-}
-
-function wordNgrams(words: string[], n: number): Set<string> {
-  const ngrams = new Set<string>();
-  for (let i = 0; i <= words.length - n; i++) {
-    ngrams.add(words.slice(i, i + n).join(" "));
-  }
-  return ngrams;
-}
 
 // Phase 4A: Recursive directory scanner for stub source checking
 async function scanDirectoryRecursive(dir: string): Promise<string[]> {
@@ -713,6 +759,17 @@ export function checkContradictoryClaims(
   const factPattern =
     /\b([\w][\w\s]{2,30})\b\s+(?:is|are|has|have|uses?|contains?|requires?)\s+(\d[\d,.]*\s*\w*)/gi;
 
+  // Vague subjects that match the regex but don't identify a specific entity.
+  // These cause false positives: "the default is 50" in one article about X
+  // vs "the default is 20" in another article about Y are NOT contradictions.
+  const VAGUE_SUBJECTS = new Set([
+    "the default", "default", "the value", "the result", "the count",
+    "the number", "the size", "the length", "the limit", "the maximum",
+    "the minimum", "the timeout", "the interval", "the threshold",
+    "the priority", "the default priority", "the default value",
+    "the max", "the min", "it", "this", "that",
+  ]);
+
   const factsByEntity = new Map<string, Array<{ docId: string; claim: string; value: string }>>();
 
   for (const article of articles) {
@@ -721,6 +778,7 @@ export function checkContradictoryClaims(
     while ((match = re.exec(article.body))) {
       const entity = match[1]!.trim().toLowerCase();
       if (entity.length < 3) continue; // Skip very short matches
+      if (VAGUE_SUBJECTS.has(entity)) continue; // Skip vague/generic subjects
       const value = match[2]!.trim();
       const list = factsByEntity.get(entity) ?? [];
       list.push({ docId: article.docId, claim: match[0], value });

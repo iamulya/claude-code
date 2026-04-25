@@ -1,76 +1,72 @@
 ---
 title: AnthropicModelConfig
 entity_type: api
-summary: Configuration options for the AnthropicChatModel, including API keys, model versions, and token limits.
+summary: A type alias for the configuration options required to instantiate an AnthropicChatModel.
 export_name: AnthropicModelConfig
 source_file: src/models/anthropic.ts
 category: type
+search_terms:
+ - anthropic claude config
+ - claude model settings
+ - ANTHROPIC_API_KEY
+ - configure anthropic model
+ - AnthropicChatModel options
+ - how to use claude api
+ - yaaf anthropic integration
+ - model parameters for claude
+ - sonnet opus haiku config
+ - anthropic sdk setup
 stub: false
-compiled_at: 2026-04-16T14:30:39.825Z
+compiled_at: 2026-04-25T00:04:30.479Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/models/anthropic.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/resolver.ts
+compiled_from_quality: unknown
+confidence: 0.7
 ---
 
 ## Overview
-`AnthropicModelConfig` is a TypeScript type that defines the configuration parameters for the Anthropic model adapter within YAAF. It is used to initialize the `AnthropicChatModel` and provides the necessary credentials, model selection, and execution constraints required to interact with the Anthropic Messages API.
 
-The configuration supports all Claude model families, including Claude 3, 3.5, and 3.7.
+`AnthropicModelConfig` is a TypeScript type that defines the configuration object for the [AnthropicChatModel](./anthropic-chat-model.md) class. This object contains all the necessary parameters to connect to and interact with the Anthropic API, such as the API key and the specific model to be used (e.g., `claude-3-opus-20240229`).
+
+The [resolveModel](./resolve-model.md) function can automatically create an [AnthropicChatModel](./anthropic-chat-model.md) instance by detecting the `ANTHROPIC_API_KEY` environment variable, which populates the corresponding field in this configuration object [Source 1].
 
 ## Signature
-```typescript
-export type AnthropicModelConfig = {
-  /** Anthropic API key */
-  apiKey: string
-  /** Model name (default: claude-sonnet-4) */
-  model?: string
-  /**
-   * API version header (default: '2023-06-01').
-   * Only change this if Anthropic releases a new stable version.
-   */
-  apiVersion?: string
-  /** Request timeout in ms (default: 120_000 — Claude can be slow on long tasks) */
-  timeoutMs?: number
-  /** Extra headers sent with every request */
-  headers?: Record<string, string>
-  /** Context window size in tokens (auto-resolved from registry if omitted) */
-  contextWindowTokens?: number
-  /** Maximum output tokens per completion (auto-resolved from registry if omitted) */
-  maxOutputTokens?: number
-}
-```
 
-## Properties
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `apiKey` | `string` | The API key used for authentication via the `x-api-key` header. |
-| `model` | `string` | (Optional) The identifier of the model to use. Defaults to `claude-sonnet-4`. |
-| `apiVersion` | `string` | (Optional) The value for the `anthropic-version` header. Defaults to `2023-06-01`. |
-| `timeoutMs` | `number` | (Optional) The request timeout in milliseconds. Defaults to `120,000` to accommodate long-running Claude tasks. |
-| `headers` | `Record<string, string>` | (Optional) Additional HTTP headers to include in every request to the Anthropic API. |
-| `contextWindowTokens` | `number` | (Optional) The total token limit for the context window. If not provided, YAAF attempts to resolve this from its internal model registry. |
-| `maxOutputTokens` | `number` | (Optional) The maximum number of tokens allowed in the generated response. If not provided, YAAF attempts to resolve this from its internal model registry. |
+The provided source material does not include the definition of the `AnthropicModelConfig` type. It is imported from `src/models/anthropic.ts` but its structure is not detailed [Source 1]. Based on its usage with the [AnthropicChatModel](./anthropic-chat-model.md) and the behavior of [resolveModel](./resolve-model.md), it can be inferred to contain properties such as `apiKey` and `model`.
+
+```typescript
+// Imported from 'src/models/anthropic.ts'
+// The full definition is not available in the provided source.
+export type AnthropicModelConfig = {
+  apiKey?: string;
+  model?: string;
+  // ... other Anthropic-specific options
+};
+```
 
 ## Examples
 
-### Basic Configuration
+### Manual Configuration
+
+This example shows how to manually create a configuration object and instantiate an [AnthropicChatModel](./anthropic-chat-model.md).
+
 ```typescript
-import { AnthropicChatModel } from './src/models/anthropic.ts';
+import { AnthropicChatModel, type AnthropicModelConfig } from 'yaaf';
 
 const config: AnthropicModelConfig = {
-  apiKey: 'your-api-key-here',
-  model: 'claude-3-5-sonnet-20240620'
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  model: 'claude-3-sonnet-20240229',
+  // Other parameters like temperature, top_p, etc. would go here.
 };
 
-const model = new AnthropicChatModel(config);
+const anthropicModel = new AnthropicChatModel(config);
 ```
 
-### Advanced Configuration with Timeouts
-```typescript
-const config: AnthropicModelConfig = {
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-  model: 'claude-3-opus-20240229',
-  timeoutMs: 180_000, // Extended timeout for complex reasoning
-  maxOutputTokens: 4096
-};
-```
+## See Also
+
+-   [AnthropicChatModel](./anthropic-chat-model.md): The chat model class that uses this configuration.
+-   [resolveModel](./resolve-model.md): A factory function that can automatically create an [AnthropicChatModel](./anthropic-chat-model.md) from environment variables.
+
+## Sources
+
+[Source 1]: src/models/resolver.ts

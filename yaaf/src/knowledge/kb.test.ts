@@ -307,20 +307,23 @@ describe("YAML parser (ontology/loader)", () => {
   });
 
   it("Bug-4/block-scalar: pipe-literal block scalar — parser handles or gracefully defaults", async () => {
-    // The custom YAML parser handles block scalars (|) as a best-effort.
+    // The yaml library handles block scalars (|) natively with full spec compliance.
     // The key contract: it must NOT crash, and the field must be non-empty.
+    // Note: block scalar body must be indented MORE than the key (YAML 1.2 spec).
     const yaml = MINIMAL_ONTOLOGY.replace(
       'description: "A core concept"',
-      "description: |\n    Line one.\n    Line two."
+      "description: |\n      Line one.\n      Line two."
     );
     // Should not throw
     const { ontology } = await loadOntology(yaml);
     // Field must exist (parser correctly identified it as a value)
     const desc = ontology.entityTypes["concept"]?.description;
     expect(desc).toBeDefined();
-    // If full block scalar parsing works, both lines appear
-    // If only first-line is captured, it should still contain "Line"
-    if (desc) expect(desc.length).toBeGreaterThan(0);
+    // With spec-compliant block scalar parsing, both lines appear
+    if (desc) {
+      expect(desc).toContain("Line one.");
+      expect(desc).toContain("Line two.");
+    }
   });
 
   it("Bug-1: value with URL (colon inside quotes) is not truncated at the colon", async () => {
@@ -514,18 +517,18 @@ describe("groundingPlugin", () => {
     const { hasNegationRisk } = await import("./compiler/groundingPlugin.js");
     // "Transformers do NOT use recurrence" has high token overlap with transformer text
     // but the negation inverts the meaning — must be escalated
-    expect(hasNegationRisk("Transformers do not use recurrence", "source text about transformers", 0.7)).toBe(true);
+    expect(hasNegationRisk("Transformers do not use recurrence", 0.7)).toBe(true);
   });
 
   it("P1-1/hasNegationRisk: low-overlap claim with negation is NOT escalated (below threshold)", async () => {
     const { hasNegationRisk } = await import("./compiler/groundingPlugin.js");
     // Overlap is 0.1 < 0.4 threshold → escalation is skipped regardless of negation
-    expect(hasNegationRisk("Dragons do not fly here", "completely unrelated source", 0.1)).toBe(false);
+    expect(hasNegationRisk("Dragons do not fly here", 0.1)).toBe(false);
   });
 
   it("P1-1/hasNegationRisk: high-overlap claim WITHOUT negation is NOT escalated", async () => {
     const { hasNegationRisk } = await import("./compiler/groundingPlugin.js");
-    expect(hasNegationRisk("Transformers use self-attention", "Transformers use self-attention", 0.9)).toBe(false);
+    expect(hasNegationRisk("Transformers use self-attention", 0.9)).toBe(false);
   });
 
   it("extractClaims: code fences are stripped before claim extraction", async () => {
@@ -545,6 +548,38 @@ describe("groundingPlugin", () => {
     expect(claims.some((c) => c.includes("model.predict"))).toBe(false);
     // Real claims should still be present
     expect(claims.some((c) => c.includes("attention") || c.includes("factual"))).toBe(true);
+  });
+
+  it("H6/extractClaims: bullet list items are extracted as claims", async () => {
+    const { extractClaims } = await import("./compiler/groundingPlugin.js");
+    const text = [
+      "## Key Features",
+      "- Transformers use self-attention mechanisms",
+      "- The model achieves 94.1% accuracy on benchmark",
+      "- Training requires 1000 GPU hours",
+    ].join("\n");
+
+    const claims = extractClaims(text);
+    expect(claims.some((c) => c.includes("self-attention"))).toBe(true);
+    expect(claims.some((c) => c.includes("94.1%"))).toBe(true);
+    expect(claims.some((c) => c.includes("1000 GPU hours"))).toBe(true);
+  });
+
+  it("H6/extractClaims: markdown table cells are extracted as claims", async () => {
+    const { extractClaims } = await import("./compiler/groundingPlugin.js");
+    const text = [
+      "| Model | Accuracy | Params |",
+      "|-------|----------|--------|",
+      "| GPT-4 | 94.1% | 1.7T |",
+      "| Gemini | 95.2% | unknown |",
+    ].join("\n");
+
+    const claims = extractClaims(text);
+    expect(claims.some((c) => c.includes("GPT-4"))).toBe(true);
+    expect(claims.some((c) => c.includes("94.1%"))).toBe(true);
+    expect(claims.some((c) => c.includes("95.2%"))).toBe(true);
+    // Separator rows should not produce claims
+    expect(claims.some((c) => c.includes("---"))).toBe(false);
   });
 
   it("P1-2/XML-injection: & in claim is escaped as &amp; before LLM prompt", async () => {

@@ -68,6 +68,9 @@ import { StreamingToolExecutor, type ToolExecutionResult } from "./streamingExec
 import { applyToolResultBudget, type ToolResultBudgetConfig } from "../utils/toolResultBudget.js";
 import type { ContextManager } from "../context/contextManager.js";
 import { MaxIterationsError } from "../errors.js";
+import { Logger } from "../utils/logger.js";
+
+const logger = new Logger("runner");
 
 /**
  * A module-level AbortController whose signal is never aborted.
@@ -263,7 +266,9 @@ export type RunnerStreamEvent =
     }
   | { type: "iteration"; count: number; maxIterations: number }
   | { type: "usage"; usage: SessionUsage }
-  | { type: "final_response"; content: string };
+  | { type: "final_response"; content: string }
+  | { type: "interrupted"; reason?: string }
+  | { type: "steering_injected"; message: string };
 
 // ── Runner Events ────────────────────────────────────────────────────────────
 
@@ -331,6 +336,12 @@ export type RunnerEvents = {
 
   // ── Session & Usage ────────────────────────────────────────────────────
   usage: SessionUsage;
+
+  // ── Interrupt & Steering ──────────────────────────────────────────────
+  /** Agent run was gracefully interrupted (not aborted) */
+  "run:interrupted": { reason?: string; iteration: number; messagesCommitted: number };
+  /** A steering message was injected into the running agent loop */
+  "steering:injected": { message: string; iteration: number };
 };
 
 export type RunnerEventHandler<K extends keyof RunnerEvents> = (data: RunnerEvents[K]) => void;
@@ -531,6 +542,98 @@ export class AgentRunner {
     }
   }
 
+  // ── Interrupt mechanism (Gap #3) ───────────────────────────────────────
+  //
+  // Graceful cancellation that preserves state. Unlike AbortSignal (hard throw),
+  // interrupt() lets the current iteration finish, commits all messages, and
+  // returns a structured response. The agent can be resumed with run().
+  private _interrupted = false;
+  private _interruptReason?: string;
+
+  /**
+   * Gracefully interrupt the running agent loop.
+   *
+   * Unlike `AbortSignal` (hard cancellation that throws), `interrupt()` stops
+   * the loop after the current iteration completes, persists all messages
+   * committed so far, and returns a structured interrupt message instead of
+   * throwing an error.
+   *
+   * The agent can be resumed with another `run()` call — session state is
+   * fully preserved.
+   *
+   * @param reason Optional human-readable reason for the interrupt.
+   *
+   * @example
+   * ```ts
+   * const promise = runner.run('Refactor the codebase');
+   * setTimeout(() => runner.interrupt('Time budget exceeded'), 30_000);
+   * const result = await promise;
+   * // result === '[Agent interrupted: Time budget exceeded]'
+   * ```
+   */
+  interrupt(reason?: string): void {
+    this._interrupted = true;
+    this._interruptReason = reason;
+  }
+
+  /** Check if the runner is currently in an interrupted state */
+  get isInterrupted(): boolean {
+    return this._interrupted;
+  }
+
+  // ── Steering mechanism (Gap #2) ────────────────────────────────────────
+  //
+  // A simple FIFO queue of user messages injected into the running loop
+  // between iterations. All steering messages are treated as 'user' role
+  // (never 'system') to prevent privilege escalation.
+  private _steeringQueue: string[] = [];
+
+  /**
+   * Inject a user message into the running agent loop.
+   *
+   * The message is queued and drained between iterations (after tool execution,
+   * before the next LLM call). Multiple steers can be queued — they are injected
+   * in FIFO order.
+   *
+   * If no run is active, the message is queued and injected at the start of the
+   * next `run()` call.
+   *
+   * **Security:** Steering messages are always injected as `user` role messages,
+   * never `system`. This prevents privilege escalation via steering injection.
+   *
+   * @param message The user message to inject into the conversation.
+   *
+   * @example
+   * ```ts
+   * const promise = runner.run('Build the payment module');
+   * setTimeout(() => runner.steer('Also add webhook support'), 5000);
+   * const result = await promise;
+   * ```
+   */
+  steer(message: string): void {
+    // Cap the queue to prevent memory exhaustion from runaway steer() calls
+    const MAX_STEERING_QUEUE = 100;
+    if (this._steeringQueue.length >= MAX_STEERING_QUEUE) {
+      logger.warn(
+        `[yaaf/runner] Steering queue full (${MAX_STEERING_QUEUE}), dropping message`,
+      );
+      return;
+    }
+    this._steeringQueue.push(message);
+  }
+
+  /**
+   * Drain all queued steering messages into ownMessages.
+   * Called at the top of each iteration in the main loop.
+   */
+  private _drainSteeringQueue(ownMessages: ChatMessage[], iteration: number): void {
+    while (this._steeringQueue.length > 0) {
+      const msg = this._steeringQueue.shift()!;
+      ownMessages.push({ role: "user", content: msg });
+      this.emit("steering:injected", { message: msg, iteration });
+    }
+  }
+
   private readonly toolContext: ToolContext;
   /** Resolved model name — propagated to OTel spans (Gap #10) */
   private readonly modelName: string;
@@ -681,13 +784,13 @@ export class AgentRunner {
           );
           Promise.race([result as Promise<void>, timeout]).catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
-            console.warn(`[yaaf/runner] Event handler warning (${String(event)}): ${msg}`);
+            logger.warn(`[yaaf/runner] Event handler warning (${String(event)}): ${msg}`);
           });
         }
       } catch (err) {
         // Synchronous handler threw — log and continue, never stall the loop
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[yaaf/runner] Event handler error (${String(event)}): ${msg}`);
+        logger.warn(`[yaaf/runner] Event handler error (${String(event)}): ${msg}`);
       }
     }
   }
@@ -847,6 +950,26 @@ export class AgentRunner {
 
     try {
       while (iterations < this.config.maxIterations) {
+        // ── Gap #3: Check for graceful interrupt ────────────────────────────
+        if (this._interrupted) {
+          const reason = this._interruptReason;
+          // Reset interrupt state now that we've consumed it
+          this._interrupted = false;
+          this._interruptReason = undefined;
+          const response = `[Agent interrupted: ${reason ?? "no reason given"}]`;
+          ownMessages.push({ role: "assistant", content: response });
+          await commit(ownMessages);
+          this.emit("run:interrupted", {
+            reason,
+            iteration: iterations,
+            messagesCommitted: ownMessages.length,
+          });
+          return response;
+        }
+
+        // ── Gap #2: Drain steering queue ─────────────────────────────────
+        this._drainSteeringQueue(ownMessages, iterations);
+
         iterations++;
         this.emit("iteration", {
           count: iterations,
@@ -1175,7 +1298,33 @@ export class AgentRunner {
     let consecutiveContinuations = 0;
     let emptyResponseRetried = false;
 
+
     while (iterations < this.config.maxIterations) {
+      // ── Gap #3: Check for graceful interrupt ──────────────────────────
+      if (this._interrupted) {
+        const reason = this._interruptReason;
+        // Reset interrupt state now that we've consumed it
+        this._interrupted = false;
+        this._interruptReason = undefined;
+        const interruptMsg = `[Agent interrupted: ${reason ?? "no reason given"}]`;
+        ownMessages.push({ role: "assistant", content: interruptMsg });
+        yield { type: "interrupted", reason };
+        this.emit("run:interrupted", {
+          reason,
+          iteration: iterations,
+          messagesCommitted: ownMessages.length,
+        });
+        return;
+      }
+
+      // ── Gap #2: Drain steering queue ──────────────────────────────────
+      while (this._steeringQueue.length > 0) {
+        const msg = this._steeringQueue.shift()!;
+        ownMessages.push({ role: "user", content: msg });
+        yield { type: "steering_injected", message: msg };
+        this.emit("steering:injected", { message: msg, iteration: iterations });
+      }
+
       iterations++;
       yield { type: "iteration", count: iterations, maxIterations: this.config.maxIterations };
 
@@ -1821,6 +1970,10 @@ export class AgentRunner {
               ...this.toolContext,
               signal: signal ?? NEVER_ABORT.signal,
               messages: updatedThread.messages as unknown as typeof this.toolContext.messages,
+              // OS-level sandbox: auto-wrap exec for kernel-enforced isolation
+              exec: this.config.sandbox && this.toolContext.exec
+                ? this.config.sandbox.createSandboxedExec(this.toolContext.exec)
+                : this.toolContext.exec,
             });
             content = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
           } catch (err) {

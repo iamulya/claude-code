@@ -1,61 +1,72 @@
 ---
+summary: Generates a deterministic docId from a canonical title and entity type in the format `{pluralized-entity-type}/{slug}`.
 export_name: generateDocId
 source_file: src/knowledge/compiler/utils.ts
 category: function
-summary: Generates a deterministic docId from a canonical title and entity type in the format {pluralized-entity-type}/{slug}.
 title: generateDocId
 entity_type: api
+search_terms:
+ - deterministic document ID
+ - create knowledge base ID
+ - slugify title
+ - generate unique identifier
+ - KB document path
+ - how to name knowledge articles
+ - canonical title to ID
+ - entity type pluralization
+ - knowledge base compiler utils
+ - docId format
+ - URL-friendly identifier
+ - concepts/attention-mechanism example
 stub: false
-compiled_at: 2026-04-16T14:27:17.214Z
+compiled_at: 2026-04-24T17:08:16.237Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/utils.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/utils.ts
+compiled_from_quality: unknown
 confidence: 0.98
 ---
 
 ## Overview
-`generateDocId` is a utility function used within the YAAF knowledge compiler to create consistent, URL-friendly identifiers for documentation entities. It ensures that every entity has a deterministic path based on its classification and human-readable title.
 
-The function performs two primary transformations:
-1.  It pluralizes the provided `entityType` (e.g., "concept" becomes "concepts").
-2.  It converts the `canonicalTitle` into a URL-safe slug (e.g., "Attention Mechanism" becomes "attention-mechanism").
+The `generateDocId` function is a utility used within the YAAF knowledge base compilation pipeline to create a deterministic, unique identifier for a document [Source 1]. It takes a canonical title and an [Entity Type](../concepts/entity-type.md) as input and produces a string in the format `{pluralized-entity-type}/{slug}`.
+
+This function is essential for creating consistent and predictable file paths or identifiers for knowledge base articles, ensuring that the same article title always maps to the same ID [Source 1]. It relies on internal logic to pluralize the entity type and convert the title into a URL-friendly slug.
 
 ## Signature
+
 ```typescript
-export function generateDocId(canonicalTitle: string, entityType: string): string
+export function generateDocId(canonicalTitle: string, entityType: string): string;
 ```
 
-### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `canonicalTitle` | `string` | The human-readable, official title of the entity. |
-| `entityType` | `string` | The category of the entity (e.g., 'concept', 'api', 'guide'). |
+**Parameters:**
 
-### Returns
-`string`: A formatted string in the pattern `{pluralized-entity-type}/{slug}`.
+*   `canonicalTitle: string`: The canonical title of the knowledge base article.
+*   `entityType: string`: The type of the entity, such as `'concept'` or `'api'`.
+
+**Returns:**
+
+*   `string`: A deterministic document ID.
 
 ## Examples
 
-### Basic Usage
-The following example demonstrates how a concept title is transformed into a structured document ID.
+The following example demonstrates how to generate a `docId` for a concept article titled "Attention Mechanism" [Source 1].
 
 ```typescript
-import { generateDocId } from 'src/knowledge/compiler/utils';
+import { generateDocId } from 'yaaf';
 
-const docId = generateDocId('Attention Mechanism', 'concept');
-console.log(docId); 
-// Output: "concepts/attention-mechanism"
-```
+const title = 'Attention Mechanism';
+const type = 'concept';
 
-### API Entity Usage
-When used with API entities, the function handles the pluralization of the "api" type.
+const docId = generateDocId(title, type);
 
-```typescript
-import { generateDocId } from 'src/knowledge/compiler/utils';
-
-const docId = generateDocId('AgentConfig', 'api');
-console.log(docId); 
-// Output: "apis/agent-config"
+console.log(docId);
+// Expected output: 'concepts/attention-mechanism'
 ```
 
 ## See Also
-*   `pluralizeEntityType`: The underlying utility used to transform entity types into their plural directory names.
+
+*   The `pluralizeEntityType` function is a related utility in the same module that handles the pluralization of entity types used in the `docId` [Source 1].
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/utils.ts

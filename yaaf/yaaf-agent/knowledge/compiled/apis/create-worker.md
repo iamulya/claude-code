@@ -1,59 +1,105 @@
 ---
 title: createWorker
-entity_type: api
-summary: Factory function to create a Web Fetch API compatible request handler for a YAAF agent.
+summary: A factory function to create a Web Fetch API-compatible handler for deploying YAAF agents to edge runtimes.
 export_name: createWorker
 source_file: src/worker.ts
 category: function
+entity_type: api
+search_terms:
+ - edge function handler
+ - deploy agent to cloudflare
+ - vercel edge function agent
+ - deno deploy yaaf
+ - serverless llm agent
+ - web fetch api handler
+ - create http server for agent
+ - worker runtime
+ - edge deployment
+ - how to authorize agent requests
+ - CORS configuration for agent
+ - streaming agent on edge
+ - yaaf/worker
 stub: false
-compiled_at: 2026-04-16T14:12:20.668Z
+compiled_at: 2026-04-24T17:00:11.237Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/worker-runtime.md
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/worker-runtime.md
+compiled_from_quality: documentation
+confidence: 0.98
 ---
 
 ## Overview
-`createWorker` is a factory function used to deploy YAAF agents to edge computing environments and runtimes that implement the standard Web Fetch API. It transforms an agent instance into a request handler capable of processing HTTP requests for chat, streaming, and metadata.
 
-This function is the primary entry point for deploying agents to platforms such as Cloudflare Workers, Vercel Edge Functions, Deno Deploy, and Bun.
+The `createWorker` function is a factory that generates a request handler compatible with the standard Web Fetch API. This allows a YAAF agent to be deployed to various serverless and edge computing platforms [Source 1].
 
-## Signature / Constructor
+It is the primary mechanism for shipping agents to environments such as:
+*   Cloudflare Workers
+*   Vercel Edge Functions
+*   Deno Deploy
+*   Bun
+*   Any other platform that implements the Web Fetch API [Source 1].
+
+The returned handler exposes a set of HTTP endpoints for interacting with the agent, including endpoints for chat, [Streaming](../concepts/streaming.md), health checks, and metadata retrieval. These are the same endpoints provided by the `createServer` utility for Node.js environments [Source 1].
+
+### Endpoints
+
+The generated handler exposes the following HTTP endpoints [Source 1]:
+
+| Method    | Path           | Description                               |
+| :-------- | :------------- | :---------------------------------------- |
+| `POST`    | `/chat`        | Standard request/response chat (JSON).    |
+| `POST`    | `/chat/stream` | Server-Sent Events (SSE) streaming chat.  |
+| `GET`     | `/health`      | Health check endpoint.                    |
+| `GET`     | `/info`        | Returns agent metadata.                   |
+| `OPTIONS` | `*`            | Handles CORS preflight requests.          |
+
+## Signature
 
 ```typescript
-function createWorker(
-  agent: Agent | StreamableAgent,
-  config?: WorkerConfig
-): (request: Request) => Promise<Response>;
+import { StreamableAgent } from './agent';
+import { AgentRunResponse } from './types';
+
+export interface WorkerOptions {
+  name?: string;
+  cors?: boolean;
+  corsOrigin?: string;
+  maxBodySize?: number;
+  timeout?: number;
+  beforeRun?: (input: string, req: Request) => Promise<string> | string;
+  afterRun?: (input: string, response: AgentRunResponse, req: Request) => Promise<void> | void;
+  authorize?: (req: Request) => Promise<boolean> | boolean;
+}
+
+export function createWorker(
+  agent: StreamableAgent,
+  options?: WorkerOptions
+): (req: Request) => Promise<Response>;
 ```
 
-### WorkerConfig Properties
+### Parameters
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `name` | `string` | `'yaaf-agent'` | Identifier for the agent instance. |
-| `cors` | `boolean` | `true` | Whether to enable Cross-Origin Resource Sharing. |
-| `corsOrigin` | `string` | `'*'` | Specifies allowed origins for CORS. |
-| `maxBodySize` | `number` | `1MB` | Maximum allowed size for the request body. |
-| `timeout` | `number` | `30000` | Request timeout in milliseconds. |
-| `beforeRun` | `(input: string, req: Request) => Promise<string> \| string` | — | Hook to modify input or perform logic before the agent runs. |
-| `afterRun` | `(input: string, response: any, req: Request) => Promise<void> \| void` | — | Hook for post-processing or external logging. |
-| `authorize` | `(req: Request) => Promise<boolean> \| boolean` | — | Function to validate requests (e.g., checking API keys or JWTs). |
+*   **`agent`**: A `StreamableAgent` instance. This is typically created by wrapping a standard `Agent` with the `toStreamableAgent` utility [Source 1].
+*   **`options`** (optional): A configuration object to customize the worker's behavior [Source 1].
 
-## Methods & Properties
-The function returns a standard Fetch API handler: `(request: Request) => Promise<Response>`. This handler automatically routes requests to the following endpoints:
+### Configuration Options (`WorkerOptions`)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/chat` | Standard request/response processing returning JSON. |
-| `POST` | `/chat/stream` | Server-Sent Events (SSE) streaming for real-time responses. |
-| `GET` | `/health` | Returns the health status of the worker. |
-| `GET` | `/info` | Returns agent metadata and configuration details. |
-| `OPTIONS` | `*` | Handles CORS preflight requests. |
+| Option       | Type                                                                      | Default        | Description                                                              |
+| :----------- | :------------------------------------------------------------------------ | :------------- | :----------------------------------------------------------------------- |
+| `name`       | `string`                                                                  | `'yaaf-agent'` | The name of the agent, returned by the `/info` endpoint.                 |
+| `cors`       | `boolean`                                                                 | `true`         | Enables or disables Cross-Origin Resource Sharing (CORS) headers.        |
+| `corsOrigin` | `string`                                                                  | `'*'`          | Sets the `Access-Control-Allow-Origin` header value.                     |
+| `maxBodySize`| `number`                                                                  | `1048576` (1MB)| The maximum allowed request body size in bytes.                          |
+| `timeout`    | `number`                                                                  | `30000`        | The request timeout in milliseconds.                                     |
+| `beforeRun`  | `(input: string, req: Request) => Promise<string> \| string`              | `undefined`    | A hook to modify the input string before it's passed to the agent.       |
+| `afterRun`   | `(input: string, response: AgentRunResponse, req: Request) => Promise<void> \| void` | `undefined`    | A hook that runs after the agent completes, useful for logging.          |
+| `authorize`  | `(req: Request) => Promise<boolean> \| boolean`                           | `undefined`    | A hook to implement request [Authorization](../concepts/authorization.md). Return `false` to deny access.|
+
+[Source 1]
 
 ## Examples
 
-### Cloudflare Workers
-The handler can be exported as the default fetch handler for a Cloudflare Worker.
+### Basic Cloudflare Worker
+
+This example shows a minimal setup for a Cloudflare Worker [Source 1].
 
 ```typescript
 import { Agent, toStreamableAgent } from 'yaaf';
@@ -61,26 +107,30 @@ import { createWorker } from 'yaaf/worker';
 
 const agent = new Agent({
   systemPrompt: 'You are a helpful API assistant.',
-  tools: [searchTool],
+  tools: [/* ... your tools ... */],
 });
 
-const handler = createWorker(toStreamableAgent(agent), {
+// The agent must be streamable for the worker
+const streamableAgent = toStreamableAgent(agent);
+
+const handler = createWorker(streamableAgent, {
   name: 'my-edge-agent',
   cors: true,
-  timeout: 25_000, // Recommended for Cloudflare 30s limit
+  timeout: 25_000,  // Cloudflare's general limit is 30s
 });
 
 export default { fetch: handler };
 ```
 
-### Vercel Edge Functions
-Usage within a Vercel Edge runtime environment.
+### Vercel Edge Function
+
+The same handler can be used in a Vercel Edge Function [Source 1].
 
 ```typescript
 import { Agent, toStreamableAgent } from 'yaaf';
 import { createWorker } from 'yaaf/worker';
 
-const agent = new Agent({ systemPrompt: '...', tools: [...] });
+const agent = new Agent({ systemPrompt: '...', tools: [/* ... */] });
 const handler = createWorker(toStreamableAgent(agent));
 
 export const config = { runtime: 'edge' };
@@ -91,41 +141,76 @@ export default async function(req: Request) {
 ```
 
 ### Deno Deploy
-Deploying an agent using `Deno.serve`.
+
+To use with Deno Deploy, pass the handler to `Deno.serve` [Source 1].
 
 ```typescript
 import { Agent, toStreamableAgent } from 'yaaf';
 import { createWorker } from 'yaaf/worker';
 
-const agent = new Agent({ systemPrompt: '...', tools: [...] });
+const agent = new Agent({ systemPrompt: '...', tools: [/* ... */] });
 const handler = createWorker(toStreamableAgent(agent));
 
 Deno.serve(handler);
 ```
 
 ### Custom Authorization
-Implementing a bearer token check using the `authorize` hook.
+
+Implement the `authorize` hook to protect your agent's endpoints [Source 1].
 
 ```typescript
+import { Agent, toStreamableAgent } from 'yaaf';
+import { createWorker } from 'yaaf/worker';
+
+const agent = toStreamableAgent(new Agent({ /* ... */ }));
+
 const handler = createWorker(agent, {
   authorize: async (req) => {
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return false;
-
-    // Validate JWT or API key
-    return await validateToken(token);
+    const apiKey = req.headers.get('x-api-key');
+    return apiKey === 'my-secret-key';
   },
 });
+
+export default { fetch: handler };
 ```
 
-### Pre-processing with beforeRun
-Using request headers to augment the agent's input.
+### Full Configuration
+
+This example demonstrates using multiple configuration options, including pre- and post-processing hooks [Source 1].
 
 ```typescript
+import { Agent, toStreamableAgent } from 'yaaf';
+import { createWorker } from 'yaaf/worker';
+
+const agent = toStreamableAgent(new Agent({ /* ... */ }));
+
 const handler = createWorker(agent, {
+  name: 'edge-bot',
+  cors: true,
+  corsOrigin: 'https://myapp.com',
+  maxBodySize: 512_000,    // 512KB (edge functions often have smaller limits)
+  timeout: 25_000,         // 25s (most edge platforms cap at 30s)
+
+  // Prepend geo-location data to the user's input
   beforeRun: async (input, req) => {
-    const geo = req.headers.get('cf-ipcountry');
-    return `[Region: ${geo}] ${input}`;
+    const country = req.headers.get('cf-ipcountry') || 'unknown';
+    return `[Region: ${country}] ${input}`;
+  },
+
+  // Log the interaction to an external service
+  afterRun: async (input, response) => {
+    // logToAnalytics({ input, response });
+  },
+
+  // Check for a secret API key
+  authorize: async (req) => {
+    return req.headers.get('x-api-key') === 'secret';
   },
 });
+
+export default { fetch: handler };
 ```
+
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/worker-runtime.md

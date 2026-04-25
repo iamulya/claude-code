@@ -13,12 +13,15 @@
  * - stub: true if this is a stub article
  * - compiled_at: ISO timestamp
  * - compiled_from: list of source file paths
+ * - compiled_from_quality: aggregate source trust level (C4/A1)
  * - confidence: from the ArticlePlan
  */
 
 import type { KBOntology, ConceptRegistry } from "../../ontology/index.js";
 import type { FrontmatterValidationResult } from "./types.js";
 import type { FrontmatterSchema, FrontmatterFieldSchema, FieldType } from "../../ontology/types.js";
+import { parseYamlFrontmatter } from "../../utils/frontmatter.js";
+import type { SourceTrustLevel } from "../ingester/types.js";
 
 // ── YAML frontmatter serializer ───────────────────────────────────────────────
 
@@ -234,13 +237,21 @@ function coerceFieldValue(
 
     case "enum": {
       const allowed = schema.enum ?? [];
-      const val = String(raw);
+      let val = String(raw);
+      // Normalize common LLM-generated enum variants before validation.
+      // The LLM often produces values like "type alias" or "factory_function"
+      // that are semantically correct but don't match the ontology's enum exactly.
       if (allowed.length > 0 && !allowed.includes(val)) {
-        errors.push({
-          field: path,
-          message: `Value "${val}" not in allowed enum: [${allowed.join(", ")}]`,
-        });
-        return undefined;
+        const normalized = normalizeEnumValue(val, allowed);
+        if (normalized) {
+          val = normalized;
+        } else {
+          errors.push({
+            field: path,
+            message: `Value "${val}" not in allowed enum: [${allowed.join(", ")}]`,
+          });
+          return undefined;
+        }
       }
       return val;
     }
@@ -312,9 +323,24 @@ export function buildCompleteFrontmatter(
     confidence: number;
     isStub: boolean;
     compiledAt?: string;
+    /** C4/A1: Aggregate trust level of all contributing sources */
+    sourceTrust?: SourceTrustLevel;
+    /**
+     * 1.1: Optional TTL from ontology.freshness_ttl_days for this entity type.
+     * When present and > 0, expires_at is written to frontmatter.
+     */
+    freshnessTtlDays?: number;
   },
 ): Record<string, unknown> {
   const now = compilerMeta.compiledAt ?? new Date().toISOString();
+
+  // 1.1: compute expires_at when ontology specifies a TTL for this entity type
+  let expiresAt: string | undefined;
+  if (compilerMeta.freshnessTtlDays && compilerMeta.freshnessTtlDays > 0) {
+    const compiledDate = new Date(now);
+    compiledDate.setDate(compiledDate.getDate() + compilerMeta.freshnessTtlDays);
+    expiresAt = compiledDate.toISOString();
+  }
 
   return {
     // User/LLM fields first (can be overridden by compiler meta for key fields)
@@ -329,7 +355,21 @@ export function buildCompleteFrontmatter(
       // Store relative-style paths for portability
       return p.replace(/\\/g, "/");
     }),
+    /**
+     * C4/A1: compiled_from_quality records the aggregate trust of all source
+     * material that contributed to this article.
+     *
+     * Values: 'academic' | 'documentation' | 'web' | 'unknown'
+     *
+     * Agents and tooling should surface this prominently to end-users so they
+     * understand the epistemic confidence of the synthesized knowledge.
+     * A grounding score of 0.85 from a web-only article is less reliable than
+     * 0.85 from an academic paper.
+     */
+    compiled_from_quality: compilerMeta.sourceTrust ?? "unknown",
     confidence: Math.round(compilerMeta.confidence * 100) / 100,
+    // 1.1: only written when ontology specifies freshness_ttl_days for this entity type
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
   };
 }
 
@@ -368,7 +408,7 @@ export function parseArticleOutput(raw: string): ParsedArticle {
     return { frontmatter: {}, body: cleaned, raw: cleaned };
   }
 
-  const frontmatter = parseFrontmatterYaml(fmMatch[1]!);
+  const frontmatter = parseYamlFrontmatter(fmMatch[1]!);
   const body = fmMatch[2]?.trim() ?? "";
 
   return {
@@ -378,102 +418,63 @@ export function parseArticleOutput(raw: string): ParsedArticle {
   };
 }
 
+// ── Enum normalization ──────────────────────────────────────────────────────
+
 /**
- * Minimal YAML frontmatter key-value parser.
- * Handles the flat key: value pairs typical in article frontmatter.
- * Does not handle anchors, multi-document, or complex nested structures.
+ * Known aliases for common LLM-generated enum values.
+ * Maps the LLM's output → canonical enum value.
  */
-function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = yaml.split("\n");
-  let i = 0;
+const ENUM_ALIASES: Record<string, string> = {
+  "type alias": "type",
+  "type_alias": "type",
+  "typealias": "type",
+  "factory function": "function",
+  "factory_function": "function",
+  "helper function": "function",
+  "utility function": "function",
+  "static method": "function",
+  "abstract class": "class",
+  "base class": "class",
+  "mixin": "class",
+  "const": "constant",
+  "readonly": "constant",
+  "type guard": "function",
+  "generic type": "type",
+  "union type": "type",
+  "intersection type": "type",
+  "mapped type": "type",
+  "conditional type": "type",
+  "utility type": "type",
+};
 
-  while (i < lines.length) {
-    const line = lines[i]!;
-    const colonIdx = line.indexOf(":");
-    if (colonIdx <= 0) {
-      i++;
-      continue;
-    }
+/**
+ * Attempt to normalize an LLM-generated enum value to a canonical one.
+ * Uses three strategies in order:
+ * 1. Known alias table (exact match, case-insensitive)
+ * 2. Case-insensitive match against allowed values
+ * 3. Prefix match (e.g., "func" → "function")
+ *
+ * Returns the canonical value or undefined if no match found.
+ */
+function normalizeEnumValue(value: string, allowed: string[]): string | undefined {
+  const lower = value.toLowerCase().trim();
 
-    const key = line.slice(0, colonIdx).trim();
-    const rest = line.slice(colonIdx + 1).trim();
+  // 1. Known aliases
+  const alias = ENUM_ALIASES[lower];
+  if (alias && allowed.includes(alias)) return alias;
 
-    if (!key) {
-      i++;
-      continue;
-    }
+  // 2. Case-insensitive exact match
+  const ciMatch = allowed.find((a) => a.toLowerCase() === lower);
+  if (ciMatch) return ciMatch;
 
-    // Empty value — check if next lines define a block scalar or list
-    if (rest === "" || rest === "|") {
-      i++;
-      // G3: handle block scalar (|) — multi-line indented text.
-      // The original code treated block scalars the same as empty values: it only
-      // looked for list-item lines (dash-prefixed) and returned null if none were found.
-      // Any multi-line `description: |\n  text` field was silently dropped → null.
-      if (rest === "|") {
-        const blockLines: string[] = [];
-        // Determine the indent level of the block from the first non-empty line
-        const firstBlockLine = lines[i];
-        const blockIndent = firstBlockLine ? firstBlockLine.match(/^(\s*)/)?.[1]?.length ?? 0 : 0;
-        while (i < lines.length) {
-          const bl = lines[i]!;
-          // Stop when indentation is less than the block's indent (back to parent level)
-          if (bl.trim() !== "" && (bl.match(/^(\s*)/)?.[1]?.length ?? 0) < blockIndent) break;
-          blockLines.push(bl.slice(blockIndent)); // strip leading indent
-          i++;
-        }
-        // Join preserving newlines (strip trailing newline per YAML block scalar semantics)
-        result[key] = blockLines.join("\n").replace(/\n+$/, "");
-        continue;
-      }
-      // Empty value — check if next lines define a list
-      const listItems: string[] = [];
-      while (i < lines.length && lines[i]!.match(/^\s+-\s+/)) {
-        const item = lines[i]!.replace(/^\s+-\s+/, "").trim();
-        listItems.push(stripStringQuotes(item));
-        i++;
-      }
-      result[key] = listItems.length > 0 ? listItems : null;
-      continue;
-    }
+  // 3. Underscore/space/hyphen normalization: "type_alias" → "type alias" → check again
+  const normalized = lower.replace(/[-_\s]+/g, " ");
+  const normAlias = ENUM_ALIASES[normalized];
+  if (normAlias && allowed.includes(normAlias)) return normAlias;
 
-    // Inline list: [a, b, c]
-    if (rest.startsWith("[") && rest.endsWith("]")) {
-      try {
-        result[key] = JSON.parse(rest.replace(/'/g, '"'));
-      } catch {
-        const items = rest
-          .slice(1, -1)
-          .split(",")
-          .map((s) => stripStringQuotes(s.trim()));
-        result[key] = items;
-      }
-      i++;
-      continue;
-    }
+  // 4. Prefix match (if value starts with an allowed value, e.g., "function" from "function (factory)")
+  const prefixMatch = allowed.find((a) => lower.startsWith(a.toLowerCase()));
+  if (prefixMatch) return prefixMatch;
 
-    // Scalar value
-    result[key] = parseScalarValue(rest);
-    i++;
-  }
-
-  return result;
-}
-
-function parseScalarValue(raw: string): unknown {
-  const stripped = stripStringQuotes(raw);
-  if (raw === "true") return true;
-  if (raw === "false") return false;
-  if (raw === "null" || raw === "~" || raw === "") return null;
-  const n = Number(raw);
-  if (!Number.isNaN(n) && raw !== "") return n;
-  return stripped;
-}
-
-function stripStringQuotes(s: string): string {
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1);
-  }
-  return s;
+  return undefined;
 }

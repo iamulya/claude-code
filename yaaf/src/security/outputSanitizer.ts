@@ -37,6 +37,30 @@
 import type { ChatResult } from "../agents/runner.js";
 import type { LLMHookResult } from "../hooks.js";
 
+// Sprint 3: DOMPurify replaces ~15 regex patterns for XSS prevention.
+// isomorphic-dompurify works in Node (uses jsdom) and browser environments.
+// Dynamic import for graceful degradation if not installed.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _purify: any | null = null;
+let _purifyLoaded = false;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadDOMPurify(): Promise<any | null> {
+  if (_purifyLoaded) return _purify;
+  _purifyLoaded = true;
+  try {
+    const mod = await import("isomorphic-dompurify" as string);
+    _purify = mod.default ?? mod;
+    return _purify;
+  } catch {
+    // isomorphic-dompurify not installed — fall back to regex sanitization
+    return null;
+  }
+}
+
+// Eagerly start loading (non-blocking)
+void loadDOMPurify();
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type OutputSanitizerConfig = {
@@ -328,7 +352,12 @@ export class OutputSanitizer {
     // 1. Strip all HTML OR just dangerous HTML
     if (this.config.stripHtml) {
       const before = result;
-      result = result.replace(ALL_TAGS_RE, "");
+      // Full strip: remove ALL tags (DOMPurify with ALLOWED_TAGS=[] or regex fallback)
+      if (_purify) {
+        result = _purify.sanitize(result, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+      } else {
+        result = result.replace(ALL_TAGS_RE, "");
+      }
       if (result !== before) {
         modified = true;
         const count = (before.match(ALL_TAGS_RE) ?? []).length;
@@ -339,26 +368,39 @@ export class OutputSanitizer {
     } else if (this.config.stripDangerousHtml) {
       const before = result;
 
-      // Remove script tags and content
-      result = result.replace(SCRIPT_RE, "");
-
-      // Remove style tags (expression() vector)
-      result = result.replace(STYLE_RE, "");
-
-      // Remove event handlers from remaining tags
-      result = result.replace(EVENT_HANDLER_RE, "");
-
-      // Remove dangerous tags
-      result = result.replace(DANGEROUS_TAGS_RE, "");
-
-      // Remove entity-encoded scripts
-      result = result.replace(ENCODED_SCRIPT_RE, "");
-
-      // Remove CSS expressions
-      result = result.replace(CSS_EXPRESSION_RE, "");
-
-      // Remove SVG event handlers
-      result = result.replace(SVG_EVENT_RE, "<svg");
+      // Sprint 3: Use DOMPurify for dangerous HTML removal.
+      // DOMPurify handles mutation XSS, encoding tricks, SVG/MathML vectors,
+      // and edge cases that regex patterns fundamentally cannot catch.
+      // Falls back to regex patterns if DOMPurify is not installed.
+      if (_purify) {
+        result = _purify.sanitize(result, {
+          // Allow safe formatting tags, strip everything dangerous
+          ALLOWED_TAGS: [
+            "p", "br", "b", "i", "em", "strong", "u", "s", "del",
+            "h1", "h2", "h3", "h4", "h5", "h6",
+            "ul", "ol", "li", "dl", "dt", "dd",
+            "a", "img", "code", "pre", "blockquote",
+            "table", "thead", "tbody", "tr", "th", "td",
+            "hr", "span", "div", "sup", "sub",
+          ],
+          ALLOWED_ATTR: [
+            "href", "src", "alt", "title", "class", "id",
+            "target", "rel", "width", "height",
+          ],
+          // Block javascript: and data: URLs in href/src
+          ALLOW_DATA_ATTR: false,
+          FORBID_ATTR: ["style", "onerror", "onload", "onclick"],
+        });
+      } else {
+        // Regex fallback (pre-Sprint 3 behavior)
+        result = result.replace(SCRIPT_RE, "");
+        result = result.replace(STYLE_RE, "");
+        result = result.replace(EVENT_HANDLER_RE, "");
+        result = result.replace(DANGEROUS_TAGS_RE, "");
+        result = result.replace(ENCODED_SCRIPT_RE, "");
+        result = result.replace(CSS_EXPRESSION_RE, "");
+        result = result.replace(SVG_EVENT_RE, "<svg");
+      }
 
       if (result !== before) {
         modified = true;

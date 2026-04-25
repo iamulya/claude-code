@@ -64,6 +64,10 @@ export function buildDevUiHtml(opts: DevUiOptions): string {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>${escHtml(name)} — YAAF Dev UI</title>
+ <!-- Sprint 4: marked + highlight.js from CDN for robust markdown rendering -->
+ <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" crossorigin="anonymous">
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" crossorigin="anonymous"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js" crossorigin="anonymous"></script>
  <style>
 ${CSS}
  </style>

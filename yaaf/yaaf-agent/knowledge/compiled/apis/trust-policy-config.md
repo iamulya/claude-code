@@ -1,124 +1,185 @@
 ---
-title: TrustPolicyConfig
-entity_type: api
-summary: Configuration interface for defining plugin and MCP server trust declarations.
+summary: Configuration interface for the TrustPolicy class, specifying plugin and MCP server trust rules.
 export_name: TrustPolicyConfig
 source_file: src/security/trustPolicy.ts
 category: type
+title: TrustPolicyConfig
+entity_type: api
+search_terms:
+ - plugin security configuration
+ - MCP server trust settings
+ - how to configure trust policy
+ - plugin hash verification
+ - tool allowlist
+ - tool blocklist
+ - semver constraints for plugins
+ - strict mode security
+ - warn mode security
+ - unregistered plugin policy
+ - trust verification events
+ - YAAF security settings
+ - agent supply chain security
 stub: false
-compiled_at: 2026-04-16T14:35:45.263Z
+compiled_at: 2026-04-24T17:46:15.210Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/trustPolicy.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/security/trustPolicy.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`TrustPolicyConfig` is the configuration interface used to initialize a `TrustPolicy`. It defines the security manifest for a YAAF application, allowing developers to specify integrity requirements for plugins and access control lists for Model Context Protocol (MCP) servers. 
 
-This configuration is used to enforce SHA-256 checksum verification, version constraints, and tool-level allowlists/blocklists. It supports two operational modes: `strict`, which prevents the loading of unverified components, and `warn`, which logs issues but allows execution to proceed.
+`TrustPolicyConfig` is a TypeScript type alias that defines the configuration object for the `TrustPolicy` class. It specifies a set of rules for verifying the integrity and trustworthiness of plugins and Multi-Capability Provider (MCP) servers before they are loaded or used by an agent [Source 1].
 
-## Signature / Constructor
+This configuration allows developers to enforce security policies, such as ensuring plugins have not been tampered with (via SHA-256 hash checking), restricting the [Tools](../subsystems/tools.md) an agent can access from a given MCP server, and defining behavior for unlisted or unknown components [Source 1].
+
+## Signature
+
+`TrustPolicyConfig` is an object with the following properties [Source 1]:
 
 ```typescript
 export type TrustPolicyConfig = {
   /**
    * Plugin trust declarations, keyed by plugin name.
    */
-  plugins?: Record<string, PluginTrust>
+  plugins?: Record<string, PluginTrust>;
 
   /**
    * MCP server trust declarations, keyed by server name.
    */
-  mcpServers?: Record<string, McpServerTrust>
+  mcpServers?: Record<string, McpServerTrust>;
 
   /**
    * Verification mode:
    * - `strict` — fail on mismatch (default)
    * - `warn` — log warning, allow loading
    */
-  mode?: TrustPolicyMode
+  mode?: "strict" | "warn";
 
   /**
    * What to do with unregistered plugins/servers (not in the manifest):
    * - `allow` — permit unknown plugins (default in warn mode)
    * - `deny` — block unknown plugins (default in strict mode)
    */
-  unknownPolicy?: 'allow' | 'deny'
+  unknownPolicy?: "allow" | "deny";
 
   /**
    * Called on every verification event.
    */
-  onVerification?: (event: TrustVerificationEvent) => void
-}
+  onVerification?: (event: TrustVerificationEvent) => void;
+};
 ```
 
-## Methods & Properties
+### `PluginTrust` Type
 
-### PluginTrust
-The `PluginTrust` type defines security constraints for individual plugins:
-*   `sha256` (string, optional): The expected SHA-256 hash of the plugin's entry module content.
-*   `version` (string, optional): A Semver version constraint (e.g., `'>=1.0.0'`, `'^2.3.0'`).
-*   `trusted` (boolean, optional): If `true`, the plugin is explicitly trusted and bypasses hash verification.
+The `plugins` property is a record where each value is a `PluginTrust` object with the following structure [Source 1]:
 
-### McpServerTrust
-The `McpServerTrust` type defines security constraints for MCP servers:
-*   `allowedTools` (string[], optional): An explicit list of tool names permitted from this server.
-*   `blockTools` (string[], optional): An explicit list of tool names to be blocked from this server.
-*   `trusted` (boolean, optional): If `true`, the server is explicitly trusted and bypasses tool filtering.
+```typescript
+export type PluginTrust = {
+  /** Expected SHA-256 hash of the plugin entry module content */
+  sha256?: string;
+  /** Semver version constraint (e.g., '>=1.0.0', '^2.3.0') */
+  version?: string;
+  /** Whether this plugin is explicitly trusted (bypasses hash check) */
+  trusted?: boolean;
+};
+```
 
-### TrustPolicyMode
-A union type defining the enforcement level:
-*   `strict`: Fails the loading process if any verification mismatch occurs.
-*   `warn`: Logs a warning to the `onVerification` callback but allows the component to load.
+### `McpServerTrust` Type
 
-## Events
+The `mcpServers` property is a record where each value is an `McpServerTrust` object with the following structure [Source 1]:
 
-The `onVerification` property accepts a callback that receives a `TrustVerificationEvent` whenever a component is checked against the policy.
+```typescript
+export type McpServerTrust = {
+  /** If set, only these tools are allowed from this server */
+  allowedTools?: string[];
+  /** If set, these tools are explicitly blocked from this server */
+  blockTools?: string[];
+  /** Whether this server is explicitly trusted (bypasses tool filtering) */
+  trusted?: boolean;
+};
+```
 
-### TrustVerificationEvent
-*   `target`: The type of entity verified (`'plugin'`, `'mcp_server'`, or `'mcp_tool'`).
-*   `name`: The unique identifier of the entity.
-*   `result`: The outcome of the check (`'trusted'`, `'verified'`, `'warning'`, `'blocked'`, or `'unknown'`).
-*   `reason`: A human-readable string explaining the result.
-*   `timestamp`: The date and time the verification occurred.
+### `TrustVerificationEvent` Type
+
+The `onVerification` callback receives a `TrustVerificationEvent` object with the following structure [Source 1]:
+
+```typescript
+export type TrustVerificationEvent = {
+  /** What was verified */
+  target: "plugin" | "mcp_server" | "mcp_tool";
+  /** Name of the entity */
+  name: string;
+  /** Result of verification */
+  result: "trusted" | "verified" | "warning" | "blocked" | "unknown";
+  /** Reason for the result */
+  reason: string;
+  /** Timestamp */
+  timestamp: Date;
+};
+```
 
 ## Examples
 
-### Basic Security Manifest
-This example demonstrates configuring a trust policy with a plugin hash check and an MCP tool allowlist.
+### Basic Configuration
+
+This example demonstrates a basic `TrustPolicyConfig` that verifies a single plugin's hash and restricts the tools available from an MCP server.
 
 ```typescript
-import { TrustPolicy } from 'yaaf';
+import { TrustPolicy, TrustPolicyConfig } from 'yaaf';
 
-const trust = new TrustPolicy({
+const config: TrustPolicyConfig = {
+  plugins: {
+    'my-plugin': { sha256: 'abc123def456...' },
+  },
+  mcpServers: {
+    'github': { allowedTools: ['search_repos', 'get_issue'] },
+  },
+};
+
+const trustPolicy = new TrustPolicy(config);
+```
+
+### Strict Mode with an Audit Callback
+
+This example shows a more comprehensive configuration operating in `strict` mode, denying unknown plugins, and logging all verification events.
+
+```typescript
+import { TrustPolicy, TrustPolicyConfig, TrustVerificationEvent } from 'yaaf';
+
+const strictConfig: TrustPolicyConfig = {
   mode: 'strict',
   unknownPolicy: 'deny',
   plugins: {
-    'data-processor': { 
-      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      version: '^1.2.0'
+    'plugin-a': {
+      sha256: 'f2d81a260dea8b1080139706df1a430173154316601cf403231d3b7d18402b8f',
+      version: '^1.2.0',
+    },
+    'internal-plugin': {
+      trusted: true, // Bypass hash/version checks
     },
   },
   mcpServers: {
-    'github-mcp': { 
-      allowedTools: ['search_repos', 'get_issue'] 
+    'internal-api': {
+      trusted: true,
+    },
+    'external-api': {
+      blockTools: ['delete_data'],
     },
   },
-  onVerification: (event) => {
-    console.log(`[Security] ${event.target} ${event.name}: ${event.result} (${event.reason})`);
-  }
-});
-```
-
-### Permissive Warning Mode
-This example shows a configuration that logs integrity mismatches without blocking execution.
-
-```typescript
-const permissiveConfig: TrustPolicyConfig = {
-  mode: 'warn',
-  unknownPolicy: 'allow',
-  plugins: {
-    'legacy-plugin': { trusted: true }
-  }
+  onVerification: (event: TrustVerificationEvent) => {
+    console.log(`[TRUST_AUDIT] ${event.timestamp.toISOString()} - ${event.target}:${event.name} -> ${event.result} (${event.reason})`);
+  },
 };
+
+const strictTrustPolicy = new TrustPolicy(strictConfig);
 ```
+
+## See Also
+
+- `TrustPolicy`: The class that consumes this configuration to perform security checks.
+- `trustPolicy`: A factory function for creating a `TrustPolicy` instance with sensible defaults.
+
+## Sources
+
+[Source 1]: src/security/trustPolicy.ts

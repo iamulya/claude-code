@@ -20,45 +20,18 @@ import { join, extname, relative } from "path";
 import { estimateTokens } from "../../utils/tokens.js";
 import type { ConceptRegistry, ConceptRegistryEntry } from "../ontology/index.js";
 import { deserializeRegistry } from "../ontology/index.js";
-import type { PluginHost, KBSearchAdapter, KBSearchDocument, KBSearchResult } from "../../plugin/types.js";
+import type { PluginHost, KBSearchAdapter, KBSearchDocument, KBSearchResult, KBGraphAdapter } from "../../plugin/types.js";
 import { TfIdfSearchPlugin } from "./tfidfSearch.js";
+import { WikilinkGraphPlugin } from "./wikilinkGraph.js";
 import { LRUCache } from "./lruCache.js";
 import type { KBAnalytics } from "./analytics.js";
+import { pAllSettled } from "../utils/concurrency.js";
+import { parseYamlFrontmatter } from "../utils/frontmatter.js";
 
 // B1: cap concurrent readFile() calls during _doLoad to prevent EMFILE.
 // scanMarkdownFiles already bounds stat() calls; this bounds the body reads.
 const IO_CONCURRENCY = 64;
-
-/** Bounded Promise.allSettled — at most `limit` tasks in-flight. */
-function pAllSettled<T>(
-  tasks: Array<() => Promise<T>>,
-  limit: number,
-): Promise<Array<PromiseSettledResult<T>>> {
-  const concurrency = Math.max(1, limit);
-  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
-  let next = 0;
-  let active = 0;
-  return new Promise((resolve) => {
-    const launch = () => {
-      while (active < concurrency && next < tasks.length) {
-        const i = next++;
-        active++;
-        tasks[i]!()
-          .then(
-            (v) => { results[i] = { status: "fulfilled", value: v }; },
-            (e) => { results[i] = { status: "rejected", reason: e }; },
-          )
-          .finally(() => {
-            active--;
-            launch();
-            if (active === 0 && next === tasks.length) resolve(results);
-          });
-      }
-      if (tasks.length === 0) resolve(results);
-    };
-    launch();
-  });
-}
+// M9: pAllSettled extracted to ../utils/concurrency.ts (shared across 4 files).
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,6 +99,8 @@ export type SearchResult = {
   score: number;
   /** Matching excerpt */
   excerpt: string;
+  /** Raw frontmatter — used for staleness checks at query time (1.1) */
+  frontmatter: Record<string, unknown>;
 };
 
 /** Options for KBStore lazy loading behavior */
@@ -166,6 +141,9 @@ export class KBStore {
   private bodyCache: LRUCache<string, string>;
   /** Legacy eager-loaded documents (populated if maxCachedBodies=Infinity) */
   private documents: Map<string, CompiledDocument> = new Map();
+  // M2: Explicit load state machine (idle → loading → loaded | failed).
+  // On 'failed', loadPromise is cleared so the next caller retries.
+  private _loadState: "idle" | "loading" | "loaded" | "failed" = "idle";
   private loaded = false;
   private eagerMode: boolean;
   /** P1-6: serialize concurrent load() calls via a shared promise */
@@ -175,6 +153,8 @@ export class KBStore {
   private searchAdapter: KBSearchAdapter;
   /** Optional plugin host for adapter discovery */
   private readonly pluginHost?: PluginHost;
+  /** Pluggable graph adapter — custom or built-in wikilink graph */
+  private graphAdapter: KBGraphAdapter | null = null;
   /** GAP-1: optional analytics recorder for runtime→compile feedback */
   private analytics?: KBAnalytics;
 
@@ -216,12 +196,9 @@ export class KBStore {
     // P1-6: fast path — avoid any promise allocation if already loaded
     if (this.loaded) return;
     // Serialize concurrent load() calls: if a load is in-flight, return the same promise.
-    // Using .then() (not .finally()) to clear loadPromise AFTER the promise settles,
-    // preventing a third caller from starting a new load in the microtask gap between
-    // finally() executing and awaiting callers resuming.
     if (!this.loadPromise) {
+      this._loadState = "loading";
       // P3-5: Retry with exponential backoff for transient I/O errors.
-      // EMFILE/ENFILE happen under high-concurrency load environments.
       const attempt = async (retries: number, delayMs: number): Promise<void> => {
         try {
           await this._doLoad();
@@ -236,11 +213,18 @@ export class KBStore {
         }
       };
       this.loadPromise = attempt(2, 500).then(
-        () => { this.loadPromise = null; },
-        (err: unknown) => { this.loadPromise = null; throw err; },
+        () => { this.loadPromise = null; this._loadState = "loaded"; },
+        // M2: On failure, transition to 'failed' and clear the promise
+        // so the next load() caller gets a fresh attempt (not a cached rejection).
+        (err: unknown) => { this.loadPromise = null; this._loadState = "failed"; throw err; },
       );
     }
     return this.loadPromise;
+  }
+
+  /** M2: Public load state getter for observability. */
+  get loadState(): "idle" | "loading" | "loaded" | "failed" {
+    return this._loadState;
   }
 
   private async _doLoad(): Promise<void> {
@@ -274,6 +258,17 @@ export class KBStore {
         const relPath = relative(this.compiledDir, filePath);
         const parsed = this.parseDocument(relPath, raw);
         if (!parsed) return;
+
+        // M3: Reject docIds containing colons — colons are the federation namespace
+        // separator. A docId like "concepts:attention" would be parsed as namespace
+        // "concepts" + docId "attention" in FederatedKnowledgeBase.parseQualifiedId().
+        if (parsed.docId.includes(":")) {
+          console.warn(
+            `[KBStore] Skipping "${parsed.docId}" — docId contains ':' which ` +
+            `conflicts with federation namespace separator. Rename the file.`,
+          );
+          return;
+        }
 
         // Store file path for lazy loading
         this.docPaths.set(parsed.docId, filePath);
@@ -315,6 +310,21 @@ export class KBStore {
     );
 
     await this.searchAdapter.indexDocuments(searchDocs);
+
+    // Resolve and build the graph adapter (follows the exact search adapter pattern).
+    // The graph is built from the same KBSearchDocument[] used for search indexing.
+    try {
+      const ontologyRaw = await readFile(join(this.kbDir, "ontology.yaml"), "utf-8");
+      // Lazy import to avoid circular dependency — ontology loader is in a sibling layer
+      const { OntologyLoader } = await import("../ontology/loader.js");
+      const loader = new OntologyLoader(this.kbDir);
+      const { ontology } = await loader.load();
+      this.graphAdapter = this.pluginHost?.getKBGraphAdapter() ?? new WikilinkGraphPlugin();
+      await this.graphAdapter.buildGraph(searchDocs, ontology);
+    } catch {
+      // Ontology may not exist (non-compiled KB, test fixture) — graph features unavailable
+      this.graphAdapter = null;
+    }
 
     this.loaded = true;
   }
@@ -359,8 +369,12 @@ export class KBStore {
       return { ...meta, body: cachedBody };
     }
 
-    // Synchronous fallback: can't do lazy I/O, return empty body
-    // Callers should use getDocumentAsync() for full lazy loading
+    // M6: Synchronous fallback: can't do lazy I/O, return empty body.
+    // Log a warning so callers know they're getting degraded data.
+    console.warn(
+      `[KBStore] Sync getDocument("${docId}") returned empty body — ` +
+      `document body not cached. Use getDocumentAsync() for full lazy loading.`,
+    );
     return { ...meta, body: "" };
   }
 
@@ -415,7 +429,6 @@ export class KBStore {
     } catch {
       return { ...meta, body: "" };
     }
-
   }
 
   /**
@@ -477,8 +490,9 @@ export class KBStore {
     // Sort: non-stubs first, then by entity type, then title
     entries.sort((a, b) => {
       if (a.isStub !== b.isStub) return a.isStub ? 1 : -1;
-      if (a.entityType !== b.entityType) return a.entityType.localeCompare(b.entityType);
-      return a.title.localeCompare(b.title);
+      // J-3: Use Unicode code-point order for deterministic sort across all OS locales.
+      if (a.entityType !== b.entityType) return a.entityType < b.entityType ? -1 : 1;
+      return a.title < b.title ? -1 : a.title > b.title ? 1 : 0;
     });
 
     return {
@@ -618,11 +632,13 @@ export class KBStore {
         isStub: doc.isStub,
         score: normalizedScore,
         excerpt,
+        frontmatter: doc.frontmatter,
       });
     }
 
     // Sort by score descending, then by title
-    results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+    // J-3: Code-point tiebreak — localeCompare() varies with OS locale (see F-4).
+    results.sort((a, b) => b.score - a.score || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0));
 
     return results.slice(0, maxResults);
   }
@@ -704,82 +720,11 @@ export class KBStore {
     const fm = fmMatch[1]!;
     const body = fmMatch[2]?.trim() ?? "";
 
-    // P2-5: Quote-aware frontmatter parsing.
-    // The old regex `/^(\w[\w_-]*?):\s*(.+)$/` didn't understand quoting,
-    // so values with colons (e.g. 'title: "Attention: A Guide"') were truncated.
-    const frontmatter: Record<string, unknown> = {};
-    for (const line of fm.split("\n")) {
-      // Find the first colon-space outside of quotes (key separator)
-      // W-5: Handle escaped quotes inside values
-      let colonIdx = -1;
-      let inSingle = false, inDouble = false;
-      for (let ci = 0; ci < line.length - 1; ci++) {
-        const ch = line[ci]!;
-        // W-5: Skip escaped characters inside double-quoted regions
-        if (inDouble && ch === "\\" && ci + 1 < line.length) {
-          ci++; // skip the escaped character entirely
-          continue;
-        }
-        // W-5: Skip doubled single quotes ('') inside single-quoted regions
-        if (inSingle && ch === "'" && line[ci + 1] === "'") {
-          ci++; // skip the second quote
-          continue;
-        }
-        if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
-        if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
-        if (!inSingle && !inDouble && ch === ":" && line[ci + 1] === " ") {
-          colonIdx = ci;
-          break;
-        }
-      }
-      if (colonIdx <= 0) continue;
-
-      const key = line.slice(0, colonIdx).trim();
-      if (!/^\w[\w_-]*$/.test(key)) continue;
-
-      // Take the ENTIRE remainder after `key: ` as the value
-      let value: unknown = line.slice(colonIdx + 2).trim();
-
-      // Strip matching outer quotes and process escape sequences.
-      // S-1: The previous implementation only stripped the wrapping quotes but
-      // left YAML escape sequences (\", \n, \\, etc.) as literal backslash sequences.
-      // A compiled article with: title: "My article with \"inner quotes\""
-      // would display: My article with \"inner quotes\" (visible backslash).
-      if (typeof value === "string" && (value as string).length >= 2) {
-        const first = (value as string)[0], last = (value as string)[(value as string).length - 1];
-        if (first === '"' && last === '"') {
-          // Double-quoted: strip wrappers and process backslash escapes
-          value = (value as string).slice(1, -1).replace(/\\([\s\S])/g, (_: string, ch: string) => {
-            switch (ch) {
-              case 'n':  return '\n';
-              case 't':  return '\t';
-              case 'r':  return '\r';
-              case '\\': return '\\';
-              case '"':  return '"';
-              case '\'': return '\'';
-              default:   return '\\' + ch; // preserve unknown escapes verbatim
-            }
-          });
-        } else if (first === "'" && last === "'") {
-          // Single-quoted: strip wrappers, unescape '' → '  (the only YAML single-quote escape)
-          value = (value as string).slice(1, -1).replace(/''/g, "'");
-        }
-      }
-
-      // Parse scalar types
-      if (value === "true") value = true;
-      else if (value === "false") value = false;
-      else if (value === "null" || value === "~") value = null;
-      // Parse numbers (must be pure numeric, not version strings like "v1.2.3")
-      else if (typeof value === "string" && /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value as string)) {
-        value = Number(value);
-      }
-      // Parse inline JSON arrays: [a, b, c]
-      else if (typeof value === "string" && (value as string).startsWith("[") && (value as string).endsWith("]")) {
-        try { value = JSON.parse(value as string); } catch { /* keep as string */ }
-      }
-      frontmatter[key] = value;
-    }
+    // Replaced 80-line hand-rolled YAML parser with shared yaml-library-based
+    // implementation. This eliminates: P2-5 (colon-in-value), W-5 (escaped quotes),
+    // S-1 (escape sequences), H2 (prototype pollution) — all handled by the yaml
+    // library + the shared parseYamlFrontmatter wrapper.
+    const frontmatter = parseYamlFrontmatter(fm);
 
     // R4-2: Use String() to handle numeric or boolean titles safely after R3-3 coercion.
     const title = frontmatter.title != null ? String(frontmatter.title) : docId.split("/").pop() ?? docId;
@@ -887,5 +832,13 @@ export class KBStore {
    */
   setAnalytics(analytics: KBAnalytics): void {
     this.analytics = analytics;
+  }
+
+  /**
+   * Get the graph adapter for relationship queries.
+   * Returns null if no ontology was available during load.
+   */
+  getGraphAdapter(): KBGraphAdapter | null {
+    return this.graphAdapter;
   }
 }

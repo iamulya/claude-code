@@ -1,83 +1,175 @@
 ---
 title: AgentOrchestrator
 entity_type: api
-summary: A class for spawning, tracking, and coordinating multi-agent swarms using a leader/worker hierarchy.
+summary: A class for spawning, coordinating, and managing the lifecycle of multiple agents in a swarm.
 export_name: AgentOrchestrator
-source_file: src/agents/orchestrator.ts
+source_file: src/agent-orchestrator.ts
 category: class
+search_terms:
+ - multi-agent systems
+ - agent swarm
+ - leader-worker pattern
+ - agent coordination
+ - spawn multiple agents
+ - agent lifecycle management
+ - how to run agents in parallel
+ - delegation between agents
+ - agent team
+ - agent hierarchy
+ - inter-agent communication
+ - YAAF swarm
+ - run multiple agents
+ - agent supervisor
 stub: false
-compiled_at: 2026-04-16T14:09:23.314Z
+compiled_at: 2026-04-24T16:47:27.565Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/multi-agent.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/orchestrator.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/multi-agent.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/orchestrator.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-The `AgentOrchestrator` is the central component for managing multi-agent systems in YAAF. It implements a **Leader/Worker hierarchy** where a coordinator agent (the leader) manages the lifecycle, task distribution, and communication of multiple worker agents (delegates).
 
-Key architectural features include:
-*   **Crash Isolation**: A failure in a worker agent does not terminate the leader or other workers.
-*   **Independent Lifecycle**: Each agent operates with its own `AbortController`, allowing individual agents to be cancelled or timed out independently.
-*   **Mailbox-based IPC**: Agents do not use direct method calls; instead, they communicate via an asynchronous mailbox system.
-*   **Task-based Distribution**: Workers can claim tasks from a shared list managed by a `TaskManager`.
-*   **Permission Delegation**: Workers can escalate permission requests to the leader via the mailbox.
+The `AgentOrchestrator` class is a core component of YAAF's multi-agent subsystem, designed to spawn, track, and coordinate groups of agents, often referred to as "swarms" or "teams" [Source 2]. It facilitates complex workflows where multiple specialized agents collaborate to achieve a goal, commonly using a leader-delegate (or leader-worker) architectural pattern [Source 1, Source 2].
+
+In this pattern, a primary "leader" agent coordinates tasks and delegates work to one or more "worker" agents. The `AgentOrchestrator` manages the lifecycle of these agents, ensuring they operate with a degree of independence. Each spawned agent receives its own `AbortController`, providing crash isolation so that a failing worker does not bring down the entire system. Communication between agents is handled through a mailbox system, avoiding direct method calls and shared mutable state [Source 1].
+
+Key architectural features enabled by the orchestrator include [Source 2]:
+*   **[Leader/Worker Hierarchy](../concepts/leader-worker-hierarchy.md)**: A coordinator agent spawns and manages worker agents.
+*   **[Task-based Work Distribution](../concepts/task-based-work-distribution.md)**: Workers can claim tasks from a shared list.
+*   **Idle Loop**: Workers do not exit after completing a task; they wait for new work or a shutdown signal.
+*   **[Permission Delegation](../concepts/permission-delegation.md)**: Workers can escalate permission requests to the leader via the mailbox.
 
 ## Signature / Constructor
 
-The provided source materials indicate two different patterns for initializing the `AgentOrchestrator`.
-
-### Pattern 1: Leader/Delegate Configuration
-This pattern uses a high-level configuration where the leader and worker factories are defined upfront.
+The `AgentOrchestrator` is instantiated with configuration that defines the environment for the agent team, including communication channels and the core logic for running an agent.
 
 ```typescript
-constructor(config: {
-  leader: Agent;
-  delegates: Record<string, {
-    factory: () => Agent;
-    maxInstances: number;
-  }>;
-})
-```
+// Source: src/agents/orchestrator.ts [Source 2]
 
-### Pattern 2: Functional Run Configuration
-This pattern provides a lower-level interface where the consumer defines the agent execution loop.
+import type { Tool } from "../tools/tool.js";
+import { Mailbox } from "./mailbox.js";
 
-```typescript
-constructor(config: {
-  mailboxDir: string;
-  defaultTeam?: string;
-  tools?: readonly Tool[];
-  runAgent: AgentRunFn;
-})
-```
-
-### AgentRunFn Signature
-```typescript
-type AgentRunFn = (params: {
+/**
+ * The run function that the orchestrator calls to execute an agent.
+ * Framework consumers provide this — it wraps their LLM query loop.
+ */
+export type AgentRunFn = (params: {
   identity: AgentIdentity;
   definition: AgentDefinition;
   prompt: string;
   tools: readonly Tool[];
   signal: AbortSignal;
   mailbox: Mailbox;
+  /** Send a message back to the leader */
   sendToLeader: (text: string, summary?: string) => Promise<void>;
 }) => Promise<{ success: boolean; error?: string }>;
+
+// Constructor usage from example
+const orchestrator = new AgentOrchestrator({
+  mailboxDir: '/tmp/agent-teams',
+  defaultTeam: 'my-team',
+  tools: [grepTool, readTool, writeTool],
+  runAgent: async ({ identity, prompt, tools, signal, sendToLeader }) => {
+    // Your LLM agent loop here
+    const result = await myAgentLoop(prompt, tools, signal);
+    await sendToLeader(result.summary, 'Task complete');
+    return { success: true };
+  },
+});
 ```
+
+Another configuration pattern involves declaratively defining a leader and a pool of delegate agents [Source 1].
+
+```typescript
+// Source: docs/multi-agent.md [Source 1]
+
+const orchestrator = new AgentOrchestrator({
+  leader: new Agent({
+    name: 'Leader',
+    systemPrompt: 'Coordinate research tasks between team members.',
+    tools: [delegateTool],
+  }),
+  delegates: {
+    researcher: {
+      factory: () => new Agent(/* ... */),
+      maxInstances: 3,
+    },
+    writer: {
+      factory: () => new Agent(/* ... */),
+      maxInstances: 1,
+    },
+  },
+});
+```
+
+The source materials suggest two different constructor signatures or configuration patterns. One is a lower-level setup requiring a `runAgent` function, while the other is a higher-level pattern defining a `leader` and `delegates` [Source 1, Source 2].
 
 ## Methods & Properties
 
-| Method | Description |
-| :--- | :--- |
-| `run(prompt: string)` | Executes the orchestration logic based on a high-level prompt. |
-| `spawn(options)` | Manually spawns a new worker agent. Options include `name`, `teamName`, `prompt`, `definition`, `timeout`, and `onError`. |
-| `waitForAll()` | Returns a promise that resolves when all currently active spawned agents have completed their tasks. |
-| `kill(agentId: string)` | Immediately terminates a specific agent by triggering its `AbortSignal`. |
+Based on usage in the source material, the `AgentOrchestrator` class exposes the following methods.
+
+### run
+
+Executes a top-level task using the configured agent team, typically starting with the leader agent.
+
+**Signature**
+```typescript
+run(prompt: string): Promise<any>
+```
+
+**Parameters**
+*   `prompt`: `string` - The initial prompt or task to be executed by the agent team.
+
+**Returns**
+*   `Promise<any>`: A promise that resolves with the final result from the team's execution.
+
+### spawn
+
+Spawns a new worker agent and adds it to the team.
+
+**Signature**
+```typescript
+spawn(config: SpawnConfig): Promise<AgentHandle>
+```
+*Note: `SpawnConfig` and `AgentHandle` types are inferred from examples.*
+
+**Parameters**
+*   `config`: An object containing the configuration for the new agent, such as its name, prompt, and definition [Source 2]. It can also include lifecycle options like `timeout` and an `onError` handler [Source 1].
+
+**Returns**
+*   `Promise<AgentHandle>`: A promise that resolves with a handle to the newly spawned agent, which may include its `agentId` [Source 2].
+
+### waitForAll
+
+Waits for all currently running agents spawned by the orchestrator to complete their tasks.
+
+**Signature**
+```typescript
+waitForAll(): Promise<void>
+```
+
+**Returns**
+*   `Promise<void>`: A promise that resolves [when](./when.md) all agents have finished.
+
+### kill
+
+Terminates a specific agent by its ID.
+
+**Signature**
+```typescript
+kill(agentId: string): void
+```
+
+**Parameters**
+*   `agentId`: `string` - The unique identifier of the agent to terminate.
 
 ## Examples
 
-### High-Level Orchestration
-This example demonstrates setting up a leader agent with specialized researcher and writer delegates.
+### Leader-Delegate Pattern
+
+This example demonstrates a high-level pattern where a leader agent coordinates a team of specialized delegates (researchers and a writer) to fulfill a request [Source 1].
 
 ```typescript
 import { AgentOrchestrator, Agent } from 'yaaf';
@@ -86,7 +178,7 @@ const orchestrator = new AgentOrchestrator({
   leader: new Agent({
     name: 'Leader',
     systemPrompt: 'Coordinate research tasks between team members.',
-    tools: [delegateTool],
+    tools: [delegateTool], // A tool to delegate tasks to workers
   }),
   delegates: {
     researcher: {
@@ -112,33 +204,50 @@ const result = await orchestrator.run('Write a report on quantum computing');
 ```
 
 ### Manual Spawning and Lifecycle Management
-This example shows how to use the orchestrator to manually spawn agents and handle errors or timeouts.
+
+This example shows a lower-level approach where the user provides a custom `runAgent` function and manually spawns, monitors, and terminates agents [Source 2].
 
 ```typescript
 const orchestrator = new AgentOrchestrator({
   mailboxDir: '/tmp/agent-teams',
+  defaultTeam: 'my-team',
+  tools: [grepTool, readTool, writeTool],
   runAgent: async ({ identity, prompt, tools, signal, sendToLeader }) => {
-    // Custom LLM agent loop
+    // Your custom LLM agent loop here
     const result = await myAgentLoop(prompt, tools, signal);
     await sendToLeader(result.summary, 'Task complete');
     return { success: true };
   },
 });
 
-// Spawn with error isolation
-const worker = await orchestrator.spawn({
-  name: 'researcher-1',
-  prompt: 'Find all TODO comments',
-  timeout: 30_000,
-  onError: (err) => {
-    console.warn(`Worker failed: ${err.message}`);
-  },
+// Spawn workers for specific tasks
+const researcherAgent = await orchestrator.spawn({
+  name: 'researcher',
+  teamName: 'my-team',
+  prompt: 'Find all TODO comments in the codebase',
+  definition: { type: 'Researcher' },
 });
 
+const coderAgent = await orchestrator.spawn({
+  name: 'coder',
+  teamName: 'my-team',
+  prompt: 'Implement the payment webhook handler',
+  definition: { type: 'Coder' },
+});
+
+// Wait for all agents to finish their work
 await orchestrator.waitForAll();
+
+// Alternatively, terminate a specific agent
+orchestrator.kill(researcherAgent.agentId);
 ```
 
 ## See Also
-*   `Mailbox`: The underlying inter-agent communication system.
-*   `TaskManager`: The state machine used for managing task lifecycles within the swarm.
-*   `TeamMemory`: Shared and private memory management for orchestrated agents.
+
+*   Mailbox: For file-based, [Inter-Agent Communication](../subsystems/inter-agent-communication.md).
+*   TaskManager: A state machine for managing the lifecycle of tasks distributed among agents.
+*   Team[Memory](../concepts/memory.md): A mechanism for sharing Memory and context across multiple agents in a team.
+
+## Sources
+*   [Source 1]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/multi-agent.md`
+*   [Source 2]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/orchestrator.ts`

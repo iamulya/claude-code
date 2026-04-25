@@ -73,6 +73,8 @@ import type {
 import { KBLinter } from "./linter/index.js";
 import type { LintReport, AutoFixResult, LintOptions } from "./linter/index.js";
 
+import { IngestCache } from "./ingester/ingestCache.js";
+
 import { postProcessCompiledArticles, DEFAULT_ARTICLE_TOKEN_BUDGET } from "./postprocess.js";
 import type { PostProcessResult, PostProcessOptions } from "./postprocess.js";
 
@@ -89,11 +91,15 @@ import type { GenerateFn } from "./extractor/extractor.js";
 import type { PluginHost, IngesterAdapter, KBGroundingAdapter, KBGroundingResult } from "../../plugin/types.js";
 import { DifferentialEngine } from "./differential.js";
 import type { DifferentialPlan } from "./differential.js";
-import { MultiLayerGroundingPlugin } from "./groundingPlugin.js";
+import { MultiLayerGroundingPlugin, buildVocabularyAliasMap } from "./groundingPlugin.js";
+
 import { generateOntologyProposals } from "./ontologyProposals.js";
 import { deduplicatePlans } from "./dedup.js";
 import { detectContradictions } from "./contradictions.js";
 import { serializeOntology } from "../ontology/loader.js";
+import { VocabSidecarSchema } from "./schemas.js";
+import { buildQualityRecord, appendQualityRecord, loadQualityHistory, compareCompiles } from "./qualityHistory.js";
+import { writeCitationIndex } from "./citationIndex.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -345,6 +351,7 @@ export type CompileResult = {
       totalClaims: number;
       supportedClaims: number;
       passed: boolean;
+      verificationLevel?: string;
     }>;
   };
 
@@ -366,6 +373,8 @@ export class KBCompiler {
   private readonly compiledDir: string;
   private readonly registryPath: string;
   private readonly lintReportPath: string;
+  /** 7.1: machine-readable grounding audit trail written after each compile */
+  private readonly groundingReportPath: string;
   private readonly autoLint: boolean;
   private readonly autoFix: boolean;
   private readonly extractFn: GenerateFn;
@@ -374,6 +383,14 @@ export class KBCompiler {
   private readonly pluginHost?: PluginHost;
   private ontology!: KBOntology;
   private registry!: ConceptRegistry;
+  /**
+   * A6-a: Cached wikilink data from the most recent postprocess pass.
+   * Populated by finalize(), consumed by compile() to persist in the manifest.
+   */
+  private lastWikilinkData?: {
+    deps: Record<string, string[]>;
+    unresolvedDocIds: string[];
+  };
 
   private constructor(options: KBCompilerOptions, ontology: KBOntology, registry: ConceptRegistry) {
     this.kbDir = resolve(options.kbDir);
@@ -381,6 +398,7 @@ export class KBCompiler {
     this.compiledDir = join(this.kbDir, options.compiledDirName ?? "compiled");
     this.registryPath = join(this.kbDir, ".kb-registry.json");
     this.lintReportPath = join(this.kbDir, ".kb-lint-report.json");
+    this.groundingReportPath = join(this.kbDir, ".kb-grounding-report.json");
     this.autoLint = options.autoLint ?? true;
     this.autoFix = options.autoFix ?? false;
     this.extractFn = normalizeGenerateFn(options.extractionModel);
@@ -452,6 +470,60 @@ export class KBCompiler {
     return new KBCompiler(options, ontology, registry);
   }
 
+  // ── H9: Registry reload ──────────────────────────────────────────────────────
+
+  /**
+   * Re-read `.kb-registry.json` from disk into the in-memory registry.
+   *
+   * H9: The registry is loaded at `KBCompiler.create()` time. If the same
+   * instance is used for multiple `compile()` calls, the in-memory registry
+   * drifts from disk (e.g., another process writes new articles between calls).
+   *
+   * M5: If the registry file is corrupt, attempt to read `.kb-registry.json.bak`
+   * before falling back to rebuilding from the compiled/ directory.
+   */
+  private async reloadRegistry(): Promise<void> {
+    try {
+      const registryJson = await readFile(this.registryPath, "utf-8");
+      try {
+        this.registry = deserializeRegistry(registryJson);
+        return;
+      } catch (parseErr) {
+        // M5: Primary corrupt — try backup
+        console.warn(
+          `[compiler] .kb-registry.json is corrupt: ${
+            parseErr instanceof Error ? parseErr.message : String(parseErr)
+          }. Attempting backup recovery...`,
+        );
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      // File not found — try backup or rebuild
+    }
+
+    // M5: Try backup file
+    try {
+      const backupJson = await readFile(this.registryPath + ".bak", "utf-8");
+      this.registry = deserializeRegistry(backupJson);
+      console.warn("[compiler] Recovered registry from .kb-registry.json.bak");
+      // Restore the primary file from backup
+      await atomicWriteFile(this.registryPath, backupJson);
+      return;
+    } catch {
+      // Backup also missing or corrupt — rebuild
+    }
+
+    // Last resort: rebuild from compiled/
+    try {
+      const { registry: built } = await buildConceptRegistry(this.compiledDir, this.ontology);
+      this.registry = built;
+      console.warn("[compiler] Rebuilt registry from compiled/ directory");
+    } catch {
+      this.registry = new Map();
+      console.warn("[compiler] Starting with empty registry");
+    }
+  }
+
   // ── Public: compile() ────────────────────────────────────────────────────────
 
   /**
@@ -478,6 +550,11 @@ export class KBCompiler {
 
     try {
     await mkdir(this.compiledDir, { recursive: true });
+
+    // H9: Re-read registry from disk at the start of every compile().
+    // Prevents stale in-memory state when the same KBCompiler instance is
+    // reused across multiple compile cycles.
+    await this.reloadRegistry();
 
     // ── Scan ─────────────────────────────────────────────────────────
 
@@ -550,9 +627,20 @@ export class KBCompiler {
     // ── Ingest ───────────────────────────────────────────────────────
     // In incremental mode, ingest ALL files so the extractor has full context.
     // skipDocIds prevents synthesis of clean articles — not ingestion.
+    //
+    // Finding 18: use IngestCache to avoid re-parsing unchanged files.
+    // Cache lives at {kbDir}/.kb-ingest-cache/ and is keyed by sha256 of
+    // the source file's bytes. Cache hits skip all ingestion work (HTML→MD
+    // conversion, PDF extraction) and return the stored IngestedContent.
+
+    const ingestCache = new IngestCache(this.kbDir);
+    if (!options.dryRun) {
+      await ingestCache.init();
+    }
 
     const contentsByPath = new Map<string, IngestedContent>();
     let ingestCount = 0;
+    let cacheHits = 0;
 
     // Build a dynamic extension→plugin map from registered IngesterAdapters
     const pluginIngesters: Map<string, IngesterAdapter> = new Map();
@@ -570,19 +658,27 @@ export class KBCompiler {
 
       try {
         let ingested: IngestedContent;
-        if (pluginIngester) {
+
+        // Finding 18: check cache before parsing.
+        const cached = options.dryRun ? null : await ingestCache.get(filePath);
+        if (cached) {
+          ingested = cached;
+          cacheHits++;
+        } else if (pluginIngester) {
           // Delegate to the registered plugin ingester
           const result = await pluginIngester.ingest(filePath, {
             imageOutputDir: join(this.compiledDir, "assets"),
           });
           // IngesterAdapterResult is structurally identical to IngestedContent
           ingested = result as unknown as IngestedContent;
+          if (!options.dryRun) await ingestCache.set(filePath, ingested);
         } else {
           // Built-in ingester pipeline
           ingested = await ingestFile(filePath, {
             imageOutputDir: join(this.compiledDir, "assets"),
             ...(this.pdfExtractFn ? { pdfExtractFn: this.pdfExtractFn } : {}),
           } as IngesterOptions);
+          if (!options.dryRun) await ingestCache.set(filePath, ingested);
         }
         contentsByPath.set(filePath, ingested);
       } catch (err) {
@@ -596,6 +692,13 @@ export class KBCompiler {
         total: ingestableFiles.length,
         file: filePath,
       });
+    }
+
+    if (cacheHits > 0) {
+      warnings.push(
+        `Ingestion cache: ${cacheHits}/${ingestableFiles.length} file(s) served from cache ` +
+        `(${ingestableFiles.length - cacheHits} re-parsed).`,
+      );
     }
 
     const contents = Array.from(contentsByPath.values());
@@ -656,6 +759,22 @@ export class KBCompiler {
       );
     }
 
+    // ── 1.2: Surface proposed entity types as structured warnings ───────
+    // These are types the LLM suggested that don't exist in ontology.yaml.
+    // We surface them here so CompileResult.warnings[] contains actionable
+    // guidance — previously they were only visible as console.warn on stderr.
+    if (plan.proposedEntityTypes.length > 0) {
+      for (const { entityType, count, examples } of plan.proposedEntityTypes) {
+        const exampleList = examples.slice(0, 3).map((e) => `"${e}"`).join(", ");
+        warnings.push(
+          `[ontology] LLM suggested entity type "${entityType}" ${count} time(s) ` +
+          `(e.g. ${exampleList}) but it is not in ontology.yaml. ` +
+          `Articles were coerced to "${Object.keys(this.ontology.entityTypes)[0]}". ` +
+          `Add "${entityType}" to ontology.yaml to use it.`,
+        );
+      }
+    }
+
     // ── P4-1: Semantic deduplication ────────────────────────────────
     // Detect near-duplicate article plans and merge them before synthesis
     // to prevent redundant LLM calls and duplicate compiled articles.
@@ -670,7 +789,54 @@ export class KBCompiler {
       }
     }
 
-    // ── Synthesize ───────────────────────────────────────────────────
+
+    // ── Finding 17: Read synthesis checkpoint from previous crashed run ────
+    //
+    // If a previous compile crashed mid-synthesis, the progress sidecar records
+    // which articles were fully written. We merge those docIds into skipDocIds
+    // so this run resumes from where the crash occurred rather than restarting
+    // from scratch. This is particularly valuable for large KBs (200+ articles)
+    // where a rate-limit or network failure late in the run would otherwise
+    // discard hours of LLM work.
+    const progressFile = join(this.kbDir, ".kb-synthesis-progress.json");
+    if (!options.dryRun) {
+      try {
+        const raw = await readFile(progressFile, "utf-8");
+        const progress = JSON.parse(raw) as { completedDocIds?: string[] };
+        const completed = new Set<string>(progress.completedDocIds ?? []);
+        if (completed.size > 0) {
+          skipDocIds ??= new Set<string>();
+          // CP-1: Only skip checkpoint articles whose sources have NOT changed
+          // since the crash. If a raw file was edited after the crash, the
+          // differential engine marks that article as stale — the checkpoint
+          // must not win over the differential plan.
+          const staleIds = differentialPlan?.staleDocIds;
+          let skippedFromCheckpoint = 0;
+          for (const docId of completed) {
+            if (staleIds && staleIds.has(docId)) continue; // source changed — must re-synthesize
+            skipDocIds.add(docId);
+            skippedFromCheckpoint++;
+          }
+          if (skippedFromCheckpoint > 0) {
+            const staleFiltered = completed.size - skippedFromCheckpoint;
+            const filterNote = staleFiltered > 0
+              ? ` (${staleFiltered} skipped — source changed since crash).`
+              : ".";
+            warnings.push(
+              `Checkpoint resume: skipping ${skippedFromCheckpoint} article(s) already synthesized in a previous run${filterNote}` +
+              ` Delete ${progressFile} to force a full re-run.`,
+            );
+          }
+        }
+      } catch {
+        // No progress file — fresh run or file was cleaned up normally.
+      }
+    }
+
+    // Accumulate completed docIds for atomic checkpoint writes during synthesis.
+    // Using a Set (not appending to a file) avoids concurrent-write races since
+    // each onArticleComplete call replaces the whole file atomically.
+    const checkpointDocIds = new Set<string>(skipDocIds ?? []);
 
     const synthesizer = new KnowledgeSynthesizer(
       this.ontology,
@@ -680,34 +846,124 @@ export class KBCompiler {
     );
 
     const synthesis = await synthesizer.synthesize(plan, contentsByPath, {
+
       concurrency: options.concurrency ?? 3,
       dryRun: options.dryRun,
       skipDocIds,
       onProgress: (event) => emit({ stage: "synthesize", event }),
+      // Finding 17: update the checkpoint sidecar after each completed article.
+      // Fire-and-forget — a slow or failing write cannot stall the synthesis loop.
+      onArticleComplete: options.dryRun ? undefined : (docId) => {
+        checkpointDocIds.add(docId);
+        // Write the whole set atomically so a concurrent read sees a valid JSON file.
+        atomicWriteFile(
+          progressFile,
+          JSON.stringify({ completedDocIds: Array.from(checkpointDocIds) }, null, 2),
+        ).catch(() => { /* checkpoint write failure is non-fatal */ });
+      },
     });
 
-    // Persist the source-hash manifest after a successful differential compile.
-    // D1: Orphan pruning is deferred until AFTER the manifest is saved, so a
-    // crash between synthesis and manifest-save cannot cause silent article loss.
-    if (options.incrementalMode && differentialEngine && !options.dryRun) {
-      await differentialEngine.save();
-      // Now safe to prune: manifest has advanced, so next run won't treat
-      // orphan sources as "present" if the process crashes during unlink.
-      if (differentialPlan && differentialPlan.orphanDocIds.size > 0) {
-        await differentialEngine.pruneOrphans(differentialPlan.orphanDocIds);
+    // ── Stale stub regeneration (no LLM needed) ──────────────────────
+    //
+    // The synthesizer only creates NEW stubs from extractor candidates.
+    // Existing stubs with `compiled_from: []` have no path through the
+    // synthesis loop. When the differential engine marks them stale
+    // (e.g., ontology schema change added required fields), we regenerate
+    // their frontmatter in-place using the current template + schema.
+    //
+    // This is template-only: read the article body, rebuild frontmatter
+    // with schema-aware defaults, write back. ~2ms per stub.
+    if (differentialPlan && !options.dryRun) {
+      const { generateStubArticle } = await import("./synthesizer/prompt.js");
+      let stubsRegenerated = 0;
+
+      for (const docId of differentialPlan.staleDocIds) {
+        const filePath = join(this.compiledDir, `${docId}.md`);
+        try {
+          const raw = await readFile(filePath, "utf-8");
+          // Only regenerate stubs — synthesized articles are handled above
+          if (!/^stub:\s*true/m.test(raw)) continue;
+
+          // Parse existing frontmatter for values we want to preserve
+          const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+          if (!fmMatch) continue;
+
+          const fmBlock = fmMatch[1]!;
+          const body = fmMatch[2]!;
+
+          // Extract values from existing frontmatter
+          const titleMatch = fmBlock.match(/^title:\s*"?([^"\n]+)"?/m);
+          const etMatch = fmBlock.match(/^entity_type:\s*(\S+)/m);
+          const compiledAtMatch = fmBlock.match(/^compiled_at:\s*"?([^"\n]+)"?/m);
+          if (!titleMatch || !etMatch) continue;
+
+          const title = titleMatch[1]!.trim();
+          const entityType = etMatch[1]!.trim();
+          const compiledAt = compiledAtMatch?.[1]?.trim() ?? new Date().toISOString();
+
+          // Extract description from Overview section
+          const overviewMatch = body.match(/## Overview\s*\n\s*\n([^\n]+)/);
+          const description = overviewMatch?.[1]?.trim() ?? title;
+
+          // Regenerate using the current template (now includes schema fields)
+          const newContent = generateStubArticle({
+            docId,
+            canonicalTitle: title,
+            entityType,
+            description,
+            knownLinkDocIds: [],
+            registry: this.registry,
+            compiledAt,
+            ontology: this.ontology,
+          });
+
+          await writeFile(filePath, newContent, "utf-8");
+          stubsRegenerated++;
+        } catch {
+          // File missing or unreadable — skip silently
+        }
+      }
+
+      if (stubsRegenerated > 0) {
         warnings.push(
-          `Pruned ${differentialPlan.orphanDocIds.size} orphaned article(s) (source files deleted)`,
+          `Regenerated ${stubsRegenerated} stale stub(s) with updated template/schema fields.`,
         );
+        // Update synthesis stats
+        (synthesis as { updated: number }).updated += stubsRegenerated;
       }
     }
 
+    // A6-a: Manifest save is deferred until AFTER finalize() so postprocess
+    // wikilink dependency data is available. See below, after the finalize call.
+
+    // Finding 18: prune stale ingest cache entries for files that were deleted.
+    // Runs after every successful (non-dryRun) compile — not just incremental —
+    // so full-compile workflows don't accumulate unbounded cache entries.
+    if (!options.dryRun) {
+      const activeSourcePaths = new Set<string>(ingestableFiles);
+      const pruned = await ingestCache.prune(activeSourcePaths);
+      if (pruned > 0) {
+        warnings.push(`Ingest cache: removed ${pruned} stale entr${pruned === 1 ? "y" : "ies"} for deleted source files.`);
+      }
+    }
+
+
     // ── M2: Grounding pass (optional, L1 always, L2/L3 need embedFn/generateFn) ──────────
     let groundingResult: CompileResult["grounding"] | undefined;
-    const groundingAction = options.groundingAction ?? "warn"; // default: warn
+    const groundingAction = options.groundingAction ?? "warn"; // ADR-009: warn by default (L1 is free)
+    // G-04: Track articles deleted by grounding-skip for wikilink dep cleanup.
+    // Declared outside the if-block so it's accessible during manifest save.
+    const deletedByGrounding = new Set<string>();
 
     if (groundingAction !== false && !options.dryRun && synthesis.articles.length > 0) {
       const groundingAdapter: KBGroundingAdapter =
-        this.pluginHost?.getKBGroundingAdapter() ?? new MultiLayerGroundingPlugin();
+        this.pluginHost?.getKBGroundingAdapter() ??
+        // 3.1 fix: pass ontology vocabulary aliases so L1 keyword overlap
+        // expands synonyms — "attention blocks" matches "transformer layers"
+        // when both are aliases in ontology.yaml vocabulary.
+        new MultiLayerGroundingPlugin({
+          vocabularyAliases: buildVocabularyAliasMap(this.ontology.vocabulary),
+        });
 
       // P1-1: Adapt threshold for L1-only mode. Vocabulary overlap alone cannot
       // distinguish semantic support from vocabulary co-occurrence, so require
@@ -719,6 +975,12 @@ export class KBCompiler {
       const perArticle: NonNullable<CompileResult["grounding"]>["perArticle"] = [];
       let totalScore = 0;
       let failed = 0;
+
+      // C4/A1: Build docId → sourceTrust map so grounding can apply trust weights per article.
+      const articleTrustMap = new Map<string, import("./ingester/types.js").SourceTrustLevel>();
+      for (const ap of plan.articles) {
+        articleTrustMap.set(ap.docId, ap.sourceTrust ?? "unknown");
+      }
 
       for (const article of synthesis.articles) {
         // I5: skip grounding for unchanged articles — the content-unchanged path
@@ -772,6 +1034,9 @@ export class KBCompiler {
               entityType: article.registryEntry?.entityType ?? "unknown",
             },
             sourceTexts,
+            // C4/A1: pass the aggregate trust level so the grounding score
+            // is weighted by source credibility (web sources get 0.75 × raw score)
+            articleTrustMap.get(article.docId) ?? "unknown",
           );
 
           const passed = result.score >= groundingThreshold;
@@ -783,6 +1048,8 @@ export class KBCompiler {
             totalClaims: result.totalClaims,
             supportedClaims: result.supportedClaims,
             passed,
+            // ADR-012/Fix-11: Surface verification level per article
+            verificationLevel: result.verificationLevel,
           });
 
           if (!passed) {
@@ -800,6 +1067,8 @@ export class KBCompiler {
               const articlePath = join(this.compiledDir, `${article.docId}.md`);
               try {
                 await unlink(articlePath);
+                // G-04: Track deleted docIds so wikilink deps can be pruned
+                deletedByGrounding.add(article.docId);
                 warnings.push(
                   `Grounding: removed "${article.docId}" — score ${(result.score * 100).toFixed(0)}% below threshold ${(groundingThreshold * 100).toFixed(0)}%`,
                 );
@@ -824,6 +1093,21 @@ export class KBCompiler {
           averageScore: totalScore / perArticle.length,
           perArticle,
         };
+        // 7.1: persist grounding report for CI inspection and operator review
+        if (!options.dryRun) {
+          await atomicWriteFile(
+            this.groundingReportPath,
+            JSON.stringify(
+              {
+                compiledAt: new Date().toISOString(),
+                threshold: groundingThreshold,
+                ...groundingResult,
+              },
+              null,
+              2,
+            ),
+          ).catch(() => {}); // non-fatal — compile succeeds even if report write fails
+        }
       }
     }
 
@@ -870,7 +1154,7 @@ export class KBCompiler {
     }
 
 
-    return this.finalize({
+    const result = await this.finalize({
       startMs,
       emit,
       synthesis,
@@ -894,6 +1178,38 @@ export class KBCompiler {
       },
       dryRun: options.dryRun,
     });
+
+    // Persist the source-hash manifest after a successful differential compile.
+    // D1: Orphan pruning is deferred until AFTER the manifest is saved, so a
+    // crash between synthesis and manifest-save cannot cause silent article loss.
+    // A6-a: Save is AFTER finalize() so postprocess wikilink data is available.
+    if (options.incrementalMode && differentialEngine && !options.dryRun) {
+      // G-04: Prune wikilink deps for articles deleted by grounding-skip.
+      // Without this, the manifest would still reference the deleted article as
+      // a dependency, preventing articles linking to it from being refreshed.
+      if (this.lastWikilinkData && deletedByGrounding.size > 0) {
+        for (const deletedId of deletedByGrounding) {
+          delete this.lastWikilinkData.deps[deletedId];
+        }
+        // Also remove the deleted docId from other articles' dep lists
+        for (const [docId, deps] of Object.entries(this.lastWikilinkData.deps)) {
+          this.lastWikilinkData.deps[docId] = deps.filter(
+            (d) => !deletedByGrounding.has(d),
+          );
+        }
+      }
+      await differentialEngine.save(this.lastWikilinkData);
+      // Finding 17: synthesis completed successfully — delete the progress sidecar
+      // so the next run starts clean. Failure to delete is non-fatal.
+      unlink(progressFile).catch(() => {});
+      // Now safe to prune: manifest has advanced, so next run won't treat
+      // orphan sources as "present" if the process crashes during unlink.
+      if (differentialPlan && differentialPlan.orphanDocIds.size > 0) {
+        await differentialEngine.pruneOrphans(differentialPlan.orphanDocIds);
+      }
+    }
+
+    return result;
     } finally {
       // Fix L-1: always release the lock, even on error
       await lock.release();
@@ -974,6 +1290,20 @@ export class KBCompiler {
       dryRun,
     } = params;
 
+    // ── Bug 1 fix: Cross-category deduplication ───────────────────────────────
+    // The pre-synthesis dedup catches new plan duplicates, but articles from
+    // prior compilations may exist under different categories with the same slug
+    // (e.g., apis/abac AND concepts/abac). Detect and merge these by keeping
+    // the article with more content and deleting the sparser one.
+    if (!dryRun) {
+      const crossCatMerged = await this.mergeCrossCategoryDuplicates();
+      if (crossCatMerged > 0) {
+        warnings.push(
+          `Merged ${crossCatMerged} cross-category duplicate article(s) (kept richer version)`,
+        );
+      }
+    }
+
     // ── Post-processing: wikilink resolution + segmentation ──────────────────
     let postProcess: PostProcessResult | undefined;
     if (!dryRun) {
@@ -997,6 +1327,15 @@ export class KBCompiler {
           );
         }
       }
+    }
+
+    // A6-a: Store wikilink dependency data for the differential manifest.
+    // This is read by compile() after finalize() returns.
+    if (postProcess) {
+      this.lastWikilinkData = {
+        deps: postProcess.wikilinkDeps,
+        unresolvedDocIds: postProcess.unresolvedDocIds,
+      };
     }
 
     let lintReport: LintReport | undefined;
@@ -1027,6 +1366,15 @@ export class KBCompiler {
     // Previously lived inside the autoLint block, which meant it wasn't written
     // when autoLint was disabled.
     if (!dryRun) {
+      // M5: Save backup of current registry before overwriting.
+      // If the primary write is interrupted (crash, power loss), reloadRegistry()
+      // can recover from .kb-registry.json.bak.
+      try {
+        const existing = await readFile(this.registryPath, "utf-8");
+        await writeFile(this.registryPath + ".bak", existing, "utf-8");
+      } catch {
+        /* No existing registry to back up — first compile */
+      }
       // Fix C-2: atomic write to prevent partial-write corruption
       await atomicWriteFile(this.registryPath, serializeRegistry(this.registry));
     }
@@ -1112,10 +1460,11 @@ export class KBCompiler {
         Object.create(null) as Record<string, { aliases: string[]; entityType?: string; docId?: string }>;
       try {
         const raw = await readFile(vocabSidecarPath, "utf-8");
-        const parsed = JSON.parse(raw) as { vocabulary?: typeof existingVocab };
-        if (parsed.vocabulary) {
+        // Sprint 1b: Validate sidecar with Zod instead of unsafe JSON.parse-as-T
+        const result = VocabSidecarSchema.safeParse(JSON.parse(raw));
+        if (result.success && result.data.vocabulary) {
           // Copy into null-prototype object to prevent __proto__ pollution
-          for (const [k, v] of Object.entries(parsed.vocabulary)) {
+          for (const [k, v] of Object.entries(result.data.vocabulary)) {
             if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
             existingVocab[k] = v;
           }
@@ -1170,6 +1519,17 @@ export class KBCompiler {
       }
     }
 
+    // ── Reverse Citation Index ────────────────────────────────────────────────
+    // Build bidirectional source↔article mappings for root-cause analysis.
+    // Answers: "which articles cite source X?" and "which sources feed article Y?"
+    if (!dryRun && synthesis.created + synthesis.updated > 0) {
+      try {
+        await writeCitationIndex(this.kbDir, this.compiledDir);
+      } catch {
+        // Non-fatal — citation index failure should never block compilation
+      }
+    }
+
     const result: CompileResult = {
       success: synthesis.failed === 0,
       sourcesScanned,
@@ -1186,8 +1546,96 @@ export class KBCompiler {
       warnings,
     };
 
+    // ── W-22: Compile Quality History ─────────────────────────────────────────
+    // Append a quality record to .kb-quality-history.jsonl for regression tracking.
+    // Compare with previous compile to detect grounding/lint regressions.
+    if (!dryRun) {
+      try {
+        const qualityRecord = buildQualityRecord(result);
+        const history = await loadQualityHistory(this.kbDir);
+        if (history.length > 0) {
+          const prev = history[history.length - 1]!;
+          const delta = compareCompiles(prev, qualityRecord);
+          for (const regression of delta.regressions) {
+            warnings.push(`[quality regression] ${regression}`);
+          }
+          for (const improvement of delta.improvements) {
+            warnings.push(`[quality improvement] ${improvement}`);
+          }
+        }
+        await appendQualityRecord(this.kbDir, qualityRecord);
+      } catch {
+        // Non-fatal — quality tracking failure should never block compilation
+      }
+    }
+
     emit({ stage: "complete", result });
     return result;
+  }
+
+  // ── Bug 1 fix: Cross-category deduplication ─────────────────────────────────
+
+  /**
+   * Detect and merge articles that have the same slug but different entity-type
+   * category directories (e.g., apis/abac + concepts/abac).
+   *
+   * For each collision pair, keep the article with more body content (richer).
+   * Delete the sparser one from disk and registry. Update incoming wikilinks.
+   *
+   * Returns the number of duplicates merged.
+   */
+  private async mergeCrossCategoryDuplicates(): Promise<number> {
+    const files = await scanDirectory(this.compiledDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+
+    // Group by slug (last segment of docId)
+    const bySlug = new Map<string, Array<{ docId: string; filePath: string; bodyLen: number; isStub: boolean }>>();
+
+    for (const filePath of mdFiles) {
+      const rel = filePath
+        .slice(this.compiledDir.length + 1)
+        .replace(/\.md$/, "")
+        .replace(/\\/g, "/");
+      const slug = rel.split("/").pop() ?? rel;
+      let content: string;
+      try {
+        content = await readFile(filePath, "utf-8");
+      } catch { continue; }
+
+      const bodyMatch = content.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+      const bodyLen = bodyMatch ? bodyMatch[1]!.length : 0;
+      const isStub = /^stub:\s*true/m.test(content);
+
+      const group = bySlug.get(slug) ?? [];
+      group.push({ docId: rel, filePath, bodyLen, isStub });
+      bySlug.set(slug, group);
+    }
+
+    let merged = 0;
+
+    for (const [_slug, group] of bySlug) {
+      if (group.length < 2) continue;
+
+      // Sort: non-stubs before stubs, then by body length descending
+      group.sort((a, b) => {
+        if (a.isStub !== b.isStub) return a.isStub ? 1 : -1;
+        return b.bodyLen - a.bodyLen;
+      });
+
+      const survivor = group[0]!;
+      // Delete all but the survivor
+      for (let i = 1; i < group.length; i++) {
+        const victim = group[i]!;
+        try {
+          await unlink(victim.filePath);
+          // Remove from registry
+          this.registry.delete(victim.docId);
+          merged++;
+        } catch { /* already gone */ }
+      }
+    }
+
+    return merged;
   }
 }
 

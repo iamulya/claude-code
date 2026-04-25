@@ -1,16 +1,19 @@
 ---
-title: "Permission delegation"
+title: "Permission Delegation"
+summary: "Permission Delegation"
 entity_type: concept
 stub: true
-compiled_at: "2026-04-16T14:41:06.175Z"
+compiled_at: "2026-04-24T18:21:56.238Z"
 compiled_from: []
 confidence: 0.5
+search_terms:
+  - "permission delegation"
 ---
 
-# Permission delegation
+# Permission Delegation
 > **Stub article** — This article was auto-generated from mentions in source material.
 > Expand it by adding source documents that cover this topic.
 ## Overview
-A mechanism for worker agents to escalate permission requests to a leader via a mailbox.
+A mechanism allowing a worker agent to request elevated permissions or specific actions from a leader agent, typically facilitated through an [Inter-Agent Communication](../subsystems/inter-agent-communication.md) [Channel](../apis/channel.md) like a mailbox.
 ## Related
-- [[Multi-Agent Orchestration]]
+- [Agent Orchestration System](../subsystems/agent-orchestration-system.md)

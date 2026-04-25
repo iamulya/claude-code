@@ -1,81 +1,132 @@
 ---
+summary: Configuration interface for the `GeminiChatModel`, specifying the API key, model, temperature, token limits, and thinking budget for Google AI models.
 export_name: GeminiModelConfig
 source_file: src/models/gemini.ts
 category: type
-summary: Configuration interface for initializing GeminiChatModel, covering API keys, Vertex AI settings, and model parameters.
 title: GeminiModelConfig
 entity_type: api
+search_terms:
+ - Google Gemini configuration
+ - GeminiChatModel settings
+ - how to configure Gemini model
+ - Gemini API key setup
+ - set Gemini temperature
+ - maxOutputTokens for Gemini
+ - context window size Gemini
+ - Gemini thinking budget
+ - enable tool calling reasoning
+ - Gemini 1.5 Pro config
+ - Gemini model parameters
+ - YAAF Google AI
+ - configure reasoning chain
 stub: false
-compiled_at: 2026-04-16T14:31:09.303Z
+compiled_at: 2026-04-24T17:08:05.175Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/models/gemini.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/gemini.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`GeminiModelConfig` is a TypeScript type used to configure instances of the Gemini chat model adapter within YAAF. It defines the parameters required to authenticate and interact with Google's Gemini LLMs using the official `@google/genai` SDK. 
 
-The configuration supports two primary integration paths:
-1.  **Google AI Studio**: Using an API key.
-2.  **Vertex AI**: Using Google Cloud project and location details (as indicated by source documentation).
+`GeminiModelConfig` is a TypeScript type that defines the configuration options for an instance of the `GeminiChatModel`. It is used to provide authentication credentials and set model parameters such as the model name, temperature, token limits, and reasoning capabilities [Source 1].
 
-This type requires the peer dependency `@google/genai` (version 0.7.0 or higher) to be installed in the host project.
+This configuration type is specifically for connecting to Google's Gemini models through Google AI Studio using an API key. It allows for fine-grained control over the model's behavior, including the `thinkingBudget` property, which is essential for enabling advanced tool-calling and reasoning features in compatible models [Source 1].
 
-## Signature / Constructor
+## Signature
+
+The `GeminiModelConfig` is a union type. The following signature represents the configuration for using Google AI Studio [Source 1].
+
 ```typescript
-export type GeminiModelConfig =
-  | {
-    apiKey: string
-    vertexAI?: false
-    model?: string
-    temperature?: number
-    maxOutputTokens?: number
-    contextWindowTokens?: number
-  }
+export type GeminiModelConfig = {
+  apiKey: string;
+  vertexAI?: false;
+  model?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  contextWindowTokens?: number;
+  /**
+   * Thinking budget for thinking-capable models (e.g. Gemini 2.5 Pro).
+   * When [[[[[[[[Tools]]]]]]]] are present:
+   * - `undefined` (default): Disables thinking (thinkingBudget: 0) for SDK compatibility
+   * - `0`: Explicitly disable thinking
+   * - `N > 0`: Allow up to N tokens of thinking chain
+   *
+   * Set this to a positive value to enable reasoning with tool-calling models.
+   */
+  thinkingBudget?: number;
+};
 ```
 
-## Methods & Properties
-The following properties are available in the Google AI Studio configuration variant:
+### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `apiKey` | `string` | The API key used for authenticating with Google AI Studio. |
-| `vertexAI` | `false` (optional) | Explicitly set to `false` when using the API key-based authentication path. |
-| `model` | `string` (optional) | The identifier of the Gemini model to use (e.g., `gemini-1.5-pro`). |
-| `temperature` | `number` (optional) | Controls the randomness of the model's output. |
-| `maxOutputTokens` | `number` (optional) | The maximum number of tokens the model should generate in a single response. |
-| `contextWindowTokens` | `number` (optional) | The total token limit for the model's context window. |
+*   **`apiKey`**: `string` (required)
+    The API key for authenticating with Google AI Studio [Source 1].
 
-*Note: While the source code snippet provided is a union type that includes a Google AI Studio variant, the source documentation also specifies support for Vertex AI configurations requiring `project` and `location` fields when `vertexAI` is set to `true`.*
+*   **`vertexAI`**: `false` (optional)
+    Must be `false` or omitted [when](./when.md) using an `apiKey` [Source 1].
+
+*   **`model`**: `string` (optional)
+    The specific Gemini model to use, e.g., `'gemini-1.5-pro'` [Source 1].
+
+*   **`temperature`**: `number` (optional)
+    Controls the randomness of the output. Higher values result in more creative responses [Source 1].
+
+*   **`maxOutputTokens`**: `number` (optional)
+    The maximum number of tokens to generate in the response [Source 1].
+
+*   **`contextWindowTokens`**: `number` (optional)
+    The total token limit for the model's [Context Window](../concepts/context-window.md) [Source 1].
+
+*   **`thinkingBudget`**: `number` (optional)
+    Enables and controls the reasoning capabilities for models that support tool calling.
+    *   If `undefined` (the default), thinking is disabled for SDK compatibility.
+    *   If `0`, thinking is explicitly disabled.
+    *   If greater than `0`, the model is allowed to use up to that many tokens for its internal reasoning chain when using Tools [Source 1].
 
 ## Examples
 
-### Google AI Studio Configuration
-This is the most common configuration for rapid prototyping and individual use.
-```typescript
-import { GeminiChatModel } from './models/gemini';
+### Basic Configuration
 
+This example shows a basic configuration for a `GeminiChatModel` instance using an API key from Google AI Studio.
+
+```typescript
+import type { GeminiModelConfig } from 'yaaf';
+
+// Basic configuration for Google AI Studio
 const config: GeminiModelConfig = {
   apiKey: process.env.GEMINI_API_KEY!,
   model: 'gemini-1.5-flash',
-  temperature: 0.7
+  temperature: 0.7,
+  maxOutputTokens: 2048,
 };
 
-const model = new GeminiChatModel(config);
+// This config object would be passed to the GeminiChatModel constructor.
+// const model = new GeminiChatModel(config);
 ```
 
-### Vertex AI Configuration
-Used for enterprise-grade deployments on Google Cloud Platform.
+### Enabling Tool-Calling Reasoning
+
+To use a model's advanced reasoning and tool-calling features, set the `thinkingBudget` to a positive number.
+
 ```typescript
-// Based on source documentation for Vertex AI support
-const model = new GeminiChatModel({
-  vertexAI: true,
-  project: 'my-gcp-project',
-  location: 'us-central1',
-  model: 'gemini-1.5-pro',
-});
+import type { GeminiModelConfig } from 'yaaf';
+
+// Configuration to enable tool-calling reasoning with a thinking budget
+const toolCallingConfig: GeminiModelConfig = {
+  apiKey: process.env.GEMINI_API_KEY!,
+  model: 'gemini-1.5-pro', // A model that supports tool calling
+  thinkingBudget: 8000, // Allow up to 8000 tokens for the reasoning chain
+};
+
+// This config enables the model to "think" before responding when tools are provided.
+// const model = new GeminiChatModel(toolCallingConfig);
 ```
 
 ## See Also
-- `GeminiChatModel` (The class that consumes this configuration)
-- `BaseLLMAdapter` (The base class for LLM implementations in YAAF)
+
+*   `GeminiChatModel`: The agent framework class that uses this configuration type to interact with Google's Gemini models.
+
+## Sources
+
+[Source 1]: src/models/gemini.ts

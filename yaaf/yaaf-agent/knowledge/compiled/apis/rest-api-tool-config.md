@@ -1,77 +1,112 @@
 ---
+summary: Configuration interface for `createRestApiTool`.
 export_name: RestApiToolConfig
 source_file: src/tools/openapi/restApiTool.ts
 category: type
-summary: Configuration interface for REST-based tools, defining timeouts, headers, and authentication settings.
 title: RestApiToolConfig
 entity_type: api
+search_terms:
+ - OpenAPI tool configuration
+ - REST API tool settings
+ - how to configure createRestApiTool
+ - set timeout for API tool
+ - add headers to REST tool
+ - API tool authentication
+ - provide credentials for OpenAPI tool
+ - auth config for REST tool
+ - security schemes for API tool
+ - HTTP tool options
+ - configure fetch in tool
+ - RestApiTool options
 stub: false
-compiled_at: 2026-04-16T14:38:40.607Z
+compiled_at: 2026-04-24T17:33:07.887Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/openapi/restApiTool.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/restApiTool.ts
+compiled_from_quality: unknown
 confidence: 0.98
 ---
 
 ## Overview
-`RestApiToolConfig` is a configuration interface used to define the execution environment for tools derived from OpenAPI operations. It provides the necessary parameters for the underlying HTTP client, including request timeouts, static headers, and security credentials required to authenticate against the target API.
 
-This configuration is typically passed to the `createRestApiTool` factory function to instantiate a tool that an agent can use to perform RESTful operations.
+`RestApiToolConfig` is a TypeScript type that defines the shared configuration for [Tools](../subsystems/tools.md) created from an OpenAPI specification using the `createRestApiTool` function [Source 1]. It centralizes settings that apply to all API operations being converted into tools, such as HTTP request timeouts, custom headers, and authentication details.
 
-## Signature / Constructor
+This configuration object is passed to `createRestApiTool` alongside a parsed API operation to produce a fully configured YAAF Tool [Source 1].
+
+## Signature
+
+The `RestApiToolConfig` type is defined as follows [Source 1]:
 
 ```typescript
 export type RestApiToolConfig = {
   /** Timeout for HTTP requests in ms */
-  timeoutMs: number
+  timeoutMs: number;
   /** Extra headers sent with every request */
-  extraHeaders: Record<string, string>
+  extraHeaders: Record<string, string>;
   /** Global auth config */
-  auth?: AuthConfig
+  auth?: AuthConfig;
   /** Per-scheme credentials */
-  credentials: Record<string, string>
+  credentials: Record<string, string>;
   /** All security schemes from the spec */
-  securitySchemes: Record<string, SecurityScheme>
-}
+  securitySchemes: Record<string, SecurityScheme>;
+};
 ```
 
-## Methods & Properties
+### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `timeoutMs` | `number` | The maximum duration in milliseconds to wait for an HTTP response before the tool returns a timeout error. |
-| `extraHeaders` | `Record<string, string>` | A collection of key-value pairs representing HTTP headers that will be appended to every request made by the tool (e.g., `User-Agent` or `X-API-Version`). |
-| `auth` | `AuthConfig` | (Optional) Global authentication configuration used to determine how credentials should be applied to requests. |
-| `credentials` | `Record<string, string>` | A map of credential values (such as API keys or Bearer tokens) indexed by the name of the security scheme they belong to. |
-| `securitySchemes` | `Record<string, SecurityScheme>` | A dictionary of security schemes extracted from the OpenAPI specification, defining the requirements for authentication (e.g., OAuth2, API Key, HTTP Basic). |
+*   **`timeoutMs`**: `number`
+    The timeout for HTTP requests in milliseconds.
+
+*   **`extraHeaders`**: `Record<string, string>`
+    A key-value map of extra HTTP headers to be sent with every request made by the tool.
+
+*   **`auth`**: `AuthConfig` (optional)
+    Global authentication configuration. See the `AuthConfig` type for more details.
+
+*   **`credentials`**: `Record<string, string>`
+    A key-value map where the key is the name of a security scheme (e.g., `apiKeyAuth`) and the value is the corresponding credential (e.g., the API key string).
+
+*   **`securitySchemes`**: `Record<string, SecurityScheme>`
+    A map of all security schemes defined in the OpenAPI specification, as provided by the [OpenAPI Parser](../subsystems/open-api-parser.md). The keys are the scheme names. See the `SecurityScheme` type for more details.
 
 ## Examples
 
-### Basic Configuration
-This example demonstrates setting up a configuration for an API that requires an API key and a custom header.
+The following example demonstrates how to create a `RestApiToolConfig` object and use it with `createRestApiTool`.
 
 ```typescript
-import { createRestApiTool, type RestApiToolConfig } from './src/tools/openapi/restApiTool.js';
+import { createRestApiTool, RestApiToolConfig } from 'yaaf';
+import type { ParsedOperation, SecurityScheme } from 'yaaf/openapi';
 
-const config: RestApiToolConfig = {
-  timeoutMs: 5000,
-  extraHeaders: {
-    'X-App-Name': 'YAAF-Agent'
-  },
-  credentials: {
-    ApiKeyAuth: 'your-secret-api-key'
-  },
-  securitySchemes: {
-    ApiKeyAuth: {
-      type: 'apiKey',
-      in: 'header',
-      name: 'X-API-KEY'
-    }
+// Assume these are provided by an OpenAPI parser
+const parsedOperation: ParsedOperation = { /* ... parsed operation data ... */ };
+const securitySchemes: Record<string, SecurityScheme> = {
+  'apiKeyAuth': {
+    type: 'apiKey',
+    in: 'header',
+    name: 'X-API-KEY',
   }
 };
 
-// Usage with createRestApiTool
-// const tool = createRestApiTool(parsedOperation, config);
+// Define the shared configuration for all API tools
+const config: RestApiToolConfig = {
+  timeoutMs: 10000, // 10 second timeout
+  extraHeaders: {
+    'User-Agent': 'YAAF-Agent/1.0',
+  },
+  credentials: {
+    // Provide the API key for the 'apiKeyAuth' security scheme
+    'apiKeyAuth': 'your-secret-api-key-here',
+  },
+  securitySchemes: securitySchemes,
+};
+
+// Create a specific tool using the shared configuration
+const getPetByIdTool = createRestApiTool(parsedOperation, config);
+
+// Now `getPetByIdTool` can be used in an agent.
+// When executed, it will use the timeout, headers, and credentials
+// from the config object.
 ```
 
 ## Sources
-- `src/tools/openapi/restApiTool.ts`
+
+[Source 1]: src/tools/openapi/restApiTool.ts

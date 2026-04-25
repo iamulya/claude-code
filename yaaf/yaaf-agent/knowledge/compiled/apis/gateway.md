@@ -1,131 +1,119 @@
 ---
 title: Gateway
 entity_type: api
-summary: The main entry point for connecting agents to multiple communication channels simultaneously.
+summary: Orchestrates message flow from multiple Channel instances to a single agent, handling session management and message transformations.
 export_name: Gateway
-source_file: src/gateway.ts
+source_file: src/gateway/channel.ts
 category: class
+search_terms:
+ - multi-channel agent
+ - connect agent to discord
+ - route messages to agent
+ - session management for bots
+ - message filtering
+ - response chunking
+ - Slack bot integration
+ - Telegram bot framework
+ - YAAF transport layer
+ - how to use channels
+ - inbound message handling
+ - agent entry point
+ - message transformation hooks
 stub: false
-compiled_at: 2026-04-16T14:07:11.209Z
+compiled_at: 2026-04-24T17:07:43.277Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/gateway.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/gateway.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/gateway/channel.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway/channel.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-The `Gateway` class is an opt-in entry point for the YAAF transport layer. It acts as a router that connects a single agent to multiple communication platforms (Channels) such as Telegram, Slack, Discord, or a local console. 
 
-The Gateway handles the lifecycle of attached channels, manages session resolution (isolating conversations by user or group), filters inbound messages, and processes outbound responses—including chunking long messages to meet platform-specific character limits. It is designed for production environments where error isolation is required; a failure in one channel does not affect the operation of others.
+The `Gateway` class is an opt-in entry point for routing messages from multiple `Channel` instances to a single agent instance [Source 3]. It acts as a central hub for handling the transport layer of an agent, managing concerns like [Session Resolution](../concepts/session-resolution.md), [Message Filtering](../concepts/message-filtering.md), input/output transformations, and [Error Isolation](../concepts/error-isolation.md) between different communication platforms (e.g., Slack, Discord, Console) [Source 3].
+
+By design, `Gateway` and its related [Utilities](../subsystems/utilities.md) are not included in the main `yaaf` package export. They must be imported explicitly from the `yaaf/gateway` module [when](./when.md) building agents that need to interact with users over multiple Channels [Source 2].
+
+Key responsibilities of the `Gateway` include:
+*   Receiving messages from multiple configured Channels [Source 3].
+*   Resolving a unique session key for each message to maintain conversational context [Source 3].
+*   Filtering inbound messages, for example, to make an agent only respond to direct mentions in a group chat [Source 3].
+*   Transforming messages before they reach the agent and after the agent generates a response [Source 3].
+*   Isolating errors, ensuring that a failure in one [Channel](./channel.md) does not impact the operation of others [Source 3].
 
 ## Signature / Constructor
 
-The `Gateway` is initialized with a configuration object that defines the agent, the transport channels, and optional middleware for message processing.
+The `Gateway` is instantiated with a configuration object that defines the agent, the channels it listens on, and various hooks to control message processing.
 
 ```typescript
+import { GatewayConfig } from 'yaaf/gateway';
+
 export class Gateway {
   constructor(config: GatewayConfig);
 }
-
-export type GatewayConfig = {
-  /** The agent to route messages to */
-  agent: { run(input: string, signal?: AbortSignal): Promise<string> };
-  
-  /** Channels to listen on */
-  channels: Channel[];
-  
-  /** 
-   * Resolve a session key from an inbound message. 
-   * Default: `${channelName}:${senderId}` 
-   */
-  sessionResolver?: (message: InboundMessage) => string;
-  
-  /** 
-   * Filter inbound messages. Return true to process, false to ignore. 
-   */
-  messageFilter?: (message: InboundMessage) => boolean;
-  
-  /** 
-   * Called before the agent processes a message to transform input text. 
-   */
-  beforeProcess?: (message: InboundMessage) => string | Promise<string>;
-  
-  /** 
-   * Called after the agent produces a response to transform or chunk output. 
-   */
-  afterProcess?: (response: string, message: InboundMessage) => string | string[] | Promise<string | string[]>;
-  
-  /** Error handler for channel or processing errors */
-  onError?: (error: Error, context: { channel: string; message?: InboundMessage }) => void;
-  
-  /** Optional personality definition applied to responses */
-  soul?: Soul;
-};
 ```
 
-## Methods & Properties
+### `GatewayConfig`
 
-### start()
-Starts the gateway and invokes the `start()` method on all registered channels to begin listening for inbound messages.
-- **Signature**: `start(): Promise<void>`
+The configuration object passed to the `Gateway` constructor has the following properties [Source 3]:
 
-### stop()
-Stops the gateway and all attached channels, performing necessary cleanup and disconnecting from external APIs.
-- **Signature**: `stop(): Promise<void>`
+| Property | Type | Description |
+| --- | --- | --- |
+| `agent` | `{ run(input: string, signal?: AbortSignal): Promise<string> }` | **Required.** The agent instance that will process the inbound messages. |
+| `channels` | `Channel[]` | **Required.** An array of channel instances that the gateway will manage. |
+| `sessionResolver` | `(message: InboundMessage) => string` | *Optional.* A function to resolve a unique session key from an inbound message. Defaults to isolating sessions per user on each channel (`${channelName}:${senderId}`). |
+| `messageFilter` | `(message: InboundMessage) => boolean` | *Optional.* A predicate function to filter inbound messages. Return `true` to process the message or `false` to ignore it. Defaults to processing all messages. |
+| `beforeProcess` | `(message: InboundMessage) => string \| Promise<string>` | *Optional.* A hook called before the agent processes a message. It can be used to transform the input text. |
+| `afterProcess` | `(response: string, message: InboundMessage) => string \| string[] \| Promise<string \| string[]>` | *Optional.* A hook called after the agent generates a response. It can be used to transform the output, such as chunking it for channels with message length limits. |
+| `onError` | `(error: Error, context: { channel: string; message?: InboundMessage }) => void` | *Optional.* An error handler for exceptions that occur during channel communication or message processing. |
 
 ## Examples
 
-### Basic Multi-Channel Setup
-This example demonstrates connecting an agent to both a console for local testing and a Telegram channel.
+### Basic Console Gateway
+
+This example demonstrates setting up a `Gateway` to connect a simple agent to the console for interactive testing. It uses the built-in `ConsoleChannel` [Source 3].
 
 ```typescript
-import { Gateway, ConsoleChannel, TelegramChannel } from 'yaaf/gateway';
+import { Gateway, ConsoleChannel } from 'yaaf/gateway';
+import type { InboundMessage } from 'yaaf/gateway';
 
-const gateway = new Gateway({
-  agent: myAgent,
-  channels: [
-    new ConsoleChannel({ prompt: 'you> ' }),
-    new TelegramChannel({ token: process.env.TELEGRAM_TOKEN })
-  ],
-});
-
-await gateway.start();
-```
-
-### Custom Message Filtering
-Filtering messages to ensure the agent only responds to specific criteria, such as ignoring messages from other bots.
-
-```typescript
-const gateway = new Gateway({
-  agent: myAgent,
-  channels: [slackChannel],
-  messageFilter: (msg) => {
-    // Only process messages that aren't from bots
-    return !msg.isBot;
+// A mock agent for demonstration purposes
+const myAgent = {
+  async run(input: string): Promise<string> {
+    console.log(`[Agent] Received: "${input}"`);
+    return `You said: "${input}"`;
   },
-  onError: (err, ctx) => {
-    console.error(`Error on channel ${ctx.channel}:`, err);
-  }
-});
-```
+};
 
-### Integration with Soul
-Applying a personality definition to all responses routed through the gateway.
+// A simple channel that reads from and writes to the console
+const consoleChannel = new ConsoleChannel();
 
-```typescript
-import { Soul, Gateway } from 'yaaf/gateway';
-
-const soul = Soul.fromFile('./SOUL.md');
-
+// Instantiate the Gateway
 const gateway = new Gateway({
   agent: myAgent,
-  channels: [discordChannel],
-  soul,
+  channels: [consoleChannel],
+  // Optional: Add a prefix to all agent responses
+  afterProcess: (response: string, message: InboundMessage) => {
+    return `🤖 Agent Response: ${response}`;
+  },
+  onError: (error, context) => {
+    console.error(`Error in channel ${context.channel}:`, error);
+  },
 });
+
+// Start the channel to begin listening for messages
+async function start() {
+  console.log('Starting gateway. Type a message and press Enter. Type "exit" to quit.');
+  // The gateway itself doesn't have start/stop; you manage the channels.
+  await consoleChannel.start();
+}
+
+start();
 ```
 
-## See Also
-- `Channel`: The interface used to implement new platform adapters.
-- `ConsoleChannel`: A built-in implementation for terminal-based interaction.
-- `ApprovalManager`: A utility for handling interactive permission requests through Gateway channels.
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway.ts
+[Source 3]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway/channel.ts

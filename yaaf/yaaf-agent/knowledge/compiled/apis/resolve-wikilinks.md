@@ -1,67 +1,123 @@
 ---
-summary: Resolves internal wikilinks into proper relative markdown links using the concept registry.
+summary: Resolves `[[wikilinks]]` in a markdown string to proper relative links using the concept registry.
 export_name: resolveWikilinks
 source_file: src/knowledge/compiler/postprocess.ts
 category: function
 title: resolveWikilinks
 entity_type: api
+search_terms:
+ - convert wikilinks to markdown links
+ - knowledge base link resolution
+ - how to link between articles
+ - double bracket link syntax
+ - "wikilink processing"
+ - concept registry lookup
+ - relative path generation for links
+ - post-synthesis transforms
+ - unresolved link handling
+ - markdown post-processing
+ - YAAF compiler link step
+ - linking documents in YAAF
 stub: false
-compiled_at: 2026-04-16T14:26:12.059Z
+compiled_at: 2026-04-24T17:33:12.615Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/postprocess.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/postprocess.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`resolveWikilinks` is a post-synthesis processing utility used to transform internal `[[wikilink]]` syntax into standard Markdown relative links. It is executed after an article has been authored by the LLM but before the final linting phase.
 
-The function performs two primary transformations:
-1.  **Standard Resolution**: Converts `[[Term]]` into a relative link to the corresponding document (e.g., `[Term](../category/doc-id.md)`).
-2.  **Aliased Resolution**: Converts `[[Term|custom text]]` into a link using the provided display text (e.g., `[custom text](../category/doc-id.md)`).
+The `resolve[[[[[[[[Wikilinks]]]]]]]]` function is a utility used during the YAAF knowledge base compilation process. It scans a given markdown string for `wikilink` syntax and converts any recognized links into standard, relative markdown links [Source 1].
 
-If a wikilink target cannot be found within the provided registry, the function leaves the wikilink in its original `[[Target]]` format. This allows subsequent linting steps to flag the unresolved link as an error.
+This function is a key part of the post-synthesis processing pipeline, which runs after an article has been authored by an [LLM](../concepts/llm.md) but before it is validated by the [Linter](../concepts/linter.md). Its purpose is to create a navigable, hyperlinked knowledge base from the plain-text `wikilink` references used during authoring [Source 1].
+
+The function supports two common wikilink formats:
+1.  `Target`: Creates a link where the link text is the same as the target article's title.
+2.  `Custom display text`: Creates a link to the target article but uses the provided custom text for display [Source 1].
+
+To resolve a link, `resolveWikilinks` looks up the `Target` in the provided `ConceptRegistry`. If a matching entry is found, it generates a relative file path from the current document to the target document. If the `Target` is not found in the registry, the `wikilink` is left unchanged in the text. This allows a subsequent [Linting](../concepts/linting.md) step to flag broken or unresolved links [Source 1].
 
 ## Signature
+
 ```typescript
 export function resolveWikilinks(
   markdown: string,
   registry: ConceptRegistry,
   currentDocId: string,
-): { /* ... */ }
+): { 
+  markdown: string;
+  resolved: string[];
+  unresolved: string[];
+};
 ```
 
-### Parameters
-*   `markdown`: The full content of the article, including frontmatter and body text.
-*   `registry`: The `ConceptRegistry` containing the mapping of all known entities, their types, and their document IDs.
-*   `currentDocId`: The unique identifier of the article currently being processed. This is used to calculate the correct relative path from the current file to the link target.
+**Parameters:**
 
-### Return Value
-The source documentation indicates this function returns the markdown string with resolved wikilinks. Note that while the JSDoc specifies a string return, the TypeScript signature in the source extract indicates an object return type; this typically contains the processed markdown along with metadata regarding the number of resolved and unresolved links.
+*   `markdown` (`string`): The full markdown content of the article to process, including [Frontmatter](../concepts/frontmatter.md).
+*   `registry` (`ConceptRegistry`): An instance of the [Concept Registry](../subsystems/concept-registry.md) containing mappings from concept titles to their document metadata, which is used to find the target file path for a given wikilink.
+*   `currentDocId` (`string`): The unique document ID of the article being processed. This is used to calculate the correct relative path for the generated links.
+
+**Returns:**
+
+An object containing the processed markdown and metadata about the link resolution process. While the source material does not specify the exact return type's shape, it returns at least the transformed markdown string [Source 1]. The broader post-processing context suggests it also returns data for dependency tracking.
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how the function converts a standard wikilink into a relative path based on the registry.
+The following example demonstrates how to resolve different types of Wikilinks within a markdown document.
 
 ```typescript
-const markdown = "See the [[Agent]] class for implementation details.";
-const registry = getRegistry(); // Assume registry contains Agent -> api/agent.md
+import { resolveWikilinks } from 'yaaf';
+import type { ConceptRegistry } from 'yaaf';
 
-const resolved = resolveWikilinks(markdown, registry, "quick-start");
-// Result: "See the [Agent](../api/agent.md) class for implementation details."
+// 1. Define a mock concept registry.
+// In a real scenario, this is built by the knowledge compiler.
+const registry: ConceptRegistry = new Map([
+  ['Agent', { docId: 'api/agent', entityType: 'api', title: 'Agent' }],
+  ['Tool', { docId: 'concept/tool', entityType: 'concept', title: 'Tool' }],
+]);
+
+// 2. Define the source markdown and the ID of the current document.
+const currentDocId = 'guide/getting-started';
+const markdownInput = `
+---
+title: Getting Started
+---
+# Getting Started
+
+A YAAF Agent can be equipped with a set of tools.
+
+This guide does not cover the LLM concept, as it is not in the registry.
+`;
+
+// 3. Call the function to resolve links.
+const { markdown: resolvedMarkdown } = resolveWikilinks(
+  markdownInput,
+  registry,
+  currentDocId
+);
+
+// 4. The output contains standard markdown links with correct relative paths.
+console.log(resolvedMarkdown);
+/*
+---
+title: Getting Started
+---
+# Getting Started
+
+A YAAF [Agent](../../api/agent.md) can be equipped with a [set of tools](../../concept/tool.md).
+
+This guide does not cover the LLM concept, as it is not in the registry.
+*/
 ```
 
-### Aliased Wikilinks
-This example demonstrates using custom display text for a link.
-
-```typescript
-const markdown = "Learn more about [[Agent|agent architecture]].";
-const registry = getRegistry();
-
-const resolved = resolveWikilinks(markdown, registry, "quick-start");
-// Result: "Learn more about [agent architecture](../api/agent.md)."
-```
+In the output, `Agent` is resolved to a link pointing to `api/agent.md`, and `set of tools` is resolved to a link pointing to `concept/tool.md` with custom display text. The `LLM` link remains unresolved because it was not found in the registry.
 
 ## See Also
-* `postProcessCompiledArticles`: The high-level runner that invokes wikilink resolution.
-* `segmentOversizedArticles`: A sibling post-processing step that splits large documents.
+
+*   `postProcessCompiledArticles`: The higher-level function that orchestrates all post-synthesis steps, including [Wikilink Resolution](../concepts/wikilink-resolution.md) and [Article Segmentation](../concepts/article-segmentation.md).
+*   `ConceptRegistry`: The data structure that serves as the source of truth for all known entities in the knowledge base, which `resolveWikilinks` queries to find link targets.
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/postprocess.ts

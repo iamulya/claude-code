@@ -1,67 +1,84 @@
 ---
 title: runDev
 entity_type: api
-summary: Starts an interactive REPL for agent development, allowing real-time chat, prompt inspection, and token cost tracking.
+summary: Runs the YAAF agent in an interactive terminal session for development.
 export_name: runDev
 source_file: src/cli/dev.ts
 category: function
+search_terms:
+ - interactive agent development
+ - REPL for YAAF agent
+ - test agent in terminal
+ - debug agent conversation
+ - yaaf dev command
+ - how to chat with my agent
+ - inspect agent context
+ - list agent tools
+ - check token usage
+ - reset agent conversation
+ - local development mode
+ - CLI dev tool
 stub: false
-compiled_at: 2026-04-16T14:16:17.234Z
+compiled_at: 2026-04-24T17:34:24.027Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/dev.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/cli/dev.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
 ## Overview
-`runDev` is a utility function that initializes an interactive Read-Eval-Print Loop (REPL) environment for agent development. It is designed to facilitate the testing and debugging of agents within a terminal session. 
 
-The function allows developers to interact with an agent in real-time, providing a suite of slash-commands to inspect the agent's internal state, such as its system prompt, available tools, and accumulated token costs.
+The `runDev` function provides an interactive Read-Eval-Print Loop (REPL) for agent development directly in the terminal [Source 1]. It is the underlying implementation for the `yaaf dev` command-line interface ([CLI](../subsystems/cli.md)) tool.
 
-## Signature / Constructor
+This function is primarily used to chat with and inspect an agent during the development process. It allows developers to send messages, observe responses, and use special slash commands to manage the session and inspect the agent's state [Source 1].
+
+The interactive session supports several commands:
+*   `/quit`: Exits the development session.
+*   `/clear`: Resets the conversation history.
+*   `/context`: Displays the current [System Prompt](../concepts/system-prompt.md).
+*   `/[[[[[[[[Tools]]]]]]]]`: Lists the Tools available to the agent.
+*   `/cost`: Shows token usage and cost information for the session.
+
+## Signature
+
 ```typescript
-export async function runDev(args: string[]): Promise<void>
+export async function runDev(args: string[]): Promise<void>;
 ```
 
-### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `args` | `string[]` | An array of command-line arguments passed to the development environment. |
+**Parameters:**
 
-## REPL Commands
-While the `runDev` session is active, the following commands can be used within the terminal:
+*   `args` (`string[]`): An array of command-line arguments passed to the function.
 
-| Command | Description |
-| :--- | :--- |
-| `/quit` | Exits the interactive session. |
-| `/clear` | Resets the current conversation history. |
-| `/context` | Displays the current system prompt and context. |
-| `/tools` | Lists all tools currently available to the agent. |
-| `/cost` | Displays the current token usage and estimated costs for the session. |
+**Returns:**
+
+*   `Promise<void>`: A promise that resolves [when](./when.md) the interactive session is terminated.
 
 ## Examples
 
-### Basic CLI Implementation
-The following example demonstrates how to use `runDev` as the entry point for a custom development CLI script.
+While `runDev` can be called programmatically, its main use is via the `yaaf dev` command in the terminal. The following is a sample interactive session.
 
-```typescript
-import { runDev } from 'yaaf';
+```bash
+$ yaaf dev
+Agent is ready. Type a message to begin, or /quit to exit.
 
-/**
- * Entry point for the agent development environment.
- * Usage: node dev.js --agent my-agent.ts
- */
-async function startDevEnvironment() {
-  try {
-    // Pass process arguments to the runDev function
-    await runDev(process.argv.slice(2));
-  } catch (error) {
-    console.error('Failed to start dev session:', error);
-    process.exit(1);
-  }
-}
+> Hello, who are you?
+I am a helpful AI assistant.
 
-startDevEnvironment();
+> /tools
+Available tools:
+- searchWeb(query: string)
+- getFileContents(path: string)
+
+> /context
+System: You are a helpful AI assistant. You have access to the following tools...
+
+> /clear
+Conversation cleared.
+
+> /quit
+Goodbye!
 ```
 
 ## Sources
-- `src/cli/dev.ts`
+
+[Source 1]: src/cli/dev.ts

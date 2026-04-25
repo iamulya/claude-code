@@ -1,89 +1,115 @@
 ---
 title: ResolverScopeStrategy
 entity_type: api
-summary: Delegates data scoping decisions to an external permission resolver with optional caching.
+summary: A DataScopeStrategy that determines data access by querying an external PermissionResolver and mapping its grants to a DataScope.
 export_name: ResolverScopeStrategy
 source_file: src/iam/scoping.ts
 category: class
+search_terms:
+ - permission resolver scoping
+ - external permission system
+ - custom data scoping
+ - dynamic access control
+ - integrate with existing authz
+ - resolver-based data filtering
+ - toScope function
+ - caching permission grants
+ - map grants to scope
+ - pluggable data access
+ - data filtering strategy
 stub: false
-compiled_at: 2026-04-16T14:19:38.336Z
+compiled_at: 2026-04-25T00:12:28.259Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/scoping.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/scoping.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`ResolverScopeStrategy` is a data scoping implementation that delegates access decisions to an external `PermissionResolver`. It is designed for scenarios where data access rules are managed by a third-party system (such as Confluence or Jira) or a centralized authorization service.
 
-The strategy queries the resolver for permission grants associated with a user context, then transforms those grants into a `DataScope` using a provided mapping function. To optimize performance and reduce external API calls, it includes built-in support for caching results.
+`ResolverScopeStrategy` is an implementation of the [DataScopeStrategy](./data-scope-strategy.md) interface that integrates with external or complex permission systems to determine data access for tools [Source 1].
+
+This strategy is used when data access rules are not simple and need to be delegated to a dedicated service or component. It operates by:
+1.  Querying a provided [PermissionResolver](./permission-resolver.md) with the current user context and tool information.
+2.  Receiving a list of `PermissionGrant` objects from the resolver.
+3.  Using a custom `toScope` function to transform these grants into a [DataScope](./data-scope.md) object, which contains the filters applied to the tool's data access [Source 1].
+
+It also includes an optional caching mechanism to improve performance by memoizing the results from the permission resolver [Source 1].
 
 ## Signature / Constructor
 
-### Constructor
-```typescript
-constructor(config: ResolverScopeConfig)
-```
-
-### ResolverScopeConfig
-The configuration object defines the resolver, the transformation logic, and optional caching parameters.
+The `ResolverScopeStrategy` class is instantiated with a configuration object of type `ResolverScopeConfig`.
 
 ```typescript
-export type ResolverScopeConfig = {
-  /** The external resolver used to fetch permission grants */
-  resolver: PermissionResolver
-  
-  /** 
-   * Transform resolved grants into a DataScope.
-   * This function maps external permissions to internal data filters.
-   */
-  toScope: (grants: PermissionGrant[], user: UserContext) => DataScope
-  
-  /** Cache configuration for resolved scopes */
-  cache?: {
-    /** Time-to-live in seconds */
-    ttl: number
-    /** Maximum number of entries to keep in the cache */
-    maxEntries?: number
-  }
+export class ResolverScopeStrategy implements DataScopeStrategy {
+  constructor(config: ResolverScopeConfig);
+  // ...
 }
 ```
 
-## Methods & Properties
-`ResolverScopeStrategy` implements the `DataScopeStrategy` interface.
+### `ResolverScopeConfig`
 
-| Method | Description |
-| :--- | :--- |
-| `resolve(user: UserContext)` | Queries the configured `PermissionResolver`, applies the `toScope` transformation, and returns the resulting `DataScope`. |
+The configuration object for `ResolverScopeStrategy` has the following properties:
+
+```typescript
+export type ResolverScopeConfig = {
+  /**
+   * The external resolver to query for permission grants.
+   */
+  resolver: PermissionResolver;
+
+  /**
+   * A function that transforms the grants returned by the resolver
+   * into a DataScope object.
+   */
+  toScope: (grants: PermissionGrant[], user: UserContext) => DataScope;
+
+  /**
+   * Optional cache configuration to store resolver results.
+   */
+  cache?: {
+    /**
+     * Time-to-live for cache entries in seconds.
+     */
+    ttl: number;
+    /**
+     * Maximum number of entries to store in the cache.
+     */
+    maxEntries?: number;
+  };
+};
+```
+[Source 1]
 
 ## Examples
 
-### External System Integration
-This example demonstrates using `ResolverScopeStrategy` to scope data access based on permissions fetched from an external Confluence-like system.
+The following example demonstrates how to configure a `ResolverScopeStrategy` to work with a hypothetical `ConfluencePermissionResolver`. The `toScope` function maps the permission grants (in this case, Confluence space IDs) to a filter that can be used by a tool.
 
 ```typescript
-import { ResolverScopeStrategy } from 'yaaf/iam';
+// Assuming ConfluencePermissionResolver is a custom implementation
+// of the PermissionResolver interface.
+const confluenceResolver = new ConfluencePermissionResolver({
+  // ... resolver configuration
+});
 
 const scope = new ResolverScopeStrategy({
-  resolver: new ConfluencePermissionResolver({ 
-    baseUrl: 'https://acme.atlassian.net' 
-  }),
-  toScope: (grants) => ({
+  resolver: confluenceResolver,
+  toScope: (grants, user) => ({
     strategy: 'confluence',
-    // Map the resource IDs from the grants to a filter for allowed spaces
-    filters: { 
-      allowedSpaces: grants[0]?.resourceIds ?? [] 
-    },
+    filters: { allowedSpaces: grants[0]?.resourceIds ?? [] },
   }),
-  cache: { 
-    ttl: 300, // Cache results for 5 minutes
-    maxEntries: 1000 
-  },
+  cache: { ttl: 300, maxEntries: 1000 },
 });
 ```
+[Source 1]
 
 ## See Also
-* `TenantScopeStrategy`
-* `OwnershipScopeStrategy`
-* `AttributeScopeStrategy`
-* `HierarchyScopeStrategy`
-* `CompositeScope`
+
+- [DataScopeStrategy](./data-scope-strategy.md): The interface this class implements.
+- [PermissionResolver](./permission-resolver.md): The interface for the external component that provides permission grants.
+- [DataScope](./data-scope.md): The object returned by the strategy to define data access filters.
+- [UserContext](./user-context.md): Provides user information to the `toScope` function.
+
+## Sources
+
+[Source 1]: src/iam/scoping.ts

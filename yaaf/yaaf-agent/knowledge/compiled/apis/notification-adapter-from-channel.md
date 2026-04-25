@@ -1,87 +1,128 @@
 ---
-summary: A factory function that wraps a NotificationChannel into a NotificationAdapter plugin for use with the YAAF plugin system.
+title: notificationAdapterFromChannel
+summary: A factory function that converts any NotificationChannel implementation into a NotificationAdapter plugin, enabling seamless integration with the YAAF plugin system.
 export_name: notificationAdapterFromChannel
 source_file: src/utils/notifier.ts
 category: function
-title: notificationAdapterFromChannel
 entity_type: api
+search_terms:
+ - convert notification channel to plugin
+ - create notification adapter
+ - bridge notifier and plugin system
+ - how to use custom notifiers with agents
+ - agent lifecycle notifications
+ - Vigil.brief() notifications
+ - SecurityAuditLog alerts
+ - AgentOrchestrator events
+ - plugin for notifications
+ - NotificationChannel to NotificationAdapter
+ - YAAF notification system
+ - integrate custom alerts
 stub: false
-compiled_at: 2026-04-16T14:40:01.018Z
+compiled_at: 2026-04-24T17:23:16.047Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/notifier.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/notifier.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-The `notificationAdapterFromChannel` function is a utility factory designed to bridge the YAAF notification utility system with the framework's plugin architecture. It converts a standard `NotificationChannel` into a `NotificationAdapter` plugin, allowing it to be registered with an agent's `PluginHost`.
 
-This adapter ensures that notifications from disparate sources—such as lifecycle events from an orchestrator, critical alerts from a security audit log, or health summaries—are routed through the same delivery mechanism.
+The `[[[[[[[[Notification]]]]]]]]AdapterFrom[[[[[[[[Channel]]]]]]]]` function is a factory that serves as a bridge between YAAF's standalone Notification [Utilities](../subsystems/utilities.md) and its core [Plugin System](../subsystems/plugin-system.md) [Source 1]. It takes any object that conforms to the `NotificationChannel` interface and wraps it in a `NotificationAdapter` plugin.
 
-## Signature / Constructor
+This allows developers to create custom notification logic (e.g., sending emails, Slack messages, or logging to a specific service) and seamlessly integrate it into an agent's lifecycle. Once registered as a plugin, various YAAF subsystems can use this Channel to deliver important alerts and status updates. According to the source, this includes lifecycle events from an `AgentOrchestrator`, critical alerts from a `SecurityAuditLog`, and ad-hoc messages sent via `Vigil.brief()` [Source 1].
+
+## Signature
+
+The function takes a name for the plugin and an instance of a `NotificationChannel` and returns a `NotificationAdapter` plugin.
 
 ```typescript
-function notificationAdapterFromChannel(
+export function notificationAdapterFromChannel(
   name: string,
   channel: NotificationChannel,
-): NotificationAdapter
+): NotificationAdapter;
 ```
 
-### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | A unique identifier for the resulting plugin instance. |
-| `channel` | `NotificationChannel` | An object implementing the `NotificationChannel` interface (e.g., a console logger, webhook client, or composite notifier). |
+**Parameters:**
 
-### Return Value
-Returns a `NotificationAdapter` object compatible with the YAAF plugin system.
+*   `name` (string): A unique identifier for the resulting plugin.
+*   `channel` (`NotificationChannel`): An object that implements the `NotificationChannel` interface.
+
+### Supporting Types
+
+The `channel` parameter must conform to the `NotificationChannel` interface, which is defined as follows [Source 1]:
+
+```typescript
+/**
+ * A notification channel delivers notifications to users via some medium.
+ */
+export interface NotificationChannel {
+  /** Send a notification. Should not throw — errors are logged and swallowed. */
+  notify(notification: Notification): Promise<void>;
+  /** Optional cleanup. */
+  destroy?(): Promise<void>;
+}
+```
+
+The `notify` method receives a `Notification` object with the following structure [Source 1]:
+
+```typescript
+export type NotificationType = "completed" | "failed" | "needs_attention" | "warning" | "info";
+
+export type Notification = {
+  type: NotificationType;
+  title: string;
+  message: string;
+  /** Optional metadata (agent ID, cost, duration, etc.) */
+  metadata?: Record<string, unknown>;
+  /** Timestamp (auto-set if omitted) */
+  timestamp?: string;
+};
+```
 
 ## Examples
 
-### Wrapping a Custom Channel
-This example demonstrates creating a simple custom channel and converting it into a plugin.
+This example demonstrates how to create a custom `NotificationChannel` that logs to the console and then convert it into a plugin for use with a YAAF agent.
 
 ```typescript
 import { 
   notificationAdapterFromChannel, 
   NotificationChannel, 
   Notification 
-} from 'yaaf/utils/notifier';
+} from 'yaaf';
 
-// Define a custom delivery mechanism
-const emailChannel: NotificationChannel = {
-  async notify(notification: Notification) {
-    // Logic to send email
-    console.log(`Sending email: ${notification.title}`);
+// Assume Agent and PluginHost are also available from 'yaaf'
+// import { Agent } from 'yaaf';
+
+// 1. Define a custom notification channel implementation.
+//    In a real application, this might send an email or a webhook.
+class ConsoleLogChannel implements NotificationChannel {
+  async notify(notification: Notification): Promise<void> {
+    const meta = notification.metadata ? JSON.stringify(notification.metadata) : '';
+    console.log(
+      `[${notification.type.toUpperCase()}] ${notification.title}: ${notification.message} ${meta}`
+    );
   }
-};
+}
 
-// Convert the channel into a YAAF plugin
-const emailPlugin = notificationAdapterFromChannel(
-  'email-notifier-plugin',
-  emailChannel
+const myChannel = new ConsoleLogChannel();
+
+// 2. Use the factory to convert the channel into a NotificationAdapter plugin.
+const consoleNotifierPlugin = notificationAdapterFromChannel(
+  'console-notifier',
+  myChannel
 );
 
-// The resulting plugin can be registered with an agent or orchestrator
-// agent.registerPlugin(emailPlugin);
+// 3. Register the plugin with an agent.
+// const agent = new Agent({
+//   // ... other agent configuration
+//   plugins: [consoleNotifierPlugin],
+// });
+
+// Now, any part of the agent's ecosystem that sends notifications
+// will have them routed through the ConsoleLogChannel.
 ```
 
-### Using with CompositeNotifier
-You can wrap multiple channels into a single plugin using the `CompositeNotifier`.
+## Sources
 
-```typescript
-import { 
-  notificationAdapterFromChannel, 
-  CompositeNotifier, 
-  NotificationChannel 
-} from 'yaaf/utils/notifier';
-
-const composite = new CompositeNotifier([
-  new ConsoleNotifier(),
-  new WebhookNotifier('https://hooks.slack.com/services/...')
-]);
-
-const notificationPlugin = notificationAdapterFromChannel(
-  'multi-channel-notifier',
-  composite
-);
-```
+[Source 1] src/utils/notifier.ts

@@ -1,0 +1,2247 @@
+{
+  "generatedAt": "2026-04-25T00:31:33.912Z",
+  "totalProposals": 160,
+  "autoApplied": 0,
+  "proposals": [
+    {
+      "kind": "add_vocabulary",
+      "term": "attributescoperule",
+      "reason": "Term \"attributescoperule\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/attribute-scope-rule"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "buildvocabularyaliasmap",
+      "reason": "Term \"buildvocabularyaliasmap\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/build-vocabulary-alias-map"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "channelmessage",
+      "reason": "Term \"channelmessage\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/channel-message"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "chatresult",
+      "reason": "Term \"chatresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/chat-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "compositescope",
+      "reason": "Term \"compositescope\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/composite-scope"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "coordinatorpromptconfig",
+      "reason": "Term \"coordinatorpromptconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/coordinator-prompt-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "deserializethread",
+      "reason": "Term \"deserializethread\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/deserialize-thread"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "discordchannel",
+      "reason": "Term \"discordchannel\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/discord-channel"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "federatedindex",
+      "reason": "Term \"federatedindex\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/federated-index"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "federatedkbconfig",
+      "reason": "Term \"federatedkbconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/federated-kb-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "federatedkbentry",
+      "reason": "Term \"federatedkbentry\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/federated-kb-entry"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "federatedkboptions",
+      "reason": "Term \"federatedkboptions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/federated-kb-options"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "generatestubarticle",
+      "reason": "Term \"generatestubarticle\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/generate-stub-article"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "hierarchyscopeconfig",
+      "reason": "Term \"hierarchyscopeconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/hierarchy-scope-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "inboundmessage",
+      "reason": "Term \"inboundmessage\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/inbound-message"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "initproject",
+      "reason": "Term \"initproject\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/init-project"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "kbstoreoptions",
+      "reason": "Term \"kbstoreoptions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/kb-store-options"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledgebaseoptions",
+      "reason": "Term \"knowledgebaseoptions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/knowledge-base-options"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "listversions",
+      "reason": "Term \"listversions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/list-versions"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "main",
+      "reason": "Term \"main\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/main"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcpadapter",
+      "reason": "Term \"mcpadapter\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-adapter"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcppluginconfig",
+      "reason": "Term \"mcppluginconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-plugin-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcpreconnectconfig",
+      "reason": "Term \"mcpreconnectconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-reconnect-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcpserverconfig",
+      "reason": "Term \"mcpserverconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-server-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcpsseserver",
+      "reason": "Term \"mcpsseserver\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-sse-server"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "mcpstdioserver",
+      "reason": "Term \"mcpstdioserver\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/mcp-stdio-server"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "namespaceddocument",
+      "reason": "Term \"namespaceddocument\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/namespaced-document"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "namespacedindexentry",
+      "reason": "Term \"namespacedindexentry\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/namespaced-index-entry"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "namespacedsearchresult",
+      "reason": "Term \"namespacedsearchresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/namespaced-search-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "nliverdict",
+      "reason": "Term \"nliverdict\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/nli-verdict"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "nliverifyfn",
+      "reason": "Term \"nliverifyfn\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/nli-verify-fn"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "outboundmessage",
+      "reason": "Term \"outboundmessage\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/outbound-message"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "ownershipscopeconfig",
+      "reason": "Term \"ownershipscopeconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/ownership-scope-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "peruserratelimiterconfig",
+      "reason": "Term \"peruserratelimiterconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/per-user-rate-limiter-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "permissiongrant",
+      "reason": "Term \"permissiongrant\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/permission-grant"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "permissionresult",
+      "reason": "Term \"permissionresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/permission-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "ratelimitstore",
+      "reason": "Term \"ratelimitstore\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/rate-limit-store"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "remotesessionconfig",
+      "reason": "Term \"remotesessionconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/remote-session-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "remotesessionhandle",
+      "reason": "Term \"remotesessionhandle\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/remote-session-handle"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "rollbacktoversion",
+      "reason": "Term \"rollbacktoversion\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/rollback-to-version"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "routehandler",
+      "reason": "Term \"routehandler\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/route-handler"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "searchtool",
+      "reason": "Term \"searchtool\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/search-tool"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "segmentresult",
+      "reason": "Term \"segmentresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/segment-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "serializethread",
+      "reason": "Term \"serializethread\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/serialize-thread"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "serverconfig",
+      "reason": "Term \"serverconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/server-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "serverhandle",
+      "reason": "Term \"serverhandle\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/server-handle"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "serverstreamevent",
+      "reason": "Term \"serverstreamevent\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/server-stream-event"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "sessionadapter",
+      "reason": "Term \"sessionadapter\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/session-adapter"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "sessionmemorystrategy",
+      "reason": "Term \"sessionmemorystrategy\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/session-memory-strategy"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "sessionsconfig",
+      "reason": "Term \"sessionsconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/sessions-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "slackchannel",
+      "reason": "Term \"slackchannel\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/slack-channel"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "stepresult",
+      "reason": "Term \"stepresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/step-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "suspendreason",
+      "reason": "Term \"suspendreason\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/suspend-reason"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "suspendresolution",
+      "reason": "Term \"suspendresolution\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/suspend-resolution"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "systemawarescope",
+      "reason": "Term \"systemawarescope\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/system-aware-scope"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "systemawarescopeconfig",
+      "reason": "Term \"systemawarescopeconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/system-aware-scope-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "telegramchannel",
+      "reason": "Term \"telegramchannel\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/telegram-channel"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "tenantscopeconfig",
+      "reason": "Term \"tenantscopeconfig\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/tenant-scope-config"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "tfidfsearchpluginoptions",
+      "reason": "Term \"tfidfsearchpluginoptions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/tf-idf-search-plugin-options"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "toolcall",
+      "reason": "Term \"toolcall\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/tool-call"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "validationresult",
+      "reason": "Term \"validationresult\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/validation-result"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "writewithversioning",
+      "reason": "Term \"writewithversioning\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/write-with-versioning"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "12 factor agents",
+      "reason": "Term \"12 factor agents\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/12-factor-agents"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "agent loop",
+      "reason": "Term \"agent loop\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/agent-loop"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "auto-fixer",
+      "reason": "Term \"auto-fixer\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/auto-fixer"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "clean article",
+      "reason": "Term \"clean article\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/clean-article"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "cross-kb federation",
+      "reason": "Term \"cross-kb federation\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/cross-kb-federation"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "daemon mode",
+      "reason": "Term \"daemon mode\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/daemon-mode"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "diff algorithm",
+      "reason": "Term \"diff algorithm\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/diff-algorithm"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "execution sandbox",
+      "reason": "Term \"execution sandbox\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/execution-sandbox"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "kb grounding adapter",
+      "reason": "Term \"kb grounding adapter\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/kb-grounding-adapter"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge base namespacing",
+      "reason": "Term \"knowledge base namespacing\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/knowledge-base-namespacing"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "llm call retry",
+      "reason": "Term \"llm call retry\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/llm-call-retry"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "multi-turn conversation",
+      "reason": "Term \"multi-turn conversation\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/multi-turn-conversation"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "natural language inference (nli)",
+      "reason": "Term \"natural language inference (nli)\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/natural-language-inference-nli"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "openapi rest api tool",
+      "reason": "Term \"openapi rest api tool\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/open-api-rest-api-tool"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "output continuation",
+      "reason": "Term \"output continuation\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/output-continuation"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "persistent sessions",
+      "reason": "Term \"persistent sessions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/persistent-sessions"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "proactive scheduling",
+      "reason": "Term \"proactive scheduling\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/proactive-scheduling"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "project structure",
+      "reason": "Term \"project structure\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/project-structure"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "response grounding",
+      "reason": "Term \"response grounding\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/response-grounding"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "session resume",
+      "reason": "Term \"session resume\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/session-resume"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "source hash manifest",
+      "reason": "Term \"source hash manifest\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/source-hash-manifest"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "source path overlap ratio",
+      "reason": "Term \"source path overlap ratio\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/source-path-overlap-ratio"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "standing orders",
+      "reason": "Term \"standing orders\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/standing-orders"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "stateless reducer pattern",
+      "reason": "Term \"stateless reducer pattern\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/stateless-reducer-pattern"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "system prompts",
+      "reason": "Term \"system prompts\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/system-prompts"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "thundering herd",
+      "reason": "Term \"thundering herd\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/thundering-herd"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "tool context",
+      "reason": "Term \"tool context\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/tool-context"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "tool looping",
+      "reason": "Term \"tool looping\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/tool-looping"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "vision capability",
+      "reason": "Term \"vision capability\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/vision-capability"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "websocket transport",
+      "reason": "Term \"websocket transport\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/web-socket-transport"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "deploying a yaaf agent as an http api",
+      "reason": "Term \"deploying a yaaf agent as an http api\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "guide",
+          "docId": "guides/deploying-a-yaaf-agent-as-an-http-api"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "getting started",
+      "reason": "Term \"getting started\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "guide",
+          "docId": "guides/getting-started"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "scaffolding a new yaaf project",
+      "reason": "Term \"scaffolding a new yaaf project\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "guide",
+          "docId": "guides/scaffolding-a-new-yaaf-project"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "multilayergroundingplugin",
+      "reason": "Term \"multilayergroundingplugin\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "plugin",
+          "docId": "plugins/multi-layer-grounding-plugin"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "agent delegation subsystem",
+      "reason": "Term \"agent delegation subsystem\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/agent-delegation-subsystem"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "agent mailbox system",
+      "reason": "Term \"agent mailbox system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/agent-mailbox-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "agent personality system",
+      "reason": "Term \"agent personality system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/agent-personality-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "audit logging system",
+      "reason": "Term \"audit logging system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/audit-logging-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "doctor tools",
+      "reason": "Term \"doctor tools\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/doctor-tools"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "error handling",
+      "reason": "Term \"error handling\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/error-handling"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "error handling system",
+      "reason": "Term \"error handling system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/error-handling-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "framework utilities",
+      "reason": "Term \"framework utilities\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/framework-utilities"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "hooks system",
+      "reason": "Term \"hooks system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/hooks-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "iam",
+      "reason": "Term \"iam\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/iam"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "iam (identity and access management)",
+      "reason": "Term \"iam (identity and access management)\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/iam-identity-and-access-management"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "kb compilation pipeline",
+      "reason": "Term \"kb compilation pipeline\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/kb-compilation-pipeline"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge base compilation system",
+      "reason": "Term \"knowledge base compilation system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-base-compilation-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge ingestion",
+      "reason": "Term \"knowledge ingestion\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-ingestion"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge linter",
+      "reason": "Term \"knowledge linter\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-linter"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge ontology",
+      "reason": "Term \"knowledge ontology\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-ontology"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge utils frontmatter",
+      "reason": "Term \"knowledge utils frontmatter\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-utils-frontmatter"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "knowledge versioning",
+      "reason": "Term \"knowledge versioning\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/knowledge-versioning"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "linter system",
+      "reason": "Term \"linter system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/linter-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "llm integration",
+      "reason": "Term \"llm integration\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/llm-integration"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "llm system",
+      "reason": "Term \"llm system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/llm-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "model specs registry",
+      "reason": "Term \"model specs registry\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/model-specs-registry"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "plugin management",
+      "reason": "Term \"plugin management\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/plugin-management"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "prompt management",
+      "reason": "Term \"prompt management\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/prompt-management"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "rate limiting system",
+      "reason": "Term \"rate limiting system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/rate-limiting-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "retry system",
+      "reason": "Term \"retry system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/retry-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "runtime",
+      "reason": "Term \"runtime\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/runtime"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "sandbox worker",
+      "reason": "Term \"sandbox worker\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/sandbox-worker"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "security",
+      "reason": "Term \"security\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/security"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "security subsystem",
+      "reason": "Term \"security subsystem\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/security-subsystem"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "query loop",
+      "reason": "Term \"query loop\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/query-loop"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "extractorplan",
+      "reason": "Term \"extractorplan\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/extractor-plan"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "checkandacquire",
+      "reason": "Term \"checkandacquire\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/check-and-acquire"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "task management system",
+      "reason": "Term \"task management system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/task-management-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "candidate new concept",
+      "reason": "Term \"candidate new concept\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/candidate-new-concept"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "external gateway",
+      "reason": "Term \"external gateway\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/external-gateway"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "model context protocol (mcp)",
+      "reason": "Term \"model context protocol (mcp)\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/model-context-protocol-mcp"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "resolveoptions",
+      "reason": "Term \"resolveoptions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/resolve-options"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "porter2 stemmer",
+      "reason": "Term \"porter2 stemmer\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/porter2-stemmer"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "timestamp",
+      "reason": "Term \"timestamp\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/timestamp"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "resource usage tracking",
+      "reason": "Term \"resource usage tracking\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/resource-usage-tracking"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "sandboxviolation",
+      "reason": "Term \"sandboxviolation\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/sandbox-violation"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "setanalytics",
+      "reason": "Term \"setanalytics\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "api",
+          "docId": "apis/set-analytics"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "crash recovery checkpoint",
+      "reason": "Term \"crash recovery checkpoint\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/crash-recovery-checkpoint"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "candidate new concepts",
+      "reason": "Term \"candidate new concepts\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/candidate-new-concepts"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "static sections",
+      "reason": "Term \"static sections\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/static-sections"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "dynamic sections",
+      "reason": "Term \"dynamic sections\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/dynamic-sections"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "boundary marker",
+      "reason": "Term \"boundary marker\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/boundary-marker"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "prompt caching",
+      "reason": "Term \"prompt caching\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/prompt-caching"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "maxversions",
+      "reason": "Term \"maxversions\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/max-versions"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "store system",
+      "reason": "Term \"store system\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/store-system"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "synthesizer",
+      "reason": "Term \"synthesizer\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "subsystem",
+          "docId": "subsystems/synthesizer"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "identity",
+      "reason": "Term \"identity\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/identity"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "tf-idf search",
+      "reason": "Term \"tf-idf search\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/tf-idf-search"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "domain context",
+      "reason": "Term \"domain context\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/domain-context"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "authoring rules",
+      "reason": "Term \"authoring rules\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/authoring-rules"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "encyclopedic style",
+      "reason": "Term \"encyclopedic style\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/encyclopedic-style"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "no hallucination",
+      "reason": "Term \"no hallucination\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/no-hallucination"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "existing article content",
+      "reason": "Term \"existing article content\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/existing-article-content"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "source texts",
+      "reason": "Term \"source texts\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/source-texts"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "output contract",
+      "reason": "Term \"output contract\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/output-contract"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "markdown document",
+      "reason": "Term \"markdown document\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/markdown-document"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "llm authoring step",
+      "reason": "Term \"llm authoring step\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/llm-authoring-step"
+        }
+      },
+      "status": "pending"
+    },
+    {
+      "kind": "add_vocabulary",
+      "term": "synthesis model",
+      "reason": "Term \"synthesis model\" appears 2 times in the registry but is not in vocabulary",
+      "confidence": 0.6,
+      "details": {
+        "suggestedEntry": {
+          "aliases": [],
+          "entityType": "concept",
+          "docId": "concepts/synthesis-model"
+        }
+      },
+      "status": "pending"
+    }
+  ]
+}

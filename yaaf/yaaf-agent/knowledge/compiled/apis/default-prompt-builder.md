@@ -1,74 +1,102 @@
 ---
-summary: A factory function that creates a SystemPromptBuilder pre-configured with standard identity and environment sections.
-export_name: defaultPromptBuilder
-source_file: src/prompt/systemPrompt.ts
-category: function
 title: defaultPromptBuilder
 entity_type: api
+summary: A factory function that creates a SystemPromptBuilder pre-configured with a standard identity and environment section.
+export_name: defaultPromptBuilder
+source_file: src/system-prompt-builder.ts
+category: function
+search_terms:
+ - create system prompt
+ - default prompt configuration
+ - pre-configured prompt builder
+ - system prompt factory
+ - initialize SystemPromptBuilder
+ - standard prompt sections
+ - how to start with system prompts
+ - base prompt setup
+ - agent identity prompt
+ - environment info in prompt
+ - quickstart prompt builder
+ - sensible prompt defaults
 stub: false
-compiled_at: 2026-04-16T14:32:09.131Z
+compiled_at: 2026-04-24T17:01:03.564Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/prompt/systemPrompt.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-The `defaultPromptBuilder` is a factory function designed to simplify the initialization of a `SystemPromptBuilder`. It bootstraps a prompt with a standard set of sections that are commonly required for production-grade agents, including identity definitions and environment context.
 
-By using this function, developers ensure that the resulting system prompt follows the framework's recommended section-based architecture, which separates static, cacheable content from dynamic, turn-specific information.
+The `defaultPromptBuilder` is a convenience factory function that simplifies the creation of a `SystemPromptBuilder` instance [Source 1]. It provides a starting point with sensible defaults, intended to cover common use cases for agent system prompts [Source 2].
 
-## Signature / Constructor
+[when](./when.md) called, it returns a new `SystemPromptBuilder` pre-loaded with two standard sections [Source 2]:
+1.  An **identity section**, created from the `basePrompt` string provided as an argument.
+2.  An **environment section**, which includes details such as the current working directory (CWD), OS platform, shell, and the current date.
+
+This pre-configured builder can then be further customized by chaining additional methods like `.addStatic()` or `.addDynamic()` to add more sections, such as rules or [Tools](../subsystems/tools.md) [Source 2]. It is a recommended starting point for most agent configurations.
+
+## Signature
 
 ```typescript
-export function defaultPromptBuilder(basePrompt: string): SystemPromptBuilder
+export function defaultPromptBuilder(basePrompt: string): SystemPromptBuilder;
 ```
 
-### Parameters
-*   **basePrompt**: A string defining the agent's core persona or identity. This is injected into the builder as a static identity section.
+**Parameters:**
 
-### Return Value
-Returns an instance of `SystemPromptBuilder` pre-loaded with:
-1.  **Identity Section**: Created from the `basePrompt`.
-2.  **Environment Section**: Automatically includes system metadata such as the current working directory (CWD), platform, shell, OS version, and current date.
+*   `basePrompt` [string]: The core identity or role for the agent (e.g., "You are a helpful coding assistant."). This string is used to create the initial static identity section.
 
-## Methods & Properties
-As a factory function, `defaultPromptBuilder` does not have methods of its own. It returns a `SystemPromptBuilder` instance, which provides a fluent API for further customization:
+**Returns:**
 
-*   **addStatic(name, fn)**: Adds a section that is computed once and cached for the session.
-*   **addDynamic(name, fn, reason)**: Adds a section computed on every turn (e.g., for memory or real-time clock data).
-*   **build()**: Asynchronously assembles all sections into a single string.
+*   `SystemPromptBuilder`: A new instance of `SystemPromptBuilder` pre-configured with default identity and environment sections.
 
 ## Examples
 
 ### Basic Usage
-This example shows how to create a builder with a base persona and then extend it with specific rules.
+
+Create a builder with a specific agent identity. The resulting builder will automatically include the agent's role and current environment information in the final prompt.
+
+```typescript
+import { defaultPromptBuilder } from 'yaaf';
+
+// Creates a builder with identity and environment sections.
+const builder = defaultPromptBuilder('You are a code reviewer.');
+
+const systemPrompt = await builder.build();
+console.log(systemPrompt);
+```
+
+### Extending the Default Builder
+
+The returned builder is a standard `SystemPromptBuilder` instance, so you can add more sections to it using the fluent API.
 
 ```typescript
 import { defaultPromptBuilder } from 'yaaf';
 
 const builder = defaultPromptBuilder('You are a helpful coding assistant.')
-  .addStatic('rules', () => '## Rules\n- Always verify before deleting files\n- Use TypeScript for all examples');
+  .addStatic('rules', () => '## Rules\n- Always verify before deleting files.');
 
-// The resulting prompt will include the identity, the environment info, and the rules.
+// This prompt will contain the identity, environment, and rules sections.
 const systemPrompt = await builder.build();
-```
 
-### Integration with Agent Configuration
-The builder can be used to provide the system prompt during agent initialization.
-
-```typescript
-const builder = defaultPromptBuilder('Expert DevOps Architect');
-
+/*
+// Example usage with an Agent:
 const agent = new Agent({
-  // Use the built string directly
-  systemPrompt: await builder.build(),
-  
-  // Or provide a lazy provider that re-evaluates if needed
-  systemPromptProvider: () => builder.build(),
+  systemPrompt: await builder.build()
 });
+*/
 ```
+[Source 2]
 
 ## See Also
-*   `SystemPromptBuilder`
-*   `envSection`
-*   `identitySection`
+
+*   `SystemPromptBuilder`: The class that this factory function instantiates and configures.
+*   `identitySection`: The underlying factory for creating an identity section.
+*   `envSection`: The underlying factory for creating an environment section.
+*   `fromSections`: An alternative factory for creating a `SystemPromptBuilder` from an array of sections.
+
+## Sources
+
+*   [Source 1]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md`
+*   [Source 2]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts`

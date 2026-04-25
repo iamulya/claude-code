@@ -1,84 +1,172 @@
 ---
-title: autoDetectKBClients
-entity_type: api
-summary: Detects environment configuration to instantiate both text and vision LLM clients for the knowledge compiler.
+summary: Automatically detects and creates both text and vision LLM clients, returning null if no API key is found.
 export_name: autoDetectKBClients
 source_file: src/knowledge/compiler/llmClient.ts
 category: function
+title: autoDetectKBClients
+entity_type: api
+search_terms:
+ - create LLM client
+ - auto detect LLM provider
+ - initialize text and vision models
+ - LLM client factory
+ - knowledge base LLM
+ - how to create a vision client
+ - how to create a text client
+ - YAAF LLM setup
+ - find API key for LLM
+ - gemini openai anthropic client
+ - LLMClientOptions
+ - instantiate LLM
+ - vision and text functions
 stub: false
-compiled_at: 2026-04-16T14:25:54.531Z
+compiled_at: 2026-04-24T16:51:58.022Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/llmClient.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/llmClient.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`autoDetectKBClients` is a utility function used to initialize the Large Language Model (LLM) interfaces required by the YAAF knowledge compiler. It automatically identifies the available LLM provider (such as OpenAI, Anthropic, or Gemini) by inspecting environment variables or provided options. 
 
-The function returns a pair of client functions: one for standard text processing and one for vision-capable tasks. If no valid API key or provider configuration is detected, the function returns `null`.
+The `autoDetectKBClients` function is a convenience factory used to instantiate both a text-only and a vision-capable [LLM](../concepts/llm.md) client simultaneously. It automatically detects the LLM provider (OpenAI, Anthropic, or Gemini) and the corresponding API key from environment variables.
 
-## Signature / Constructor
+This function is particularly useful for bootstrapping an application that requires both text and image processing capabilities, as it simplifies the setup process into a single call. If no supported API key is found in the environment, the function returns `null`, allowing for graceful error handling.
+
+The returned clients are simple, asynchronous functions conforming to the `LLMCallFn` and `VisionCallFn` types, which are used for knowledge base compilation features like healing and [Discovery](../concepts/discovery.md).
+
+## Signature
 
 ```typescript
-export function autoDetectKBClients(options?: LLMClientOptions): {
-  llm: LLMCallFn;
-  vision: VisionCallFn;
-} | null;
+export function autoDetectKBClients(
+  options?: LLMClientOptions
+): { llm: LLMCallFn; vision: VisionCallFn } | null;
 ```
 
 ### Parameters
-*   **options** (`LLMClientOptions`, optional): Configuration overrides for the detection logic.
-    *   `apiKey`: Explicitly provide an API key instead of detecting it from the environment.
-    *   `model`: Explicitly specify the model to use.
-    *   `provider`: Force a specific provider (`'gemini' | 'openai' | 'anthropic'`).
 
-### Return Type
-Returns an object containing `llm` (an `LLMCallFn`) and `vision` (a `VisionCallFn`), or `null` if detection fails.
+- **`options`** `LLMClientOptions` (optional): An object to override the auto-detected configuration.
+
+### Configuration (`LLMClientOptions`)
+
+The `LLMClientOptions` type allows for manual configuration, bypassing environment variable detection:
+
+```typescript
+export type LLMClientOptions = {
+  /** Override API key (auto-detected from env if omitted) */
+  apiKey?: string;
+  /** Override model (auto-detected from provider if omitted) */
+  model?: string;
+  /** Override provider (auto-detected from env if omitted) */
+  provider?: "gemini" | "openai" | "anthropic";
+};
+```
+
+### Return Value
+
+The function returns an object containing `llm` and `vision` functions, or `null` if no API key can be found.
+
+- **`llm`** `LLMCallFn`: A function for making text-only LLM calls.
+  ```typescript
+  export type LLMCallFn = (params: {
+    system: string;
+    user: string;
+    temperature?: number;
+    maxTokens?: number;
+  }) => Promise<string>;
+  ```
+
+- **`vision`** `VisionCallFn`: A function for making vision-capable LLM calls.
+  ```typescript
+  export type VisionCallFn = (params: {
+    system: string;
+    user: string;
+    imageBase64: string;
+    imageMimeType: string;
+    temperature?: number;
+    maxTokens?: number;
+  }) => Promise<string>;
+  ```
 
 ## Examples
 
 ### Basic Usage
-This example demonstrates how to initialize clients using environment variables.
+
+This example shows how to call `autoDetectKBClients` and handle the case where no clients can be created.
 
 ```typescript
 import { autoDetectKBClients } from 'yaaf';
 
-const clients = autoDetectKBClients();
+async function initializeAndUseClients() {
+  // Attempt to create clients by detecting provider from environment variables
+  const clients = autoDetectKBClients();
 
-if (clients) {
+  if (!clients) {
+    console.error(
+      "Could not detect LLM provider. Please set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY."
+    );
+    return;
+  }
+
   const { llm, vision } = clients;
 
-  // Standard text call
-  const textResult = await llm({
-    system: "You are a technical writer.",
-    user: "Summarize the architecture of YAAF."
+  // Use the text client
+  const textResponse = await llm({
+    system: 'You are a helpful assistant.',
+    user: 'What is YAAF?',
   });
+  console.log('Text response:', textResponse);
 
-  // Vision-capable call
-  const visionResult = await vision({
-    system: "Analyze the provided diagram.",
-    user: "What are the main components shown?",
-    imageBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-    imageMimeType: "image/png"
-  });
+  // Use the vision client (requires a base64 encoded image)
+  // const visionResponse = await vision({
+  //   system: 'Describe the contents of this image.',
+  //   user: 'What is the main subject?',
+  //   imageBase64: '...', // your base64 encoded image data
+  //   imageMimeType: 'image/png',
+  // });
+  // console.log('Vision response:', visionResponse);
 }
+
+initializeAndUseClients();
 ```
 
-### Manual Configuration
-This example shows how to bypass environment detection by providing explicit options.
+### Overriding the Provider
+
+This example demonstrates how to force the use of a specific provider and API key, ignoring environment variables.
 
 ```typescript
 import { autoDetectKBClients } from 'yaaf';
 
-const clients = autoDetectKBClients({
-  provider: 'anthropic',
-  apiKey: 'your-api-key-here',
-  model: 'claude-3-opus-20240229'
-});
+async function initializeWithOverrides() {
+  const clients = autoDetectKBClients({
+    provider: 'openai',
+    apiKey: 'sk-my-custom-openai-key',
+    model: 'gpt-4o',
+  });
+
+  if (clients) {
+    const response = await clients.llm({
+      system: 'You are an expert on AI frameworks.',
+      user: 'Explain the purpose of YAAF.',
+    });
+    console.log(response);
+  } else {
+    // This block would not be reached if apiKey is provided
+    console.log('Client creation failed.');
+  }
+}
+
+initializeWithOverrides();
 ```
 
 ## See Also
-*   `makeKBLLMClient`: Creates only a text-based LLM client.
-*   `makeKBVisionClient`: Creates only a vision-capable LLM client.
-*   `LLMCallFn`: The type definition for text-based LLM calls.
-*   `VisionCallFn`: The type definition for vision-based LLM calls.
+
+- `makeKBLLMClient`: A factory function to create only a text-based [LLM Client](../concepts/llm-client.md).
+- `makeKBVisionClient`: A factory function to create only a vision-capable LLM Client.
+- `LLMClientOptions`: The configuration type for specifying provider, model, and API key.
+- `LLMCallFn`: The type definition for the returned text client.
+- `VisionCallFn`: The type definition for the returned vision client.
+
+## Sources
+
+- [Source 1]: `src/knowledge/compiler/llmClient.ts`

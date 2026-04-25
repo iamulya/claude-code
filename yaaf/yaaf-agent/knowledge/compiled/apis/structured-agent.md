@@ -1,52 +1,95 @@
 ---
-summary: Creates a simple agent that returns structured JSON output by disabling tool calling and enforcing a schema.
+title: structuredAgent
+entity_type: api
+summary: A factory function to create an agent that is constrained to return structured JSON output based on a provided schema, disabling tool calling for clean output.
 export_name: structuredAgent
 source_file: src/agents/structuredOutput.ts
 category: function
-title: structuredAgent
-entity_type: api
+search_terms:
+ - JSON output agent
+ - schema-enforced responses
+ - structured data from LLM
+ - how to get JSON from an agent
+ - disable tool calling for JSON
+ - force model to return JSON
+ - OpenAI JSON mode
+ - Anthropic structured output
+ - Gemini JSON response
+ - Ollama JSON format
+ - agent without tools
+ - schema validation for agents
+ - type-safe LLM output
 stub: false
-compiled_at: 2026-04-16T14:14:54.165Z
+compiled_at: 2026-04-24T17:41:50.165Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/structuredOutput.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/structuredOutput.ts
+compiled_from_quality: unknown
 confidence: 0.98
 ---
 
 ## Overview
-`structuredAgent` is a factory function used to create agents that return structured JSON responses instead of free-text prose. It is designed for specialized tasks where the output must conform to a specific data contract, such as classification, extraction, or evaluation.
 
-To ensure the integrity of the JSON output, this agent implementation explicitly disables tool calling. It leverages native provider capabilities where available (such as OpenAI's `json_schema` or Gemini's `responseSchema`) and falls back to prompt-based enforcement for other providers.
+The `structuredAgent` function is a factory for creating a simple agent that is constrained to return a JSON object matching a specified schema [Source 1]. This type of agent is useful [when](./when.md) the primary goal is to extract structured data from a model's response, rather than engaging in a multi-step process involving [Tools](../subsystems/tools.md).
+
+To ensure clean JSON output, `structuredAgent` explicitly disables tool-calling capabilities [Source 1]. It leverages native provider features for [Structured Output](../concepts/structured-output.md) where available, such as OpenAI's `json_schema` response format, Gemini's `responseMimeType`, or a tool-use workaround for Anthropic models [Source 1]. For providers without native support, it can fall back to including the schema in the prompt [Source 1].
+
+This function is the YAAF equivalent of the `output_schema` feature in ADK (Agent Development Kit) [Source 1]. For use cases that require both tool calling and structured output validation, the recommended approach is to use a standard agent and apply `parseStructuredOutput()` to its final response for post-hoc validation [Source 1].
 
 ## Signature / Constructor
+
+The `structuredAgent` function is a generic factory that takes a chat model and a configuration object.
+
 ```typescript
 export function structuredAgent<T extends Record<string, unknown> = Record<string, unknown>>(
   model: ChatModel,
   config: StructuredAgentConfig,
 ): {
-  run: (input: string | ChatMessage[]) => Promise<T>;
-}
+  run(input: string): Promise<T>;
+};
 ```
 
-### Parameters
-*   **model**: The `ChatModel` instance used to execute the LLM requests.
-*   **config**: A configuration object of type `StructuredAgentConfig` containing:
-    *   `name`: (Optional) An identifier for the agent.
-    *   `systemPrompt`: The instructions defining the agent's behavior.
-    *   `schema`: A JSON Schema object defining the required structure of the response.
+**Parameters:**
+
+*   `model`: An instance of a `ChatModel` to be used for generating the response [Source 1].
+*   `config`: A `StructuredAgentConfig` object containing the agent's definition [Source 1].
+
+**Configuration (`StructuredAgentConfig`):**
+
+The `config` object has the following properties, based on the provided examples [Source 1]:
+
+*   `name` (string): A descriptive name for the agent.
+*   `systemPrompt` (string): The [System Prompt](../concepts/system-prompt.md) that instructs the model on its task.
+*   `schema` (object): A JSON Schema object that defines the structure of the expected output.
+
+**Return Value:**
+
+The function returns an object with a single method, `run`, which executes the agent and returns the parsed, type-safe JSON object corresponding to the provided schema `T` [Source 1].
 
 ## Methods & Properties
-The function returns an object with the following method:
+
+The object returned by `structuredAgent` has one method:
 
 ### run()
-Executes the agent with the provided input and returns the parsed, validated JSON data.
-*   **Signature**: `run(input: string | ChatMessage[]): Promise<T>`
-*   **Parameters**: Accepts either a raw string prompt or an array of chat messages.
-*   **Returns**: A promise that resolves to the parsed JSON object matching the provided schema.
+
+Executes the agent with a given input string and returns the structured JSON output.
+
+**Signature:**
+
+```typescript
+run(input: string): Promise<T>;
+```
+
+**Parameters:**
+
+*   `input` (string): The user prompt or text to be processed by the agent.
+
+**Returns:**
+
+A `Promise` that resolves to the parsed JSON object (`T`), which conforms to the schema provided in the agent's configuration [Source 1].
 
 ## Examples
 
-### Schema-Only Agent
-This example demonstrates creating an evaluator agent that returns a structured grade and a list of issues for a given code snippet.
+The following example demonstrates creating a `structuredAgent` to evaluate code quality and return a structured grade [Source 1].
 
 ```typescript
 const evaluator = structuredAgent(model, {
@@ -64,10 +107,17 @@ const evaluator = structuredAgent(model, {
 });
 
 const result = await evaluator.run('function add(a, b) { return a + b; }');
+
+// The result is a type-safe object
 console.log(result); 
-// Output: { grade: 'pass', score: 95, issues: [] }
+// Expected output: { grade: 'pass', score: 95, issues: [] }
 ```
 
 ## See Also
-*   `parseStructuredOutput`: A utility for validating and parsing JSON from standard agent responses without disabling tools.
-*   `buildSchemaPromptSection`: A helper used to generate prompt instructions for providers lacking native structured output support.
+
+*   `parseStructuredOutput`: A function for post-hoc parsing and validation of a model's text output against a JSON schema, useful for agents that also use tools [Source 1].
+*   `buildSchemaPromptSection`: A helper function to create a system prompt section that instructs a model to output JSON matching a schema, used as a fallback for providers without native support [Source 1].
+
+## Sources
+
+[Source 1]: src/agents/structuredOutput.ts

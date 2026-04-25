@@ -1,112 +1,180 @@
 ---
-title: CompilationPlan
-entity_type: api
-summary: A structured plan describing the set of articles to be created or updated during a knowledge base compilation run.
+summary: Represents the complete output of the Concept Extractor, detailing all planned article creates/updates and compilation metadata.
 export_name: CompilationPlan
 source_file: src/knowledge/compiler/extractor/types.ts
 category: type
+belongs_to: subsystems/knowledge-compilation-system
+title: CompilationPlan
+entity_type: api
+search_terms:
+ - concept extractor output
+ - knowledge synthesizer input
+ - plan for creating articles
+ - what articles to create or update
+ - knowledge base compilation plan
+ - list of article plans
+ - skipped source files
+ - compilation run metadata
+ - proposed entity types
+ - blocked source files
+ - how extractor and synthesizer communicate
+ - article creation manifest
 stub: false
-compiled_at: 2026-04-16T14:22:51.359Z
+compiled_at: 2026-04-24T16:56:24.398Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/types.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/extractor/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/extractor/types.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`CompilationPlan` is the primary output of the Concept Extractor during a knowledge base compilation run. It serves as a comprehensive manifest that details which articles should be created, which existing articles require updates based on new source material, and which sources were excluded from the process.
 
-The plan is used by the Knowledge Synthesizer to execute the actual generation and merging of markdown articles. It includes metadata about the run, such as source counts and timestamps, as well as diagnostic information regarding skipped files or missing environment dependencies.
+The `CompilationPlan` type defines the complete output of the [Concept Extractor](../subsystems/concept-extractor.md) for a single compilation run [Source 2]. It serves as the data contract between the Concept Extractor and the [Knowledge Synthesizer](../subsystems/knowledge-synthesizer.md) subsystems. The Concept Extractor analyzes ingested source documents and produces a `CompilationPlan`, which the Knowledge Synthesizer then consumes to author or update knowledge base articles [Source 2].
 
-## Signature / Constructor
+This plan specifies which articles should be created or updated, which sources should be skipped, and includes metadata about the compilation process itself. It is the sole artifact passed from the extractor to the synthesizer; all information for article generation is contained within the plan [Source 2].
+
+## Signature
+
+`CompilationPlan` is a TypeScript type alias with the following structure [Source 2]:
 
 ```typescript
 export type CompilationPlan = {
   /** Total source files analyzed in this run */
-  sourceCount: number
+  sourceCount: number;
 
   /** Articles to create or update (excludes skipped) */
-  articles: ArticlePlan[]
+  articles: ArticlePlan[];
 
   /** Sources that were skipped with their reasons */
-  skipped: Array<{ sourcePath: string; reason: string }>
+  skipped: Array<{ sourcePath: string; reason: string }>;
 
   /**
    * Sources that need optional dependencies not currently installed.
    * (e.g., .html files when @mozilla/readability is not installed)
    */
-  blockedByMissingDeps: Array<{ sourcePath: string; deps: string[] }>
+  blockedByMissingDeps: Array<{ sourcePath: string; deps: string[] }>;
+
+  /**
+   * Entity types suggested by the LLM that are NOT in the ontology.
+   * These are surfaced as structured warnings in the compilation result.
+   */
+  proposedEntityTypes: Array<{
+    /** The entity type the LLM suggested (not in ontology.yaml) */
+    entityType: string;
+    /** Number of articles that were coerced to the fallback type */
+    count: number;
+    /** Up to 3 article titles that triggered this suggestion */
+    examples: string[];
+  }>;
 
   /** Timestamp of when this plan was created */
-  createdAt: number
-}
-```
-
-## Methods & Properties
-
-### ArticlePlan
-The `articles` array contains `ArticlePlan` objects, each representing a single target article in the compiled knowledge base.
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `docId` | `string` | The deterministic target path (e.g., "concepts/attention-mechanism"). |
-| `canonicalTitle` | `string` | The formal title of the article. |
-| `entityType` | `string` | The category key from the ontology. |
-| `action` | `ArticleAction` | Whether to `create`, `update`, or `skip`. |
-| `existingDocId` | `string` (optional) | The ID of the article to merge into if the action is `update`. |
-| `sourcePaths` | `string[]` | Absolute paths to the raw files contributing to this article. |
-| `knownLinkDocIds` | `string[]` | IDs of existing articles that should be linked via wikilinks. |
-| `candidateNewConcepts` | `CandidateConcept[]` | New terms discovered that do not yet have articles. |
-| `suggestedFrontmatter` | `Record<string, unknown>` | Metadata inferred by the compiler (e.g., suggested tags). |
-| `confidence` | `number` | A score [0, 1] indicating classification certainty. |
-
-### CandidateConcept
-Discovered terms that may require new articles or stubs.
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | Suggested canonical name. |
-| `entityType` | `string` | Suggested entity type from the ontology. |
-| `description` | `string` | A one-sentence summary extracted from the source. |
-| `mentionCount` | `number` | Frequency of the term in the source material. |
-
-## Examples
-
-### Basic Compilation Plan
-This example shows a plan generated after analyzing a single source file that results in one new article and identifies a potential new concept.
-
-```typescript
-const plan: CompilationPlan = {
-  sourceCount: 1,
-  createdAt: 1715642400000,
-  articles: [
-    {
-      docId: "api/agent-framework",
-      canonicalTitle: "Agent Framework",
-      entityType: "api",
-      action: "create",
-      sourcePaths: ["/abs/path/to/src/agent.ts"],
-      knownLinkDocIds: ["concepts/llm-orchestration"],
-      candidateNewConcepts: [
-        {
-          name: "Tool Calling",
-          entityType: "concept",
-          description: "The ability of an agent to execute external functions.",
-          mentionCount: 5
-        }
-      ],
-      suggestedFrontmatter: {
-        category: "class",
-        stability: "stable"
-      },
-      confidence: 0.95
-    }
-  ],
-  skipped: [],
-  blockedByMissingDeps: []
+  createdAt: number;
 };
 ```
 
-## See Also
-* `ArticleAction`
-* `StaticAnalysisResult`
+### Supporting Types
+
+The `CompilationPlan` relies on the `ArticlePlan` type to describe actions for individual articles [Source 2].
+
+```typescript
+/**
+ * A plan for a single compiled KB article.
+ */
+export type ArticlePlan = {
+  /** The target docId for this article. Format: {entityType}/{slug} */
+  docId: string;
+
+  /** The canonical article title */
+  canonicalTitle: string;
+
+  /** Entity type key from the ontology */
+  entityType: string;
+
+  /** What to do: 'create', 'update', or 'skip' */
+  action: 'create' | 'update' | 'skip';
+
+  /** If action = 'update', the existing article's docId */
+  existingDocId?: string;
+
+  /** Absolute file paths of source content contributing to this article */
+  sourcePaths: string[];
+
+  /** docIds of KB articles this article should link to */
+  knownLinkDocIds: string[];
+
+  /** New concepts discovered in the source that don't have KB articles yet */
+  candidateNewConcepts: CandidateConcept[];
+
+  /** Suggested frontmatter field values, inferred from the source */
+  suggestedFrontmatter: Record<string, unknown>;
+
+  /** Reason for skipping, only set when action = 'skip' */
+  skipReason?: string;
+
+  /** Confidence score in the entity classification [0, 1] */
+  confidence: number;
+
+  /** Aggregate trust level of all contributing source files */
+  sourceTrust: SourceTrustLevel;
+};
+```
+
+## Examples
+
+Below is an example of a `CompilationPlan` object that might be generated after processing three source files.
+
+```json
+{
+  "sourceCount": 3,
+  "articles": [
+    {
+      "docId": "api/agent",
+      "canonicalTitle": "Agent",
+      "entityType": "api",
+      "action": "create",
+      "sourcePaths": ["/path/to/yaaf/src/agent.ts"],
+      "knownLinkDocIds": ["api/tool-executor", "concepts/agent-loop"],
+      "candidateNewConcepts": [],
+      "suggestedFrontmatter": {
+        "summary": "The core class for creating and running LLM-powered agents."
+      },
+      "confidence": 0.95,
+      "sourceTrust": "high"
+    },
+    {
+      "docId": "concepts/agent-loop",
+      "canonicalTitle": "Agent Loop",
+      "entityType": "concept",
+      "action": "update",
+      "existingDocId": "concepts/agent-loop",
+      "sourcePaths": ["/path/to/yaaf/docs/architecture.md"],
+      "knownLinkDocIds": ["api/agent", "api/prompt"],
+      "candidateNewConcepts": [],
+      "suggestedFrontmatter": {},
+      "confidence": 0.88,
+      "sourceTrust": "medium"
+    }
+  ],
+  "skipped": [
+    {
+      "sourcePath": "/path/to/yaaf/LICENSE",
+      "reason": "Source is not knowledge-base worthy (license file)."
+    }
+  ],
+  "blockedByMissingDeps": [],
+  "proposedEntityTypes": [
+    {
+      "entityType": "architectural-pattern",
+      "count": 1,
+      "examples": ["Agent Loop"]
+    }
+  ],
+  "createdAt": 1678886400000
+}
+```
+
+## Sources
+
+[Source 1] src/knowledge/compiler/extractor/index.ts
+[Source 2] src/knowledge/compiler/extractor/types.ts

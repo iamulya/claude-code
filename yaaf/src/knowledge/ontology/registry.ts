@@ -18,21 +18,7 @@ import { join, relative, extname } from "path";
 import type { ConceptRegistry, ConceptRegistryEntry, KBOntology } from "./types.js";
 import type { AliasIndex } from "./vocabulary.js";
 import { buildAliasIndex } from "./vocabulary.js";
-
-// ── Frontmatter parsing (minimal, local) ─────────────────────────────────────
-
-function extractFrontmatterField(raw: string, field: string): string | undefined {
-    // I4: [^"'\n] excluded apostrophes, truncating "Turing's Machine" -> "Turing"
-  // Changed to [^"\n] — outer ["'']? handles quote-stripping of the whole value.
-  const pattern = new RegExp(`^${field}:\\s*["']?([^"\\n]+?)["']?\s*$`, "m");
-  const match = raw.match(pattern);
-  return match?.[1]?.trim();
-}
-
-function extractFrontmatterBool(raw: string, field: string): boolean {
-  const val = extractFrontmatterField(raw, field);
-  return val === "true";
-}
+import { parseFrontmatter } from "../utils/frontmatter.js";
 
 // ── Registry builder ─────────────────────────────────────────────────────────
 
@@ -87,9 +73,13 @@ export async function buildConceptRegistry(
             const [raw] = await Promise.all([readFile(filePath, "utf-8")]);
             const fileStats = entryStats;
 
-            const title = extractFrontmatterField(raw, "title");
-            const entityType = extractFrontmatterField(raw, "entity_type");
-            const isStub = extractFrontmatterBool(raw, "stub");
+            // Use shared yaml-library-based parser instead of regex extraction.
+            // Eliminates I4 (apostrophe truncation in titles) and handles
+            // quoted values with colons, block scalars, etc.
+            const { frontmatter } = parseFrontmatter(raw);
+            const title = frontmatter["title"] != null ? String(frontmatter["title"]) : undefined;
+            const entityType = frontmatter["entity_type"] != null ? String(frontmatter["entity_type"]) : undefined;
+            const isStub = frontmatter["stub"] === true;
 
             if (!title) {
               warnings.push(`${docId}: missing frontmatter field "title" — skipped`);

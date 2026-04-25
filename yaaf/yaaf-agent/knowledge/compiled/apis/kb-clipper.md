@@ -1,37 +1,98 @@
 ---
+summary: A utility class for programmatically clipping web pages, extracting article content, and saving it as Markdown for the knowledge base.
 export_name: KBClipper
 source_file: src/knowledge/compiler/ingester/html.ts
 category: class
 title: KBClipper
 entity_type: api
-summary: A programmatic utility for fetching URLs, extracting article content using Mozilla Readability, and saving them as Markdown files.
+search_terms:
+ - web page clipping
+ - save url as markdown
+ - programmatic web clipper
+ - extract article from html
+ - Mozilla Readability wrapper
+ - download web page content
+ - Obsidian Web Clipper alternative
+ - ingest URL into knowledge base
+ - html to markdown conversion
+ - download images from webpage
+ - save article for RAG
+ - knowledge base ingester
+ - URL to markdown
 stub: false
-compiled_at: 2026-04-16T14:23:55.492Z
+compiled_at: 2026-04-24T17:15:55.338Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/ingester/html.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/ingester/html.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`KBClipper` is a programmatic implementation of the Obsidian Web Clipper browser extension logic. It is designed to ingest web content into a Knowledge Base (KB) by fetching a URL, applying noise-reduction algorithms to extract the primary article content, and persisting the result as a Markdown file.
 
-The class internally utilizes the `htmlIngester` logic, which leverages:
-- **Mozilla Readability**: For production-grade article extraction (stripping navigation, ads, and sidebars).
-- **JSDOM**: For Node.js-based HTML parsing.
-- **Turndown**: For converting cleaned HTML into structured Markdown.
+The `KBClipper` class provides a programmatic way to clip web pages, similar to the Obsidian Web Clipper browser extension [Source 1]. It is designed to fetch content from a given URL, process it, and save it as a clean Markdown file suitable for a knowledge base [Source 1].
 
-`KBClipper` saves content using a directory structure compatible with the Obsidian Web Clipper (e.g., `article-title/index.md`), allowing the YAAF markdown ingester to process the results with zero overhead.
+The process involves several steps [Source 1]:
+1.  Fetching the HTML content from the URL using a security-conscious fetcher that protects against Server-Side Request Forgery (SSRF).
+2.  Parsing the HTML and using Mozilla's Readability library (the same algorithm used in Firefox Reader Mode) to extract the main article content. This step strips away common web page noise like navigation bars, advertisements, sidebars, and cookie banners.
+3.  Identifying all images within the extracted article content, downloading them, and storing them locally.
+4.  Converting the cleaned HTML content into Markdown using the Turndown library.
+5.  Saving the final Markdown file and its associated images to a specified directory.
 
-## Signature / Constructor
+`KBClipper` saves the output in a directory structure that matches the one used by the Obsidian Web Clipper. This ensures that content clipped programmatically with `KBClipper` can be processed by the same `markdown[[[[[[[[Ingester]]]]]]]]` as content clipped manually with the browser extension [Source 1].
+
+This class is a high-level wrapper around the `htmlIngester` logic and requires the same optional peer dependencies to function: `@mozilla/readability`, `jsdom`, and `turndown` [Source 1].
+
+## Constructor
+
+The `KBClipper` class is instantiated with the path to the output directory where clipped articles will be saved [Source 1].
 
 ```typescript
-class KBClipper {
-  /**
-   * @param outputDir The base directory where web clips should be saved (typically within the KB raw/ directory).
-   */
-  constructor(outputDir: string)
-}
+/**
+ * @param outputDirectory The absolute or relative path to the directory
+ * where clipped content should be saved.
+ */
+constructor(outputDirectory: string);
 ```
 
-### Peer Dependencies
-`KBClipper` requires the following optional peer dependencies to be installed in
+## Methods & Properties
+
+### clip
+
+Fetches, processes, and saves the content from a given URL [Source 1].
+
+```typescript
+/**
+ * Clips an article from a URL.
+ * @param url The URL of the web page to clip.
+ * @returns A promise that resolves with an object containing the path
+ * to the saved Markdown file.
+ */
+async clip(url: string): Promise<{ savedPath: string }>;
+```
+
+## Examples
+
+The following example demonstrates how to instantiate `KBClipper` and use it to clip a web article. The resulting Markdown file and its images are saved in a subdirectory within the specified output path [Source 1].
+
+```typescript
+import { KBClipper } from 'yaaf';
+
+// Initialize the clipper with the desired output directory for web clips.
+const clipper = new KBClipper('/path/to/kb/raw/web-clips');
+
+// Clip an article from a URL.
+const { savedPath } = await clipper.clip('https://example.com/some-interesting-article');
+
+console.log(`Article saved to: ${savedPath}`);
+// Example output:
+// Article saved to: /path/to/kb/raw/web-clips/some-interesting-article/index.md
+```
+
+## See Also
+
+*   `htmlIngester`: The underlying Ingester used by `KBClipper` to process HTML content from files or fetched URLs.
+*   `markdownIngester`: The ingester used to process Markdown files, including those generated by `KBClipper` or the Obsidian Web Clipper extension.
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/ingester/html.ts

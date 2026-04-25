@@ -62,7 +62,7 @@ export class KBLinter {
 
   async lint(options: LintOptions = {}): Promise<LintReport> {
     const minWordCount = options.minArticleWordCount ?? 50;
-    const dupThreshold = options.duplicateSimilarityThreshold ?? 0.15;
+    const dupThreshold = options.duplicateSimilarityThreshold ?? 0.10;
     const skipDocIds = new Set(options.skipDocIds ?? []);
 
     // Read all compiled articles

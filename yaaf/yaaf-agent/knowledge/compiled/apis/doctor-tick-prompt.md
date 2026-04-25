@@ -1,49 +1,73 @@
 ---
-title: DOCTOR_TICK_PROMPT
-entity_type: api
-summary: A function that generates a periodic prompt for the Doctor daemon to perform scheduled checks and maintenance tasks.
+summary: A function that generates the prompt for the YAAF Doctor's periodic wake-up checks.
 export_name: DOCTOR_TICK_PROMPT
 source_file: src/doctor/prompt.ts
 category: function
+title: DOCTOR_TICK_PROMPT
+entity_type: api
+search_terms:
+ - doctor agent prompt
+ - periodic agent check
+ - daemon wake-up prompt
+ - how to trigger doctor agent
+ - tick prompt function
+ - yaaf doctor lifecycle
+ - agent monitoring prompt
+ - system tick message
+ - doctor agent timestamp
+ - doctor agent check count
 stub: false
-compiled_at: 2026-04-16T14:17:43.954Z
+compiled_at: 2026-04-24T17:03:34.439Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/doctor/prompt.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/doctor/prompt.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`DOCTOR_TICK_PROMPT` is a utility function used by the YAAF Doctor subsystem to generate a structured signal for the Doctor daemon. This prompt is delivered to the LLM-powered Doctor agent during its periodic wake-up cycles (ticks). 
 
-The function provides the agent with temporal context (the current timestamp) and sequence context (the tick count), allowing the daemon to track its operational history and perform scheduled maintenance or project analysis tasks. The Doctor agent uses this prompt in conjunction with its static knowledge of YAAF architecture and dynamic project context accessed via tools.
+`DOCTOR_TICK_PROMPT` is a function that generates the prompt string used to signal a periodic wake-up or "tick" for the YAAF Doctor agent [Source 1].
 
-## Signature / Constructor
+This prompt is part of the Doctor's daemon-like behavior, informing it what to check on each wake-up cycle. The generated string includes a timestamp and a sequential count, providing context for the check [Source 1].
+
+## Signature
+
+The function takes a timestamp string and a tick count number, and returns a formatted string.
+
 ```typescript
-export const DOCTOR_TICK_PROMPT = (ts: string, count: number): string => {
-  // Returns a formatted XML-like string
-}
+(ts: string, count: number) => string;
 ```
 
-### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `ts` | `string` | A string representation of the current timestamp. |
-| `count` | `number` | The current iteration count of the daemon's wake-up cycle. |
+**Parameters:**
+
+*   `ts` (string): The timestamp of the tick, typically in ISO format.
+*   `count` (number): The sequential number of this tick event.
+
+**Returns:**
+
+*   (string): A string formatted as an XML-like tag, e.g., `<tick timestamp="..." count="...">`.
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how the framework generates a tick prompt for the Doctor daemon.
+The following example demonstrates how to generate a tick prompt for the Doctor agent.
 
 ```typescript
-import { DOCTOR_TICK_PROMPT } from 'yaaf/doctor';
+import { DOCTOR_TICK_PROMPT } from 'yaaf';
 
-const timestamp = new Date().toISOString();
-const tickCount = 42;
+const timestamp = new Date('2023-10-27T10:00:00.000Z').toISOString();
+const tickCount = 15;
 
 const prompt = DOCTOR_TICK_PROMPT(timestamp, tickCount);
-// Output: <tick timestamp="2023-10-27T10:00:00.000Z" count="42">
+
+console.log(prompt);
+// Output:
+// <tick timestamp="2023-10-27T10:00:00.000Z" count="15">
 ```
 
 ## See Also
-- `DOCTOR_SYSTEM_PROMPT`
+
+*   `DOCTOR_SYSTEM_PROMPT`: The main [System Prompt](../concepts/system-prompt.md) that defines the Doctor agent's core identity and capabilities.
+
+## Sources
+
+[Source 1]: src/doctor/prompt.ts

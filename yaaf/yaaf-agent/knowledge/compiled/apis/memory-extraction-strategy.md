@@ -1,126 +1,120 @@
 ---
-summary: Interface for logic that decides when and how to persist knowledge from a conversation into storage.
+summary: An interface defining the contract for memory extraction strategies used by the AutoMemoryExtractor.
 export_name: MemoryExtractionStrategy
-source_file: src/memory/strategies.ts
-category: interface
+source_file: src/memory/strategies.js
+category: type
 title: MemoryExtractionStrategy
 entity_type: api
+search_terms:
+ - memory extraction contract
+ - how to create a memory strategy
+ - AutoMemoryExtractor strategy
+ - custom memory extraction logic
+ - implementing memory storage
+ - durable memory persistence
+ - conversation knowledge extraction
+ - long-term memory in agents
+ - memory strategy interface
+ - what is MemoryContext
+ - what is ExtractionResult
+ - pluggable memory systems
 stub: false
-compiled_at: 2026-04-16T14:30:10.847Z
+compiled_at: 2026-04-24T17:21:39.287Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/memory/strategies.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/autoExtract.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`MemoryExtractionStrategy` is a core interface in the YAAF memory strategy layer. It defines the "write" side of the memory lifecycle, determining both the **trigger policy** (when extraction should occur) and the **extraction logic** (how knowledge is processed and persisted).
 
-In the agent loop, the framework calls this strategy on every turn to evaluate if the current conversation state warrants a memory update. This is typically used to move information from the volatile conversation context into long-term storage, such as structured session notes or individual topic files.
+`[[[[[[[[Memory]]]]]]]]ExtractionStrategy` is a type that defines the contract for implementing custom Memory extraction logic. It allows developers to specify *how* an agent should identify and store important information from a conversation history for long-term recall.
 
-Common implementations include:
-*   `SessionMemoryExtractor`: Periodically summarizes the conversation into a single structured markdown file.
-*   `TopicFileExtractor`: Extracts specific facts into individual files with metadata.
-*   `EphemeralBufferStrategy`: Maintains a rolling in-memory buffer of facts without disk persistence.
+This strategy is a required component for configuring the `AutoMemoryExtractor` class, which handles the orchestration of [when](./when.md) and how often to run the extraction process. By separating the strategy from the orchestrator, YAAF allows for flexible and pluggable memory systems. An implementation of `MemoryExtractionStrategy` is responsible for the core logic of processing messages and producing a result containing the memories to be stored.
 
-## Signature / Constructor
+## Signature
+
+The specific signature for `MemoryExtractionStrategy` is defined in `src/memory/strategies.js`. While the source material for that file is not provided, its usage is demonstrated within the `AutoExtractorConfig` type [Source 1].
+
+The strategy is consumed by `AutoMemoryExtractor` and is expected to produce an `ExtractionResult`. It likely operates on a `MemoryContext` which would contain the relevant messages and other contextual information.
+
+The primary configuration point for this strategy is the `AutoExtractorConfig` interface:
 
 ```typescript
-export interface MemoryExtractionStrategy {
-  /** Strategy name for logging */
-  readonly name: string
+import type { MemoryExtractionStrategy, ExtractionResult } from "./strategies.js";
 
-  /**
-   * Check if extraction should run this turn.
-   * Called before every LLM call. Return true to trigger `extract()`.
-   */
-  shouldExtract(ctx: MemoryContext): boolean | Promise<boolean>
+export type AutoExtractorConfig = {
+  /** The extraction strategy to use for storing extracted memories. */
+  extractionStrategy: MemoryExtractionStrategy;
 
-  /**
-   * Extract knowledge from the conversation and persist it.
-   * Only called when `shouldExtract()` returns true.
-   */
-  extract(ctx: MemoryContext): Promise<ExtractionResult>
+  /** Only extract every N turns. Default: 1 (every turn). */
+  turnInterval?: number;
 
-  /**
-   * Reset extraction state (e.g., after compaction clears messages).
-   */
-  reset?(): void
-}
+  /** Only process messages if there are at least N new messages. Default: 3. */
+  minNewMessages?: number;
+
+  /** Called when memories are extracted. */
+  onExtracted?: (result: ExtractionResult) => void;
+
+  /** Called on extraction error. */
+  onError?: (error: Error) => void;
+};
 ```
-
-### Related Types
-
-#### MemoryContext
-The context provided to the strategy on each turn:
-*   `messages`: Readonly array of conversation messages (role, content, timestamp).
-*   `currentQuery`: The user's most recent input.
-*   `totalTokens`: Estimated total tokens in the conversation.
-*   `toolCallsSinceExtraction`: Number of tool calls executed since the last successful extraction.
-*   `recentTools`: Optional list of tool names used recently.
-*   `signal`: Optional `AbortSignal`.
-
-#### ExtractionResult
-The object returned by the `extract` method:
-*   `extracted`: Boolean indicating if extraction was performed.
-*   `summary`: Optional human-readable summary of the operation.
-*   `factsExtracted`: Optional count of new or updated facts.
-*   `tokenCost`: Optional token consumption for the operation.
-
-## Methods & Properties
-
-### name
-A readonly string used for logging and debugging to identify which extraction strategy is active.
-
-### shouldExtract(ctx)
-Evaluates the `MemoryContext` to decide if an extraction cycle should begin. Implementations typically check thresholds such as:
-*   Accumulated token counts.
-*   Number of tool calls since the last update.
-*   Presence of specific keywords or natural conversation breaks.
-
-### extract(ctx)
-Contains the logic for processing the conversation and updating the persistent store. This often involves a background LLM call to synthesize information from the `messages` in the `MemoryContext`.
-
-### reset()
-An optional method used to clear internal counters or state, such as when the framework performs context compaction or starts a new session.
 
 ## Examples
 
-### Custom Tool-Based Trigger
-This example shows a strategy that triggers extraction every 5 tool calls.
+The following example shows how to provide a `MemoryExtractionStrategy` implementation to an `AutoMemoryExtractor`.
+
+Note: The `myStrategy` implementation is a conceptual example to illustrate usage, as a concrete implementation is not provided in the source material.
 
 ```typescript
-import { MemoryExtractionStrategy, MemoryContext, ExtractionResult } from 'yaaf/memory';
+import { AutoMemoryExtractor } from 'yaaf/memory';
+import type { MemoryExtractionStrategy, ExtractionResult, MessageLike } from 'yaaf/memory';
 
-class ToolCountStrategy implements MemoryExtractionStrategy {
-  readonly name = 'ToolCountStrategy';
-
-  shouldExtract(ctx: MemoryContext): boolean {
-    // Trigger extraction every 5 tool calls
-    return ctx.toolCallsSinceExtraction >= 5;
-  }
-
-  async extract(ctx: MemoryContext): Promise<ExtractionResult> {
-    // Logic to summarize and save knowledge
-    console.log('Extracting knowledge based on tool usage...');
+// A hypothetical implementation of the MemoryExtractionStrategy interface.
+// This strategy would likely call an LLM to summarize messages.
+const myStrategy: MemoryExtractionStrategy = {
+  async extract(context: { messages: MessageLike[], prompt: string }): Promise<ExtractionResult> {
+    console.log(`Extracting memories from ${context.messages.length} messages...`);
     
+    // In a real implementation, this would involve an LLM call
+    // to identify key facts from the conversation.
+    const extractedMemories = [
+      { content: "User's primary goal is to book a flight.", importance: 0.9 },
+      { content: "User prefers window seats.", importance: 0.5 },
+    ];
+
     return {
-      extracted: true,
-      summary: 'Extracted knowledge after 5 tool calls',
-      factsExtracted: 2
+      memories: extractedMemories,
+      // The ID of the last message processed
+      cursor: context.messages[context.messages.length - 1].id, 
     };
   }
-}
+};
+
+// Configure the AutoMemoryExtractor with the custom strategy.
+const extractor = new AutoMemoryExtractor({
+  extractionStrategy: myStrategy,
+  turnInterval: 2, // Run every 2 turns
+  onExtracted: (result) => {
+    console.log(`Successfully extracted ${result.memories.length} memories.`);
+  },
+  onError: (error) => {
+    console.error('Memory extraction failed:', error);
+  }
+});
+
+// The extractor would then be hooked into an agent's lifecycle.
+// For example, after each turn is complete:
+// agent.on('turn:complete', (turn) => {
+//   extractor.onTurnComplete(turn.messages, 'Extract key facts about the user.');
+// });
 ```
 
-### Usage in Agent Configuration
-```typescript
-const agent = new Agent({
-  memory: new CompositeMemoryStrategy({
-    extraction: new TopicFileExtractor({ 
-      store: myStore,
-      extractFn: myLLMFunction 
-    }),
-    retrieval: new LLMRetrievalStrategy({ store: myStore })
-  }),
-});
-```
+## See Also
+
+*   `AutoMemoryExtractor`: The class that consumes a `MemoryExtractionStrategy` to automate the process of extracting memories from conversations.
+
+## Sources
+
+*   [Source 1]: `src/memory/autoExtract.ts`

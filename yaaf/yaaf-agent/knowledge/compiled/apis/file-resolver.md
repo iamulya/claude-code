@@ -1,51 +1,114 @@
 ---
-summary: Callback type for loading external files referenced by OpenAPI $ref pointers.
+summary: A type defining a function signature for resolving external file references in OpenAPI specifications.
 export_name: FileResolver
 source_file: src/tools/openapi/parser.ts
 category: type
 title: FileResolver
 entity_type: api
+search_terms:
+ - OpenAPI external references
+ - resolve $ref in OpenAPI
+ - custom file loader for specs
+ - how to load split OpenAPI files
+ - OpenAPIToolset fileResolver option
+ - loading YAML/JSON from disk
+ - parser file resolution
+ - handle relative file paths in spec
+ - external schema resolution
+ - multi-file OpenAPI spec
+ - YAAF OpenAPI parser
+ - load external components
 stub: false
-compiled_at: 2026-04-16T14:38:33.424Z
+compiled_at: 2026-04-24T17:06:36.873Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/openapi/parser.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/parser.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`FileResolver` is a callback type used by the YAAF OpenAPI parser to resolve external file references within an OpenAPI specification. When the parser encounters a `$ref` pointing to an external file (e.g., `./models/pet.yaml` or `./models.yaml#/Pet`), it invokes the provided `FileResolver` to retrieve and parse the content of that file.
 
-This mechanism allows the framework to remain environment-agnostic, as the consumer provides the specific logic for reading from the filesystem, a network resource, or a memory cache.
+`FileResolver` is a function type that defines a callback for loading external files referenced within an OpenAPI specification via `$ref` [Source 2]. It is a crucial component for parsing specifications that are split across multiple files, such as referencing schemas from `./models/pet.yaml` [Source 2].
 
-## Signature / Constructor
+This function is used by the internal [OpenAPI Parser](../subsystems/open-api-parser.md) to fetch and parse the content of these external files. The parser resolves any relative paths against the base directory of the main specification file before passing the resulting path to the `FileResolver` [Source 2].
+
+A custom `FileResolver` must be provided in the `OpenAPI[[[[[[[[Tools]]]]]]]]etOptions` [when](./when.md) using `OpenAPIToolset.fromSpec()` or `OpenAPIToolset.fromURL()` if the specification contains external file references. When using `OpenAPIToolset.fromFile()`, a default resolver is automatically created that reads files relative to the input specification's directory [Source 1].
+
+## Signature
+
+The `FileResolver` is a function type with the following signature [Source 2]:
+
 ```typescript
-export type FileResolver = (filePath: string) => Record<string, unknown> | undefined
+export type FileResolver = (filePath: string) => Record<string, unknown> | undefined;
 ```
 
-### Parameters
-*   `filePath`: A `string` representing the resolved path to the external file. Relative paths are typically resolved against the base directory of the primary specification before being passed to this callback.
+**Parameters:**
 
-### Return Value
-The function must return the parsed content of the file as a `Record<string, unknown>` (a plain JavaScript object). If the file cannot be loaded or parsed, it should return `undefined`.
+*   `filePath` (`string`): The resolved path to the external file. The OpenAPI parser handles the resolution of relative paths before invoking this function [Source 2].
+
+**Returns:**
+
+*   `Record<string, unknown> | undefined`: The parsed content of the file as a JavaScript object. If the file cannot be loaded or parsed, the function should return `undefined` [Source 2].
 
 ## Examples
-The following example demonstrates a basic implementation using Node.js filesystem utilities to resolve JSON-formatted OpenAPI fragments.
+
+### Basic FileResolver Implementation
+
+This example shows a simple `FileResolver` that synchronously reads a file from disk and parses it as JSON [Source 2].
 
 ```typescript
-import { readFileSync } from 'fs';
-import { FileResolver } from 'yaaf';
+import { readFileSync } from 'node:fs';
+import type { FileResolver } from 'yaaf';
 
-const resolver: FileResolver = (filePath) => {
+const myFileResolver: FileResolver = (filePath) => {
   try {
-    const raw = readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw);
+    const rawContent = readFileSync(filePath, 'utf-8');
+    return JSON.parse(rawContent);
   } catch (error) {
-    console.error(`Failed to resolve file at ${filePath}:`, error);
+    console.error(`Failed to resolve file: ${filePath}`, error);
     return undefined;
   }
 };
 ```
 
+### Using with OpenAPIToolset
+
+Here is how to provide a custom `FileResolver` when creating Tools from a specification string that contains external file references [Source 1].
+
+```typescript
+import { OpenAPIToolset } from 'yaaf';
+import { readFileSync } from 'node:fs';
+import type { FileResolver } from 'yaaf';
+
+// A resolver that can handle both JSON and YAML (requires 'yaml' dependency)
+import yaml from 'yaml';
+
+const multiFormatResolver: FileResolver = (filePath) => {
+  try {
+    const rawContent = readFileSync(filePath, 'utf-8');
+    if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
+      return yaml.parse(rawContent);
+    }
+    return JSON.parse(rawContent);
+  } catch {
+    return undefined;
+  }
+};
+
+const specString = readFileSync('./api/main.json', 'utf-8');
+
+// The spec string contains refs like: `$ref: './schemas/User.yaml'`
+const tools = OpenAPIToolset.fromSpec(specString, {
+  fileResolver: multiFormatResolver,
+});
+```
+
 ## See Also
-* `parseOpenAPISpec` (Function that utilizes this type)
-* `ResolveOptions` (Interface containing the resolver configuration)
+
+*   `OpenAPIToolset`: The primary class for generating tools from an OpenAPI specification, which uses the `FileResolver`.
+
+## Sources
+
+*   [Source 1]: `src/tools/openapi/index.ts`
+*   [Source 2]: `src/tools/openapi/parser.ts`

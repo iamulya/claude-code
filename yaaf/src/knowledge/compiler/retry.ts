@@ -25,18 +25,36 @@ export interface RetryOptions {
 
 function isRetryableError(error: unknown): boolean {
   if (error instanceof Error) {
+    // 8.6: Check structured error properties FIRST before substring fallback.
+    // Substring matching on messages causes false positives:
+    //   - "Failed to process 500 documents" triggers 500-server-error retry
+    //   - "Article 'Report #429' failed" triggers rate-limit retry
+    // Structured checks are provider-agnostic and precise.
+    const asAny = error as unknown as Record<string, unknown>;
+
+    // HTTP status code on the error object (common pattern: axios, node-fetch, Got, ky)
+    const status = typeof asAny["status"] === "number" ? asAny["status"] :
+                   typeof asAny["statusCode"] === "number" ? asAny["statusCode"] : null;
+    if (status !== null) {
+      if (status === 429) return true;
+      if (status >= 500 && status < 600) return true;
+      if (status >= 400 && status < 500) return false; // 4xx client errors — don't retry
+    }
+
+    // Node.js error codes (network errors)
+    const code = typeof asAny["code"] === "string" ? asAny["code"] : null;
+    if (code !== null) {
+      if (code === "ECONNRESET" || code === "ECONNREFUSED" || code === "ETIMEDOUT") return true;
+      if (code === "ENOTFOUND" || code === "EAI_AGAIN") return true; // DNS failures
+    }
+
+    // Fallback: substring match on message — only after structured checks fail.
+    // Limited to unambiguous patterns that can't appear in normal content.
     const msg = error.message.toLowerCase();
-    // Rate limit
-    if (msg.includes("429") || msg.includes("rate limit") || msg.includes("quota")) return true;
-    // Server errors
-    if (msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("504"))
-      return true;
-    // Transient network errors
-    if (msg.includes("econnreset") || msg.includes("econnrefused") || msg.includes("etimedout"))
-      return true;
-    if (msg.includes("fetch failed") || msg.includes("network")) return true;
-    // Overloaded
+    if (msg.includes("rate limit") || msg.includes("quota exceeded")) return true;
     if (msg.includes("overloaded") || msg.includes("capacity")) return true;
+    if (msg.includes("service unavailable") || msg.includes("bad gateway")) return true;
+    if (msg.includes("fetch failed") || msg.includes("network error")) return true;
   }
   return false;
 }

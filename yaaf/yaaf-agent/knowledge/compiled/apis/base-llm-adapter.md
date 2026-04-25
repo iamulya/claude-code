@@ -1,90 +1,130 @@
 ---
-title: BaseLLMAdapter
-entity_type: api
-summary: Abstract base class for all YAAF LLM adapter implementations, providing shared logic for querying, summarization, and token estimation.
+summary: Abstract base class for all YAAF LLM adapter implementations, providing common methods and requiring subclasses to implement core LLM interaction logic.
 export_name: BaseLLMAdapter
 source_file: src/models/base.ts
 category: class
+title: BaseLLMAdapter
+entity_type: api
+search_terms:
+ - LLM adapter base class
+ - create new LLM provider
+ - how to add a new model
+ - implementing LLMAdapter
+ - abstract model adapter
+ - YAAF model integration
+ - LLM provider abstraction
+ - complete method implementation
+ - stream method implementation
+ - model plugin base
+ - shared LLM logic
+ - custom LLM integration
 stub: false
-compiled_at: 2026-04-16T14:30:49.246Z
+compiled_at: 2026-04-24T16:52:24.900Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/models/base.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/base.ts
+compiled_from_quality: unknown
 confidence: 0.98
 ---
 
 ## Overview
-`BaseLLMAdapter` is the foundational abstract class for all Large Language Model (LLM) integrations within the YAAF framework. It extends the plugin system to provide a standardized interface for interacting with different model providers (such as OpenAI, Anthropic, or local runners).
 
-The class implements the boilerplate logic for common operations like `query()`, `summarize()`, and `estimateTokens()`, allowing developers to create new provider adapters by implementing a single core `complete()` method and defining model constraints.
+`Base[[[[[[[[LLM]]]]]]]]Adapter` is an abstract class that serves as the foundation for all Large Language Model (LLM) adapters within the YAAF framework [Source 1]. It is designed to simplify the process of integrating new LLM providers by providing a common structure and shared implementations for several standard methods.
+
+Developers creating a new LLM adapter should extend this class. By doing so, they inherit default implementations for methods like `query()`, `summarize()`, `estimateTokens()`, and `healthCheck()`. These shared methods are implemented in terms of the core abstract methods and properties that the subclass must provide, such as `complete()` and `model` details [Source 1]. This approach ensures a consistent API across all adapters while centralizing common logic.
 
 ## Signature / Constructor
 
+The class is defined as an abstract class that extends `PluginBase` and implements the `LLMAdapter` and `[[[[[[[[Streaming]]]]]]]]ChatModel` interfaces.
+
 ```typescript
+import { PluginBase } from "../plugin/base.js";
+import type { LLMAdapter, StreamingChatModel } from "../plugin/types.js";
+
 export abstract class BaseLLMAdapter extends PluginBase implements LLMAdapter, StreamingChatModel {
-  protected constructor(name: string);
+  // ...
 }
 ```
 
-### Parameters
-- `name`: A unique string identifier for the plugin instance, passed to the `PluginBase` constructor.
+The constructor of any subclass must call `super(name)` with a unique string identifier for the plugin [Source 1].
 
 ## Methods & Properties
 
-### Abstract Properties
-Subclasses must define these properties to describe the specific model's capabilities:
-- `readonly model: string`: The unique identifier for the model (e.g., "gpt-4o").
-- `readonly contextWindowTokens: number`: The maximum number of tokens the model can process in a single context window.
-- `readonly maxOutputTokens: number`: The maximum number of tokens the model can generate in a single response.
+Subclasses of `BaseLLMAdapter` are required to implement a set of abstract properties and methods. The base class provides several concrete methods that rely on these implementations.
 
-### Abstract Methods
-- `abstract complete(params: LLMQueryParams): Promise<LLMResponse>`: The primary implementation of the LLM call, including support for tool/function calling.
-- `abstract stream(params: LLMQueryParams): AsyncIterable<LLMResponse>`: Implementation for Server-Sent Events (SSE) streaming. While abstract in the interface, the base class may provide a default fallback.
+### Abstract Members (to be implemented by subclass)
 
-### Shared Methods
-These methods provide default implementations used by the framework:
-- `query(params: LLMQueryParams): Promise<LLMResponse>`: Executes a standard completion request using the underlying `complete()` implementation.
-- `summarize(text: string, options?: any): Promise<string>`: A convenience method that wraps `query()` to generate a summary of the provided text.
-- `estimateTokens(messages: LLMMessage[]): number`: Calculates the approximate token count for a set of messages using internal utility functions.
-- `healthCheck(): Promise<boolean>`: Validates the connectivity and availability of the LLM provider.
+These must be implemented by any class that extends `BaseLLMAdapter` [Source 1].
+
+*   **`readonly model: string`**
+    The unique identifier for the specific LLM model being used (e.g., `gpt-4-turbo`).
+
+*   **`readonly contextWindowTokens: number`**
+    The maximum number of tokens the model can accept in its [Context Window](../concepts/context-window.md).
+
+*   **`readonly maxOutputTokens: number`**
+    The maximum number of tokens the model can generate in a single response.
+
+*   **`complete(params: LLMQueryParams): Promise<LLMResponse>`**
+    The core method for making a full, non-Streaming call to the LLM. It should handle all aspects of the API request, including tool support.
+
+*   **`stream(params: LLMQueryParams): AsyncIterable<LLMResponse>`**
+    An optional method for handling Server-Sent Events (SSE) streaming from the LLM. `BaseLLMAdapter` provides a default fallback implementation if this is not overridden [Source 1].
+
+### Concrete Members (provided by `BaseLLMAdapter`)
+
+These methods are implemented in the base class and are available to all subclasses. Their logic is expressed in terms of the abstract `complete()` method [Source 1].
+
+*   `query()`
+*   `summarize()`
+*   `estimateTokens()`
+*   `healthCheck()`
 
 ## Examples
 
-### Implementing a Custom Adapter
-The following example demonstrates how to extend `BaseLLMAdapter` to create a minimal provider integration.
+The following example shows the basic structure of a custom LLM adapter created by extending `BaseLLMAdapter`.
 
 ```typescript
-import { BaseLLMAdapter, LLMQueryParams, LLMResponse } from 'yaaf';
+import { 
+  BaseLLMAdapter, 
+  LLMQueryParams, 
+  LLMResponse 
+} from 'yaaf';
 
-export class MyCustomProvider extends BaseLLMAdapter {
-  readonly model = "my-custom-model-v1";
-  readonly contextWindowTokens = 8192;
-  readonly maxOutputTokens = 2048;
+// A conceptual example of a custom LLM adapter.
+class MyCustomLLMAdapter extends BaseLLMAdapter {
+  // Required properties providing model metadata.
+  readonly model: string = 'my-custom-model-v1';
+  readonly contextWindowTokens: number = 8192;
+  readonly maxOutputTokens: number = 2048;
 
   constructor() {
-    super('my-custom-provider-plugin');
+    // Provide a unique name for this plugin via super().
+    super('my-custom-llm-adapter');
   }
 
+  // Required implementation for the core LLM call.
   async complete(params: LLMQueryParams): Promise<LLMResponse> {
-    // Implementation for calling the specific provider API
-    const response = await fetch('https://api.myprovider.ai/v1/chat', {
-      method: 'POST',
-      body: JSON.stringify(params)
-    });
+    // In a real implementation, this would contain the logic
+    // to call the custom LLM's API endpoint with the provided
+    // messages, tools, and other parameters.
+    console.log(`Calling ${this.model} with params:`, params);
+    // ... API call logic ...
     
-    const data = await response.json();
+    // Return a response conforming to the LLMResponse type.
     return {
-      content: data.choices[0].message.content,
-      usage: data.usage
+      role: 'assistant',
+      content: 'This is a response from my custom model.',
     };
   }
 
+  // Optionally, override the stream method for native streaming support.
   async *stream(params: LLMQueryParams): AsyncIterable<LLMResponse> {
-    // Implementation for streaming responses
+    // Implementation for streaming responses from the custom LLM API.
+    // ...
   }
 }
 ```
 
-## See Also
-- `PluginBase`
-- `LLMAdapter`
-- `LLMQueryParams`
+## Sources
+
+[Source 1] src/models/base.ts

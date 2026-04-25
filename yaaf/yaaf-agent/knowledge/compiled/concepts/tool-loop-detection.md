@@ -1,76 +1,85 @@
 ---
+summary: A core mechanism in YAAF to identify and prevent agents from entering repetitive or infinite tool call patterns.
+relationships:
+ - [object Object]
 title: Tool Loop Detection
 entity_type: concept
-summary: A safety mechanism that prevents agents from entering infinite loops by detecting and breaking repetitive tool call patterns.
+related_subsystems:
+ - Tools
+search_terms:
+ - prevent infinite tool calls
+ - repetitive agent behavior
+ - detect agent loops
+ - agent stuck in a loop
+ - tool call pattern detection
+ - OpenClaw tool loop
+ - alternating tool calls
+ - how to stop agent from repeating actions
+ - agent cost control
+ - YAAF loop detection
+ - tool call history
+ - consecutive identical calls
 stub: false
-compiled_at: 2026-04-16T14:37:37.664Z
+compiled_at: 2026-04-24T18:04:13.982Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/loopDetector.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/loopDetector.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
----
-title: Tool Loop Detection
-entity_type: concept
-summary: A safety mechanism that prevents agents from entering infinite loops by detecting and breaking repetitive tool call patterns.
-related_subsystems:
-  - tools
-
 ## What It Is
-Tool Loop Detection is a safety mechanism in YAAF designed to prevent autonomous agents from entering infinite loops during tool execution. This occurs when an agent repeatedly invokes the same tool with identical arguments or oscillates between a specific set of tools without progressing toward a goal.
 
-The primary purpose of this concept is to prevent "burning money"—the unnecessary consumption of LLM API credits and computational resources—by identifying non-productive repetitive patterns and allowing the framework to intervene, typically by breaking the loop and injecting a warning into the agent's context.
+Tool Loop Detection is a mechanism within YAAF designed to identify and break repetitive tool call patterns. Its primary purpose is to prevent agents from getting stuck in infinite or near-infinite loops where they repeatedly call the same tool with the same arguments. This is a critical feature for production-grade agents as it helps avoid wasting computational resources and incurring unnecessary costs from API calls [Source 1].
+
+The implementation in YAAF is inspired by similar functionality found in other agent frameworks, such as OpenClaw's tool-loop detection [Source 1].
 
 ## How It Works in YAAF
-The mechanism is implemented via the `ToolLoopDetector` class. It maintains a rolling history of tool invocations to identify patterns that exceed a defined threshold of repetition.
 
-### Detection Mechanisms
-YAAF supports two primary types of loop detection:
-1.  **Exact Repeat (`exact-repeat`)**: Detects when the same tool is called with the identical arguments multiple times consecutively.
-2.  **Alternating Patterns (`alternating`)**: Detects patterns where an agent switches back and forth between different tools (e.g., Tool A → Tool B → Tool A → Tool B).
+The core of this mechanism is the `ToolLoopDetector` class, which maintains a rolling window of recent tool call history. For each tool invocation, the agent records the tool's name and a hash of its arguments [Source 1].
 
-### Implementation Details
-The detector tracks tool calls using the `ToolCallRecord` type, which stores:
-*   The tool name.
-*   A cryptographic hash of the tool arguments (`argsHash`).
-*   A timestamp of the invocation.
+The detector analyzes this history to identify two primary types of loops [Source 1]:
+1.  **Exact-Repeat**: The same tool is called with the identical arguments multiple times in a row.
+2.  **Alternating**: Two or more [Tools](../subsystems/tools.md) are called in a repeating sequence, such as `toolA(args1)` followed by `toolB(args2)`, then `toolA(args1)` again.
 
-In a standard agent loop, the framework calls `detector.record(toolName, toolArgs)` for every tool invocation. The detector then evaluates the history within a specific `windowSize`. If the number of repetitions meets the `threshold`, `detector.isLooping()` returns true, and the framework can retrieve a diagnostic warning via `detector.getWarning()`.
+In a typical agent execution cycle, a developer would first record the current tool call using `detector.record()`. Then, they would call `detector.isLooping()` to check if a pattern has been detected. If a loop is identified, the agent's logic can intervene, for example, by breaking the loop and injecting a warning message into the agent's context [Source 1].
+
+The `LoopInfo` type provides details about a detected loop, including its `type` (`exact-repeat` or `alternating`), the `tools` involved, and the `count` of repetitions [Source 1].
 
 ## Configuration
-The behavior of the loop detector is governed by the `LoopDetectorConfig` object. Developers can tune the sensitivity of the detection to balance between safety and allowing legitimate repetitive tasks.
+
+The behavior of the `ToolLoopDetector` can be customized during its instantiation via the `LoopDetectorConfig` object. The available parameters are [Source 1]:
+
+*   `threshold`: The number of consecutive identical or alternating calls required to flag a loop. The default value is 3.
+*   `windowSize`: The number of recent [Tool Calls](./tool-calls.md) to keep in the history for pattern detection. The default is 20.
+*   `detectAlternating`: A boolean that enables or disables the detection of alternating patterns (e.g., A→B→A→B). This is enabled by default.
+
+### Example
 
 ```typescript
-export type LoopDetectorConfig = {
-  /**
-   * Number of consecutive identical calls before flagging a loop.
-   * Default: 3
-   */
-  threshold?: number
-  /**
-   * Rolling window size for pattern detection.
-   * Default: 20
-   */
-  windowSize?: number
-  /**
-   * Also detect alternating patterns (A→B→A→B)?
-   * Default: true
-   */
-  detectAlternating?: boolean
-}
-```
+import { ToolLoopDetector } from 'yaaf'; // Fictional import path
 
-### Example Usage
-```ts
-const detector = new ToolLoopDetector({ threshold: 3, windowSize: 10 });
+// Configure a detector to be more sensitive to loops
+const detector = new ToolLoopDetector({
+  threshold: 2,         // Flag a loop after just 2 repetitions
+  windowSize: 10,       // Only look at the last 10 calls
+  detectAlternating: true
+});
 
-// In the agent loop:
-detector.record(toolName, toolArgs);
-if (detector.isLooping()) {
-  // Break out of the loop, inject a warning message
-  const warning = detector.getWarning();
+// Inside the agent's execution logic
+function executeTool(toolName: string, toolArgs: any) {
+  detector.record(toolName, toolArgs);
+
+  if (detector.isLooping()) {
+    const warning = detector.getWarning(); // Fictional method based on example
+    console.error("Loop detected:", warning);
+    // Halt execution or change strategy
+    return;
+  }
+
+  // ... proceed with tool execution
 }
 ```
 
 ## Sources
-* `src/tools/loopDetector.ts`
+
+[Source 1]: `src/tools/loopDetector.ts`

@@ -1,0 +1,2294 @@
+{
+  "compiledAt": "2026-04-25T00:31:22.946Z",
+  "threshold": 0.6,
+  "articlesVerified": 291,
+  "articlesPassed": 289,
+  "articlesFailed": 2,
+  "averageScore": 0.8263921782158556,
+  "perArticle": [
+    {
+      "docId": "apis/access-decision-event",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/agent-config",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 22,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/agent-fs-config",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/agent-router",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/agent-thread",
+      "score": 0.8,
+      "totalClaims": 24,
+      "supportedClaims": 22,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/anthropic-chat-model",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/anthropic-model-config",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 2,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/api-connection-error",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/article-version",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/attribute-scope-rule",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/attribute-scope-strategy",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/authorization-context",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/build-alias-index",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 3,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/build-vocabulary-alias-map",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/channel-message",
+      "score": 0.9,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/chat-message",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/chat-result",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/compile-result",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/composite-scope",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/coordinator-prompt-config",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/create-thread",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/decode-jwt",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/deserialize-thread",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/discord-channel",
+      "score": 0.9,
+      "totalClaims": 7,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/federated-index",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/federated-kb-config",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/federated-kb-entry",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/federated-kb-options",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/federated-knowledge-base",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/fork-thread",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/fs-change",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/fs-entry",
+      "score": 0.8,
+      "totalClaims": 4,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/fs-node-type",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/generate-stub-article",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 3,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/hierarchy-scope-config",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/hierarchy-scope-strategy",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/in-process-ipc-config",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/inbound-message",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/incoming-request",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/init-project",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/jwt-identity-provider",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/kb-store-options",
+      "score": 0,
+      "totalClaims": 2,
+      "supportedClaims": 0,
+      "passed": false,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/knowledge-base-options",
+      "score": 0,
+      "totalClaims": 3,
+      "supportedClaims": 0,
+      "passed": false,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/linter-rule-adapter",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/list-versions",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/main",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-adapter",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-plugin-config",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-reconnect-config",
+      "score": 0.8,
+      "totalClaims": 19,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-server-config",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-sse-server",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 19,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/mcp-stdio-server",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/memory-header",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/memory-relevance-response-schema",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/memory-scope",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/multi-layer-grounding-options",
+      "score": 0.8,
+      "totalClaims": 47,
+      "supportedClaims": 46,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/namespaced-document",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/namespaced-index-entry",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/namespaced-search-result",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/nli-verdict",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/nli-verify-fn",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/openai-model",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/outbound-message",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/ownership-scope-config",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/ownership-scope-strategy",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/per-user-rate-limiter-config",
+      "score": 0.6666666666666667,
+      "totalClaims": 18,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/permission-grant",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/permission-result",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/rate-limit-error",
+      "score": 0.7428571428571429,
+      "totalClaims": 17,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/rate-limit-store",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/remote-session-config",
+      "score": 0.8,
+      "totalClaims": 3,
+      "supportedClaims": 3,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/remote-session-handle",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/remote-session-server",
+      "score": 0.8,
+      "totalClaims": 42,
+      "supportedClaims": 39,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/resolved-permissions",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/resolver-config",
+      "score": 0.8,
+      "totalClaims": 23,
+      "supportedClaims": 18,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/resolver-scope-strategy",
+      "score": 0.7200000000000001,
+      "totalClaims": 11,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/rollback-to-version",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/route-handler",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/runner-stream-event",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/safe-parse-json",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 1,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/save-options",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/scope-context",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/search-options",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/search-tool",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/segment-result",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/serialize-thread",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/server-config",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/server-handle",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/server-stream-event",
+      "score": 0.8,
+      "totalClaims": 21,
+      "supportedClaims": 19,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/session-adapter",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/session-memory-strategy",
+      "score": 0.9,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/sessions-config",
+      "score": 0.8,
+      "totalClaims": 29,
+      "supportedClaims": 27,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/slack-channel",
+      "score": 0.9,
+      "totalClaims": 8,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/start-remote-server",
+      "score": 0.8,
+      "totalClaims": 27,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/step-result",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/streaming-tool-executor",
+      "score": 0.9,
+      "totalClaims": 10,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/subscribe-options",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/suspend-reason",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/suspend-resolution",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/system-aware-scope",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/system-aware-scope-config",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/team-memory-config",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/team-memory-entry",
+      "score": 0.8,
+      "totalClaims": 5,
+      "supportedClaims": 3,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/telegram-channel",
+      "score": 0.9,
+      "totalClaims": 8,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tenant-scope-config",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tenant-scope-strategy",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tf-idf-search-plugin-options",
+      "score": 0.8,
+      "totalClaims": 3,
+      "supportedClaims": 1,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tool-call",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tool-context",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tool-schema",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/tree-entry",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/user-credentials",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/validation-result",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/write-result",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "apis/write-with-versioning",
+      "score": 0.8,
+      "totalClaims": 21,
+      "supportedClaims": 20,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/12-factor-agents",
+      "score": 0.8,
+      "totalClaims": 23,
+      "supportedClaims": 20,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/agent-loop",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/auto-fixer",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/capable-model",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/clean-article",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/compile-options",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/context-compaction",
+      "score": 0.9,
+      "totalClaims": 34,
+      "supportedClaims": 26,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/context-provider",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/context-window",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/coordinator-prompt-builder",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/cosine-similarity",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 16,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/cross-kb-federation",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/daemon-mode",
+      "score": 0.9,
+      "totalClaims": 15,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/diff-algorithm",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 16,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/differential-compiler",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/discovery",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/dns-rebinding",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/doc-id",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/document-retrieval",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/edge-platforms",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/embedding-similarity",
+      "score": 0.8,
+      "totalClaims": 23,
+      "supportedClaims": 22,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/execution-sandbox",
+      "score": 0.9,
+      "totalClaims": 6,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/execution-timeout",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/fast-model",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/file-system-adapter",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/filter-incremental",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/grounding-score",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/heal",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 20,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/heartbeat",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/heartbeat-mechanism",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/http-redirects",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/json-compilation-plan",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/kb-grounding-adapter",
+      "score": 0.8,
+      "totalClaims": 31,
+      "supportedClaims": 28,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/key-derivation",
+      "score": 0.6666666666666667,
+      "totalClaims": 14,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/knowledge-base-namespacing",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/linter",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 22,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/llm",
+      "score": 0.8,
+      "totalClaims": 33,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/llm-call-retry",
+      "score": 0.7636363636363637,
+      "totalClaims": 23,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/llm-semantic-scorer",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/loop",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/memory",
+      "score": 0.8,
+      "totalClaims": 33,
+      "supportedClaims": 29,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/memory-adapter",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/memory-storage",
+      "score": 0.9,
+      "totalClaims": 6,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/missing-required-field",
+      "score": 0.6666666666666667,
+      "totalClaims": 8,
+      "supportedClaims": 5,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/multi-agent-systems",
+      "score": 0.8,
+      "totalClaims": 26,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/multi-turn-conversation",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/multi-turn-history",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/natural-language-inference-nli",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 22,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/non-canonical-wikilink",
+      "score": 0.8,
+      "totalClaims": 8,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/notification-adapter",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/open-api-rest-api-tool",
+      "score": 0.8,
+      "totalClaims": 26,
+      "supportedClaims": 23,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/output-continuation",
+      "score": 0.9,
+      "totalClaims": 7,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/output-sanitizer",
+      "score": 0.7428571428571429,
+      "totalClaims": 15,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/permission-policy",
+      "score": 0.9,
+      "totalClaims": 19,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/persistent-memory",
+      "score": 0.8,
+      "totalClaims": 17,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/persistent-sessions",
+      "score": 0.7636363636363637,
+      "totalClaims": 26,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/phase-c-features",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/plugin",
+      "score": 0.8,
+      "totalClaims": 36,
+      "supportedClaims": 29,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/plugin-capability",
+      "score": 0.8,
+      "totalClaims": 21,
+      "supportedClaims": 19,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/proactive-scheduling",
+      "score": 0.7636363636363637,
+      "totalClaims": 24,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/project-structure",
+      "score": 0.9,
+      "totalClaims": 17,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/prompt-engineering",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/prompt-guard",
+      "score": 0.7200000000000001,
+      "totalClaims": 22,
+      "supportedClaims": 18,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/reasoning-effort",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/relevance-engine",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/response-grounding",
+      "score": 0.8,
+      "totalClaims": 29,
+      "supportedClaims": 25,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/retry-logic",
+      "score": 0.7272727272727273,
+      "totalClaims": 21,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/reverse-citation-index",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/sandbox",
+      "score": 0.8,
+      "totalClaims": 6,
+      "supportedClaims": 2,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/security-hooks",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 16,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/session-resume",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/source-hash-manifest",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/source-path-overlap-ratio",
+      "score": 0.8,
+      "totalClaims": 16,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/standing-orders",
+      "score": 0.8,
+      "totalClaims": 13,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/stateless-reducer-pattern",
+      "score": 0.7714285714285715,
+      "totalClaims": 32,
+      "supportedClaims": 27,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/system-prompts",
+      "score": 0.8307692307692308,
+      "totalClaims": 13,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/telemetry",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tf-idf",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 17,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/thundering-herd",
+      "score": 0.7111111111111111,
+      "totalClaims": 13,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tokenization",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-call-authorization",
+      "score": 0.8,
+      "totalClaims": 28,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-calls",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-context",
+      "score": 0.9,
+      "totalClaims": 14,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-looping",
+      "score": 0.9,
+      "totalClaims": 11,
+      "supportedClaims": 10,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-provider",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/tool-results",
+      "score": 0.8,
+      "totalClaims": 19,
+      "supportedClaims": 18,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/unlinked-mention",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 4,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/vision-capability",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/vocabulary",
+      "score": 0.8,
+      "totalClaims": 15,
+      "supportedClaims": 13,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/web-socket-transport",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 23,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/yaaf-storage-key",
+      "score": 0.8,
+      "totalClaims": 12,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "guides/deploying-a-yaaf-agent-as-an-http-api",
+      "score": 0.9,
+      "totalClaims": 29,
+      "supportedClaims": 28,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "guides/getting-started",
+      "score": 0.9,
+      "totalClaims": 37,
+      "supportedClaims": 36,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "guides/scaffolding-a-new-yaaf-project",
+      "score": 0.8,
+      "totalClaims": 30,
+      "supportedClaims": 25,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "plugins/chroma-plugin",
+      "score": 0.8,
+      "totalClaims": 9,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "plugins/mcp-plugin",
+      "score": 0.8,
+      "totalClaims": 44,
+      "supportedClaims": 43,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "plugins/multi-layer-grounding-plugin",
+      "score": 0.8,
+      "totalClaims": 42,
+      "supportedClaims": 40,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "plugins/pgvector-plugin",
+      "score": 0.8,
+      "totalClaims": 7,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "plugins/qdrant-plugin",
+      "score": 0.7111111111111111,
+      "totalClaims": 13,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/agent-core",
+      "score": 0.8,
+      "totalClaims": 35,
+      "supportedClaims": 30,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/agent-delegation-subsystem",
+      "score": 0.8,
+      "totalClaims": 20,
+      "supportedClaims": 19,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/agent-mailbox-system",
+      "score": 0.7724137931034484,
+      "totalClaims": 31,
+      "supportedClaims": 28,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/agent-personality-system",
+      "score": 0.8,
+      "totalClaims": 19,
+      "supportedClaims": 18,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/audit-logging-system",
+      "score": 0.8,
+      "totalClaims": 35,
+      "supportedClaims": 34,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/doctor-tools",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 9,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/error-handling",
+      "score": 0.8,
+      "totalClaims": 10,
+      "supportedClaims": 6,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/error-handling-system",
+      "score": 0.7636363636363637,
+      "totalClaims": 23,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/framework-utilities",
+      "score": 0.8,
+      "totalClaims": 14,
+      "supportedClaims": 12,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/hooks-system",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 23,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/iam",
+      "score": 0.8,
+      "totalClaims": 29,
+      "supportedClaims": 27,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/iam-identity-and-access-management",
+      "score": 0.8,
+      "totalClaims": 46,
+      "supportedClaims": 44,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/kb-compilation-pipeline",
+      "score": 0.8,
+      "totalClaims": 11,
+      "supportedClaims": 8,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-base-compilation-system",
+      "score": 0.8,
+      "totalClaims": 30,
+      "supportedClaims": 27,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-ingestion",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-linter",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 15,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-ontology",
+      "score": 0.8,
+      "totalClaims": 30,
+      "supportedClaims": 30,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-utils-frontmatter",
+      "score": 0.8,
+      "totalClaims": 21,
+      "supportedClaims": 20,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/knowledge-versioning",
+      "score": 0.7757575757575759,
+      "totalClaims": 34,
+      "supportedClaims": 32,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/linter-system",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 11,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/llm-integration",
+      "score": 0.8,
+      "totalClaims": 43,
+      "supportedClaims": 42,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/llm-system",
+      "score": 0.8,
+      "totalClaims": 24,
+      "supportedClaims": 21,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/model-specs-registry",
+      "score": 0.8,
+      "totalClaims": 31,
+      "supportedClaims": 26,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/plugin-management",
+      "score": 0.7000000000000001,
+      "totalClaims": 11,
+      "supportedClaims": 7,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/prompt-management",
+      "score": 0.8,
+      "totalClaims": 28,
+      "supportedClaims": 28,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/rate-limiting-system",
+      "score": 0.8,
+      "totalClaims": 19,
+      "supportedClaims": 19,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/retry-system",
+      "score": 0.8,
+      "totalClaims": 38,
+      "supportedClaims": 34,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/runtime",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 20,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/sandbox-worker",
+      "score": 0.8,
+      "totalClaims": 25,
+      "supportedClaims": 24,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/security",
+      "score": 0.8,
+      "totalClaims": 40,
+      "supportedClaims": 36,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/security-subsystem",
+      "score": 0.8,
+      "totalClaims": 43,
+      "supportedClaims": 41,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/storage-system",
+      "score": 0.8,
+      "totalClaims": 18,
+      "supportedClaims": 14,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "subsystems/tf-idf-search-engine",
+      "score": 0.8,
+      "totalClaims": 22,
+      "supportedClaims": 18,
+      "passed": true,
+      "verificationLevel": "vocabulary_only"
+    },
+    {
+      "docId": "concepts/session",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/plugin-host",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/query-loop",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/extractor-plan",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/check-and-acquire",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/task-management-system",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/knowledge-base",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/candidate-new-concept",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/concept-registry",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/external-gateway",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/model-context-protocol-mcp",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/resolve-options",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/porter2-stemmer",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/timestamp",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/resource-usage-tracking",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/sandbox-violation",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/guardrails",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "apis/set-analytics",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/crash-recovery-checkpoint",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/candidate-new-concepts",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/static-sections",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/dynamic-sections",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/boundary-marker",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/prompt-caching",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/mcp",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/max-versions",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/sandbox",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/store-system",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/synthesizer",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "subsystems/knowledge-store",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/identity",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/federated-knowledge-base",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/tf-idf-search",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/domain-context",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/authoring-rules",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/encyclopedic-style",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/no-hallucination",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/existing-article-content",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/source-texts",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/output-contract",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/markdown-document",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/llm-authoring-step",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/synthesis-model",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    },
+    {
+      "docId": "concepts/security",
+      "score": 1,
+      "totalClaims": 0,
+      "supportedClaims": 0,
+      "passed": true
+    }
+  ]
+}

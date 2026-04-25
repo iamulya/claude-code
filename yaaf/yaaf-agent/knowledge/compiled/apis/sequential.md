@@ -1,106 +1,154 @@
 ---
-title: sequential
-entity_type: api
-summary: Creates a sequential pipeline where agents run in order, passing output to the next step.
 export_name: sequential
 source_file: src/agents/workflow.ts
 category: function
+title: sequential
+entity_type: api
+summary: Creates a workflow agent that runs a series of steps in order, passing the output of each step as the input to the next.
+search_terms:
+ - sequential agent
+ - pipeline agent
+ - chaining agents together
+ - run agents in order
+ - workflow orchestration
+ - multi-agent systems
+ - declarative agent composition
+ - agent pipeline
+ - connect agent outputs to inputs
+ - ADK SequentialAgent equivalent
+ - functional agent composition
+ - how to run multiple agents
+ - linear agent workflow
 stub: false
-compiled_at: 2026-04-16T14:15:26.701Z
+compiled_at: 2026-04-24T17:36:49.796Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/workflow.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/workflow.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-The `sequential` function is a declarative orchestration utility used to build multi-agent pipelines. It wraps one or more agents (or other workflows) into a single execution unit where each step is executed in order. The output of one step is automatically passed as the input to the subsequent step.
 
-This functional approach is designed as a lightweight alternative to class-heavy orchestration patterns. It allows for the composition of complex logic by nesting sequential, parallel, and loop workflows.
+The `sequential` function is a factory for creating a "sequential pipeline" [workflow](../concepts/workflow.md) agent. This type of agent executes a series of steps (other agents or workflows) in a predefined order. The output from each step is passed directly as the input to the subsequent step, forming a chain of operations [Source 1].
 
-## Signature / Constructor
+This functional approach is part of YAAF's declarative multi-[Agent Orchestration System](../subsystems/agent-orchestration-system.md). It allows developers to compose complex behaviors from simpler, single-purpose agents without needing [LLM](../concepts/llm.md)-based routing. It is the YAAF equivalent of ADK's class-based `SequentialAgent` [Source 1].
+
+Use `sequential` to build linear processes, such as a research, writing, and reviewing pipeline, where each stage depends on the completion of the previous one [Source 1].
+
+## Signature
+
+The `sequential` function takes an array of steps and an optional configuration object, and returns a `WorkflowAgent` [Source 1].
 
 ```typescript
 export function sequential(
   steps: WorkflowStep[],
-  config?: SequentialConfig,
+  config?: SequentialConfig
 ): WorkflowAgent;
 ```
 
 ### Parameters
-*   `steps`: An array of `WorkflowStep` objects (which can be raw `AgentRunner` instances or other `WorkflowAgent` objects).
-*   `config`: An optional `SequentialConfig` object to customize the workflow behavior.
 
-### Supporting Types
+-   **`steps`**: `WorkflowStep[]`
+    An array of agents or other workflows to execute in order. A `WorkflowStep` is any object with a compatible `run` method [Source 1].
+    ```typescript
+    export type WorkflowStep = {
+      run(input: string, signal?: AbortSignal): Promise<string>;
+    };
+    ```
 
-#### SequentialConfig
-```typescript
-export type SequentialConfig = {
-  /** Name for this workflow instance (default: 'sequential') */
-  name?: string;
-  /**
-   * Transform the output of step N before passing to step N+1.
-   * Default: passes output directly as the next input.
-   */
-  transform?: (output: string, stepIndex: number, stepCount: number) => string;
-};
-```
+-   **`config`**: `SequentialConfig` (optional)
+    An object to configure the pipeline's behavior [Source 1].
+    ```typescript
+    export type SequentialConfig = {
+      /** Name for this workflow instance (default: 'sequential') */
+      name?: string;
+      /**
+       * Transform the output of step N before passing to step N+1.
+       * Default: passes output directly as the next input.
+       */
+      transform?: (output: string, stepIndex: number, stepCount: number) => string;
+    };
+    ```
 
-#### WorkflowStep
-A `WorkflowStep` is any object implementing a `run` method. Both `AgentRunner` and `WorkflowAgent` satisfy this interface.
-```typescript
-export type WorkflowStep = {
-  run(input: string, signal?: AbortSignal): Promise<string>;
-};
-```
+### Return Value
 
-#### WorkflowAgent
-The object returned by the `sequential` function.
+The function returns a `WorkflowAgent`, an object that encapsulates the entire sequential pipeline and exposes a single `run` method to execute it [Source 1].
+
 ```typescript
 export type WorkflowAgent = {
+  /** Name of this workflow (for debugging/tracing) */
   readonly name: string;
-  readonly type: 'sequential' | 'parallel' | 'loop';
+  /** The workflow type */
+  readonly type: "sequential" | "parallel" | "loop";
+  /** Run the workflow with a user message */
   run(input: string, signal?: AbortSignal): Promise<string>;
 };
 ```
 
 ## Methods & Properties
-The `WorkflowAgent` returned by `sequential` exposes the following:
 
-*   **`name`**: A readonly string identifying the workflow instance, useful for debugging and tracing.
-*   **`type`**: Always returns `'sequential'`.
-*   **`run(input, signal?)`**: An asynchronous method that executes the pipeline. It iterates through the provided steps, passing the result of each step to the next. It supports an optional `AbortSignal` for cancellation.
+The `WorkflowAgent` object returned by `sequential` has the following properties and methods:
+
+### Properties
+
+-   **`name`**: `readonly string`
+    The name of the workflow instance, taken from `config.name` or defaulting to `'sequential'`. Useful for debugging and tracing [Source 1].
+
+-   **`type`**: `readonly "sequential"`
+    Identifies the type of workflow, which is always `"sequential"` for agents created by this function [Source 1].
+
+### Methods
+
+-   **`run(input: string, signal?: AbortSignal): Promise<string>`**
+    Executes the sequential pipeline. The `input` string is passed to the first step in the `steps` array. The method awaits the completion of the entire pipeline and returns the final output from the last step as a `Promise<string>` [Source 1].
 
 ## Examples
 
 ### Basic Sequential Pipeline
-In this example, a researcher gathers information, which is then passed to a writer, and finally to a reviewer.
+
+This example demonstrates creating a simple three-step pipeline where a researcher agent's output is fed to a writer, whose output is then fed to a reviewer [Source 1].
+
 ```typescript
+import { sequential } from 'yaaf';
+import { researcher, writer, reviewer } from './my-agents';
+
+// Define the pipeline by providing the agents in execution order.
 const pipeline = sequential([researcher, writer, reviewer]);
 
+// Run the entire pipeline with a single call.
 const result = await pipeline.run('Write an article about AI agents');
-// researcher runs first → output feeds into writer → writer output into reviewer
+
+// `result` contains the final output from the `reviewer` agent.
+console.log(result);
 ```
 
-### Pipeline with Transformation
-Using the `transform` configuration to modify data between steps.
+### Pipeline with a Transform Step
+
+This example shows how to use the `transform` utility to create a simple, LLM-free step that formats data between two agents in a pipeline [Source 1].
+
 ```typescript
-const pipeline = sequential(
-  [researcher, writer],
-  {
-    name: 'ResearchAndWrite',
-    transform: (output, index) => {
-      if (index === 0) {
-        return `Based on this research: ${output}, write a blog post.`;
-      }
-      return output;
-    }
-  }
-);
+import { sequential, transform } from 'yaaf';
+import { researcher, reviewer } from './my-agents';
+
+const pipeline = sequential([
+  researcher,
+  // This step adds a prefix to the researcher's output
+  // before passing it to the reviewer.
+  transform(output => `Please review this research:\n${output}`),
+  reviewer,
+]);
+
+const finalReport = await pipeline.run('Summarize the latest trends in AI');
+console.log(finalReport);
 ```
 
 ## See Also
-*   `parallel`
-*   `loop`
-*   `asStep`
-*   `transform`
-*   `conditional`
+
+-   `parallel`: For running multiple agents concurrently with the same input.
+-   `loop`: For repeating a sequence of steps until a condition is met.
+-   `WorkflowAgent`: The common interface for all [Workflow Agents](../subsystems/workflow-agents.md).
+-   `WorkflowStep`: The type for any component that can be part of a workflow.
+
+## Sources
+
+[Source 1]: src/agents/workflow.ts

@@ -136,8 +136,13 @@ export async function rollbackToVersion(
   const versionDir = versionDirForArticle(outputPath, versionsDir, compiledDir);
   try {
     const files = await readdir(versionDir);
+    // 8.7: Validate filename format before parsing timestamp.
+    // Expected: "{timestamp}-{hash}.md" where timestamp is 13+ digits.
+    const VERSION_FILE_RE = /^(\d{13,})-[a-f0-9]+\.md$/;
     const targetFile = files.find((f) => {
-      const ts = parseInt(f.replace(".md", ""), 10);
+      const match = f.match(VERSION_FILE_RE);
+      if (!match) return false; // skip malformed filenames
+      const ts = parseInt(match[1]!, 10);
       return Math.abs(ts - timestamp) < 1000; // within 1 second
     });
 
@@ -163,7 +168,9 @@ export async function rollbackToVersion(
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 function contentHash(content: string): string {
-  return createHash("sha256").update(content, "utf-8").digest("hex").slice(0, 16);
+  // 8.5: 32 hex chars = 128 bits. Birthday collision at 2^64 (~18 quintillion).
+  // Previous 16 chars (64 bits) had collision risk at ~4 billion documents.
+  return createHash("sha256").update(content, "utf-8").digest("hex").slice(0, 32);
 }
 
 /**
@@ -194,8 +201,9 @@ async function backupVersion(
   const timestamp = Date.now();
   // A2 fix: append a 6-char content hash suffix to avoid filename collision when
   // two articles are updated concurrently at the same millisecond. The suffix is
-  // deterministic (same content → same suffix) so retries are idempotent.
-  const hashSuffix = contentHash(content).slice(0, 6);
+  // 8.5: 12-char hash suffix (48 bits, collision at ~16M concurrent ops).
+  // Previous 6 chars (24 bits) had collision risk at ~4K concurrent ops.
+  const hashSuffix = contentHash(content).slice(0, 12);
   const versionPath = join(versionDir, `${timestamp}-${hashSuffix}.md`);
   await atomicWriteFile(versionPath, content); // P0-3: atomic backup
 }

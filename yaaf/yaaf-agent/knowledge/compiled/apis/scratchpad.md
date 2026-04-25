@@ -1,90 +1,129 @@
 ---
+summary: A TypeScript class providing a managed temporary directory for cross-agent collaboration and durable knowledge sharing.
 title: Scratchpad
 entity_type: api
-summary: A class providing a managed temporary directory for cross-agent collaboration and durable knowledge sharing.
 export_name: Scratchpad
 source_file: src/agents/scratchpad.ts
 category: class
+search_terms:
+ - shared agent storage
+ - temporary file directory for agents
+ - cross-agent communication
+ - durable knowledge sharing
+ - agent file system
+ - how to save files between agents
+ - managed temp directory
+ - coordinator scratchpad
+ - agent collaboration space
+ - persistent agent memory
+ - read and write files in agent
 stub: false
-compiled_at: 2026-04-16T14:14:10.854Z
+compiled_at: 2026-04-24T17:35:38.586Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/scratchpad.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/scratchpad.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/compactionPrompts.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-The `Scratchpad` class provides a managed temporary directory designed for cross-agent collaboration. It allows multiple agents to read and write files within a shared space without requiring explicit permission prompts for each operation. This enables durable knowledge sharing across different workers or agent instances during a session.
 
-The implementation is inspired by coordinator scratchpads and is typically used to store research findings, intermediate data, or shared state that needs to persist across the lifecycle of multiple agent tasks.
+The `Scratchpad` class provides a managed temporary directory on the file system, designed to facilitate collaboration and durable knowledge sharing between multiple agents [Source 1]. It allows different agent workers to read and write files to a common location without requiring explicit permission prompts for each operation [Source 1].
+
+This component is inspired by the "coordinator scratchpad" concept from a related repository and serves as a foundational tool for building complex, [Multi-Agent Systems](../concepts/multi-agent-systems.md) where state or data needs to be passed durably between steps or agents [Source 1]. The `Scratchpad` instance manages the lifecycle of this temporary directory, including its creation and eventual cleanup [Source 1].
 
 ## Signature / Constructor
 
-### Constructor
+The `Scratchpad` is instantiated with an optional configuration object that defines its location and resource limits [Source 1].
+
 ```typescript
-constructor(config?: ScratchpadConfig)
+export class Scratchpad {
+  constructor(config?: ScratchpadConfig);
+  // ... methods
+}
 ```
 
-### ScratchpadConfig
-The configuration object for initializing a scratchpad:
+### Configuration
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `baseDir` | `string` | (Optional) The base directory for scratchpad files. Defaults to the OS temporary directory with a random suffix. |
-| `maxTotalBytes` | `number` | (Optional) The maximum total size of the scratchpad in bytes. Defaults to 50MB. |
-| `maxFiles` | `number` | (Optional) The maximum number of files allowed in the scratchpad. Defaults to 100. |
+The constructor accepts a `ScratchpadConfig` object with the following properties:
+
+```typescript
+export type ScratchpadConfig = {
+  /** 
+   * Base directory for scratchpad files. 
+   * Default: The operating system's temporary directory plus a random suffix. 
+   */
+  baseDir?: string;
+  /** 
+   * Maximum total size of all files in the scratchpad, in bytes. 
+   * Default: 50MB. 
+   */
+  maxTotalBytes?: number;
+  /** 
+   * Maximum number of files allowed in the scratchpad. 
+   * Default: 100. 
+   */
+  maxFiles?: number;
+};
+```
 
 ## Methods & Properties
 
-### write()
-```typescript
-write(filename: string, content: string): Promise<void>
-```
-Writes content to a file within the scratchpad directory.
+While the source material does not provide full method implementations, the documentation and examples imply the following public API [Source 1].
 
-### read()
-```typescript
-read(filename: string): Promise<string>
-```
-Reads the contents of a file from the scratchpad directory.
+### `write(path: string, content: string): Promise<void>`
 
-### list()
-```typescript
-list(): Promise<ScratchpadEntry[]>
-```
-Returns a list of all files currently stored in the scratchpad. Each entry includes:
-* `name`: The filename.
-* `size`: The file size in bytes.
-* `lastModified`: A `Date` object representing the last modification time.
+Writes content to a file within the scratchpad's base directory.
 
-### destroy()
+### `read(path: string): Promise<string>`
+
+Reads the content of a file from the scratchpad.
+
+### `list(): Promise<ScratchpadEntry[]>`
+
+Lists all files currently in the scratchpad, returning an array of `ScratchpadEntry` objects.
+
 ```typescript
-destroy(): Promise<void>
+export type ScratchpadEntry = {
+  name: string;
+  size: number;
+  lastModified: Date;
+};
 ```
-Cleans up the scratchpad by removing the directory and all contained files. This is typically called at the end of a session.
+
+### `destroy(): Promise<void>`
+
+Removes the scratchpad directory and all its contents from the file system. This is intended for cleanup at the end of an [Agent Session](../concepts/agent-session.md).
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how two different agents might use a shared scratchpad to communicate findings.
+The following example demonstrates the typical lifecycle of a `Scratchpad`: creating it, having one agent write data, having another agent read it, listing the contents, and finally cleaning up the directory [Source 1].
 
 ```typescript
 import { Scratchpad } from 'yaaf';
 
+// Initialize the scratchpad.
+// This could be done in a central coordinator.
 const scratch = new Scratchpad({ baseDir: '/tmp/yaaf-scratch' });
 
-// Agent A writes research findings:
-await scratch.write('research.md', '## Auth Bug\nFound a race condition in the login flow.');
+// Agent A writes its research findings to a file.
+await scratch.write('research.md', '## Auth Bug\nThere is a critical vulnerability in the login flow.');
 
-// Agent B reads the findings:
+// Agent B, in a separate process or step, reads the findings.
 const findings = await scratch.read('research.md');
 console.log(findings);
+// Output: "## Auth Bug\nThere is a critical vulnerability in the login flow."
 
-// List all files in the scratchpad:
+// An observer agent lists all files in the scratchpad.
 const files = await scratch.list();
-files.forEach(file => {
-  console.log(`${file.name} (${file.size} bytes)`);
-});
+console.log(files);
+// Output: [ { name: 'research.md', size: 68, lastModified: ... } ]
 
-// Cleanup on session end:
+// At the end of the session, the coordinator cleans up.
 await scratch.destroy();
 ```
+
+## Sources
+
+[Source 1]: src/agents/scratchpad.ts
+[Source 2]: src/context/compactionPrompts.ts

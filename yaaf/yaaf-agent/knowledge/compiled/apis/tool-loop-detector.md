@@ -1,120 +1,158 @@
 ---
-title: ToolLoopDetector
-entity_type: api
-summary: A utility class used to record tool execution history and identify looping behavior based on configurable thresholds.
+summary: A class that detects and prevents agents from entering repetitive tool call patterns.
 export_name: ToolLoopDetector
 source_file: src/tools/loopDetector.ts
 category: class
+relationships:
+ - [object Object]
+ - [object Object]
+title: ToolLoopDetector
+entity_type: api
+search_terms:
+ - prevent infinite tool loops
+ - detect repetitive tool calls
+ - agent getting stuck
+ - tool call cycle detection
+ - alternating tool pattern
+ - avoid expensive agent loops
+ - tool call history
+ - loop detection algorithm
+ - OpenClaw loop detection
+ - stop agent from repeating itself
+ - tool call threshold
+ - rolling window pattern detection
 stub: false
-compiled_at: 2026-04-16T14:12:02.500Z
+compiled_at: 2026-04-24T17:45:19.757Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/tools.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/loopDetector.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/loopDetector.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`ToolLoopDetector` is a utility designed to identify and mitigate repetitive tool execution patterns in LLM-powered agents. It tracks tool calls and their arguments to detect when an agent has entered an infinite loop—such as calling the same tool with identical parameters multiple times or alternating between a specific set of tools. 
 
-This mechanism is inspired by OpenClaw's tool-loop detection and is primarily used to prevent agents from consuming excessive tokens or API budget when they fail to progress toward a goal.
+The `ToolLoopDetector` class is a utility designed to detect and prevent [LLM](../concepts/llm.md)-powered agents from getting stuck in repetitive tool-calling loops [Source 1]. This is a common failure mode where an agent repeatedly calls the same tool with the same arguments, which can lead to wasted resources and failed tasks. The implementation is inspired by similar functionality in the OpenClaw project [Source 1].
+
+It works by tracking a history of [Tool Calls](../concepts/tool-calls.md) within a rolling window. If it detects that the same tool and arguments have been called a configurable number of times consecutively, or if it detects an alternating pattern of calls, it flags a loop condition. This allows the agent's control logic to intervene, for example by breaking the loop and providing a warning message to the underlying model [Source 1].
 
 ## Signature / Constructor
+
+The `ToolLoopDetector` is instantiated with an optional configuration object.
 
 ```typescript
 export class ToolLoopDetector {
   constructor(config?: LoopDetectorConfig);
+  // ... methods
 }
 ```
 
-### Configuration Types
+### Configuration
 
-#### LoopDetectorConfig
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `threshold` | `number` | Number of consecutive identical calls before flagging a loop. Default: `3`. |
-| `windowSize` | `number` | Rolling window size for pattern detection. Default: `20`. |
-| `detectAlternating` | `boolean` | Whether to detect alternating patterns (e.g., Tool A → Tool B → Tool A → Tool B). Default: `true`. |
+The constructor accepts a `LoopDetectorConfig` object with the following properties [Source 1]:
+
+```typescript
+export type LoopDetectorConfig = {
+  /**
+   * Number of consecutive identical calls before flagging a loop.
+   * Default: 3
+   */
+  threshold?: number;
+  /**
+   * Rolling window size for pattern detection.
+   * Default: 20
+   */
+  windowSize?: number;
+  /**
+   * Also detect alternating patterns (A→B→A→B)?
+   * Default: true
+   */
+  detectAlternating?: boolean;
+};
+```
+
+### Related Types
+
+The following types are used by or related to the `ToolLoopDetector` [Source 1]:
+
+```typescript
+// Represents a single recorded tool call
+export type ToolCallRecord = {
+  name: string;
+  argsHash: string;
+  timestamp: number;
+};
+
+// Describes the state of a detected loop
+export type LoopInfo = {
+  type: "exact-repeat" | "alternating" | "none";
+  /** Tool(s) involved */
+  [[[[[[[[Tools]]]]]]]]: string[];
+  /** Number of repetitions detected */
+  count: number;
+};
+```
 
 ## Methods & Properties
 
+Based on the example usage, the `ToolLoopDetector` class exposes the following public methods [Source 1].
+
 ### record()
-Records a tool execution event in the internal history.
+
+Records a tool call to be tracked for loop detection.
+
 ```typescript
-record(name: string, args: any): void
+record(toolName: string, toolArgs: any): void;
 ```
-- **name**: The name of the tool being called.
-- **args**: The arguments passed to the tool (internally hashed for comparison).
+
+- **`toolName`**: The name of the tool that was called.
+- **`toolArgs`**: The arguments passed to the tool. These are hashed internally to check for repetition.
 
 ### isLooping()
-Checks the current execution history against the configured thresholds to determine if a loop is occurring.
+
+Checks the recorded history and returns `true` if a loop pattern is detected based on the configured `threshold` and `windowSize`.
+
 ```typescript
-isLooping(): boolean
+isLooping(): boolean;
 ```
 
 ### getWarning()
-Generates a descriptive warning message when a loop is detected, suitable for injecting back into the agent's context to prompt a change in behavior.
+
+Returns a descriptive warning message if a loop has been detected. This message can be injected into the agent's context to help it break out of the loop.
+
 ```typescript
-getWarning(): string
+getWarning(): string;
 ```
-
-### Supporting Types
-
-#### ToolCallRecord
-Represents a single entry in the detector's history.
-- `name`: `string`
-- `argsHash`: `string`
-- `timestamp`: `number`
-
-#### LoopInfo
-Detailed information about a detected loop.
-- `type`: `'exact-repeat' | 'alternating' | 'none'`
-- `tools`: `string[]` (The names of the tools involved in the loop)
-- `count`: `number` (Number of repetitions detected)
 
 ## Examples
 
-### Basic Usage in Agent Hooks
-The most common pattern is to use the detector within an agent's `afterToolCall` hook to monitor and interrupt runaway processes.
+The following example shows how to instantiate and use the `ToolLoopDetector` within an agent's execution cycle [Source 1].
 
 ```typescript
 import { ToolLoopDetector } from 'yaaf';
 
-const detector = new ToolLoopDetector({
-  threshold: 3,    // Trigger after 3 identical calls
-  windowSize: 20,  // Look at last 20 calls
-});
+const detector = new ToolLoopDetector({ threshold: 3, windowSize: 10 });
 
-// In your agent configuration:
-const agentHooks = {
-  afterToolCall: async (ctx) => {
-    // Record the call
-    detector.record(ctx.toolName, ctx.arguments);
-    
-    // Check for looping behavior
-    if (detector.isLooping()) {
-      // Return an instruction to the runner to inject a warning
-      return {
-        action: 'inject',
-        message: detector.getWarning(),
-      };
-    }
-    return { action: 'continue' };
-  },
-};
-```
+// --- Inside the agent's main loop ---
 
-### Manual Detection
-```typescript
-const detector = new ToolLoopDetector();
+// Assume toolName and toolArgs are available after the LLM generates a tool call
+const toolName = 'search';
+const toolArgs = { query: 'best agent frameworks' };
 
-detector.record('get_weather', { location: 'San Francisco' });
-detector.record('get_weather', { location: 'San Francisco' });
-detector.record('get_weather', { location: 'San Francisco' });
+// 1. Record the tool call
+detector.record(toolName, toolArgs);
 
+// 2. Check if a loop is detected
 if (detector.isLooping()) {
-  console.warn(detector.getWarning());
+  // 3. Intervene if a loop is found
+  const warning = detector.getWarning();
+  console.error(warning);
+  // Break out of the agent's loop or inject the warning
+  // back to the LLM for the next turn.
+} else {
+  // Proceed with executing the tool call
 }
 ```
 
-## See Also
-- [Tools Source Material](docs/tools.md)
+## Sources
+
+[Source 1]: src/Tools/loopDetector.ts

@@ -89,7 +89,50 @@
 
   /* ── Markdown renderer ───────────────────────────────────────────────── */
 
+  // Sprint 4: Configure marked + highlight.js if loaded from CDN.
+  // Falls back to the hand-rolled parser below if CDN load failed (offline dev).
+  var _useMarked = false
+  if (typeof marked !== 'undefined' && typeof hljs !== 'undefined') {
+    try {
+      marked.setOptions({
+        highlight: function (code, lang) {
+          if (lang && hljs.getLanguage(lang)) {
+            return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+          }
+          return hljs.highlightAuto(code).value
+        },
+        breaks: false,
+        gfm: true
+      })
+      _useMarked = true
+    } catch (e) {
+      // marked config failed — fall through to hand-rolled parser
+    }
+  }
+
   function renderMd (raw) {
+    // Use marked library when available (Sprint 4)
+    if (_useMarked) {
+      try {
+        var html = marked.parse(raw)
+        // Add copy buttons to code blocks (matches the hand-rolled parser's UX)
+        html = html.replace(/<pre><code(?: class="language-(\w+)")?>/g, function (match, lang) {
+          var id = 'cb-' + Math.random().toString(36).slice(2, 8)
+          var langLabel = lang || 'code'
+          return '<div class="code-block">' +
+            '<div class="code-block-header">' +
+            '<span class="code-lang">' + escHtml(langLabel) + '</span>' +
+            '<button class="copy-btn" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
+            '</div>' +
+            '<pre id="' + id + '"><code' + (lang ? ' class="language-' + lang + '"' : '') + '>'
+        })
+        html = html.replace(/<\/code><\/pre>/g, '</code></pre></div>')
+        return html
+      } catch (e) {
+        // marked.parse failed — fall through to hand-rolled parser
+      }
+    }
+    // ── Hand-rolled fallback parser (pre-Sprint 4) ──────────────────────
     let html = ''
     const lines = raw.split('\n')
     let i = 0

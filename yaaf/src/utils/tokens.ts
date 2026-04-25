@@ -14,9 +14,23 @@
  */
 
 /**
+ * CJK Unicode character ranges for detection:
+ * - CJK Unified Ideographs (Chinese/Japanese Kanji): U+4E00–U+9FFF
+ * - Hiragana (Japanese): U+3040–U+309F
+ * - Katakana (Japanese): U+30A0–U+30FF
+ * - Hangul Syllables (Korean): U+AC00–U+D7AF
+ *
+ * Sprint 0a: Added for H5 fix — CJK text uses ~1.5 chars/token vs ~4 for English.
+ */
+const CJK_RE = /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g;
+
+/**
  * Estimate token count from text using a character-ratio heuristic.
  *
- * Heuristic: ~4 characters per token for English + code.
+ * Heuristic:
+ * - ~4 characters per token for English + code
+ * - ~1.5 characters per token for CJK-heavy text (>30% CJK chars)
+ *
  * Overestimates by ~10-15% for code, ~5-10% for prose.
  * This is intentionally conservative to prevent context overflow.
  *
@@ -25,7 +39,10 @@
  */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
-  return Math.ceil(text.length / 4);
+  const cjkMatches = text.match(CJK_RE);
+  const cjkChars = cjkMatches ? cjkMatches.length : 0;
+  const ratio = text.length > 0 ? cjkChars / text.length : 0;
+  return Math.ceil(text.length / (ratio > 0.3 ? 1.5 : 4));
 }
 
 /**

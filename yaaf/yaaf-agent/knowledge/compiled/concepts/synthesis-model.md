@@ -1,16 +1,19 @@
 ---
-title: "Synthesis Model"
+summary: "The specific Large Language Model (LLM) chosen for the content generation or synthesis task, often a capable and expensive model."
+title: "Synthesis model"
 entity_type: concept
 stub: true
-compiled_at: "2026-04-16T14:41:06.150Z"
+compiled_at: "2026-04-25T00:31:18.478Z"
 compiled_from: []
 confidence: 0.5
+search_terms:
+  - "synthesis model"
 ---
 
-# Synthesis Model
+# Synthesis model
 > **Stub article** — This article was auto-generated from mentions in source material.
 > Expand it by adding source documents that cover this topic.
 ## Overview
-The LLM responsible for writing and updating the final wiki-style articles.
+The specific Large Language Model (LLM) chosen for the content generation or synthesis task, often a capable and expensive model.
 ## Related
-- [[Knowledge Base System]]
+- [Knowledge Synthesizer](../subsystems/knowledge-synthesizer.md)

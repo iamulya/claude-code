@@ -1,99 +1,130 @@
 ---
-title: YAAFError
-entity_type: api
-summary: The base class for all errors thrown by the YAAF framework, ensuring consistent error reporting and retry logic.
 export_name: YAAFError
 source_file: src/errors.ts
 category: class
+summary: The base class for all structured, typed errors in YAAF.
+title: YAAFError
+entity_type: api
+search_terms:
+ - base error class
+ - custom error types
+ - structured exceptions
+ - how to handle YAAF errors
+ - error code
+ - retryable errors
+ - unified error handling
+ - YAAF exception hierarchy
+ - diagnosing agent failures
+ - provider-specific errors
+ - catch all YAAF exceptions
+ - typed error system
 stub: false
-compiled_at: 2026-04-16T14:17:56.134Z
+compiled_at: 2026-04-24T17:50:20.834Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/errors.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/errors.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/retry.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`YAAFError` is the foundational class for the YAAF error hierarchy. It provides a structured, typed approach to error handling across all framework subsystems. By extending the native `Error` class, it allows for unified catch blocks while providing additional metadata necessary for production-grade agent operations, such as machine-readable error codes and retry logic indicators.
 
-Design principles for `YAAFError` include:
-- **Unified Catching**: All framework-specific errors extend this class.
-- **Machine-Readable**: Every error carries a specific `code` for programmatic handling.
-- **Retry Logic**: A `retryable` flag informs automated retry mechanisms whether an operation should be attempted again.
-- **Provider Diagnostics**: An optional `provider` field helps identify which external service (e.g., OpenAI, Anthropic) originated the error in multi-provider environments.
+`YAAFError` is the base class for all custom errors thrown by the YAAF framework. It provides a structured and typed approach to error handling, ensuring that all framework-level exceptions can be caught and inspected in a unified way [Source 1].
+
+The primary design principle behind `YAAFError` is to provide more context than a standard `Error` object. Every instance carries a machine-readable `code`, a boolean `retryable` flag to guide [Retry Logic](../concepts/retry-logic.md), and an optional `provider` field for diagnostics in multi-provider environments. Subclasses of `YAAFError`, such as `RateLimitError` or `ToolExecutionError`, add domain-specific fields to provide even more context [Source 1].
+
+Developers should use `instanceof YAAFError` to create a catch-all block for framework errors, while also being able to check for more specific error subclasses [when](./when.md) needed [Source 1].
 
 ## Signature / Constructor
+
+`YAAFError` extends the built-in JavaScript `Error` class.
+
 ```typescript
 export class YAAFError extends Error {
+  /** A machine-readable error identifier. */
   readonly code: ErrorCode;
+
+  /** Indicates if the operation can be safely retried. */
   readonly retryable: boolean;
+
+  /** The provider that originated the error, if applicable. */
   readonly provider?: string;
 
-  constructor(message: string, options: {
-    code: ErrorCode;
-    retryable: boolean;
-    provider?: string;
-    cause?: Error;
-  });
+  // Constructor and other properties...
 }
 ```
 
-### ErrorCode Type
-The `code` property is constrained to the `ErrorCode` union type:
-- `RATE_LIMIT`: The provider has throttled the request.
-- `OVERLOADED`: The provider or system is currently under too much load.
-- `AUTH_ERROR`: Authentication or API key issues.
-- `API_ERROR`: General error returned by a provider API.
-- `API_CONNECTION_ERROR`: Network-level connectivity issues.
-- `CONTEXT_OVERFLOW`: The input or conversation exceeds the model's context window.
-- `TOOL_EXECUTION_ERROR`: An error occurred while running a tool.
-- `SANDBOX_VIOLATION`: A security or boundary violation within a tool sandbox.
-- `PERMISSION_DENIED`: Insufficient permissions for the requested operation.
-- `ABORT`: The operation was manually aborted.
-- `RETRY_EXHAUSTED`: All retry attempts have failed.
-- `COMPACTION_ERROR`: Failure during memory or context compaction.
-- `UNKNOWN`: An unspecified or unclassified error.
-
-## Methods & Properties
-- `code`: (Property) A machine-readable string from the `ErrorCode` union.
-- `retryable`: (Property) A boolean indicating if the framework's retry logic should attempt the operation again.
-- `provider`: (Property) Optional string identifying the external service provider associated with the error.
-- `message`: (Property) Inherited human-readable description of the error.
-
-## Examples
-### Basic Error Handling
-This example demonstrates how to catch `YAAFError` and use its properties to inform application logic.
+The `code` property is of type `ErrorCode`, which is a union of string literals representing all possible error types within YAAF [Source 1]:
 
 ```typescript
-try {
-  await model.complete(params);
-} catch (err) {
-  if (err instanceof YAAFError) {
-    console.log(`${err.code}: ${err.message} [retryable=${err.retryable}]`);
-    
-    if (err.code === 'RATE_LIMIT') {
-      // Handle specific rate limiting logic
+export type ErrorCode =
+  | "RATE_LIMIT"
+  | "OVERLOADED"
+  | "AUTH_ERROR"
+  | "API_ERROR"
+  | "API_CONNECTION_ERROR"
+  | "CONTEXT_OVERFLOW"
+  | "TOOL_EXECUTION_ERROR"
+  - "SANDBOX_VIOLATION"
+  | "PERMISSION_DENIED"
+  | "ABORT"
+  | "RETRY_EXHAUSTED"
+  | "MAX_ITERATIONS"
+  | "COMPACTION_ERROR"
+  | "UNKNOWN";
+```
+
+## Methods & Properties
+
+### Properties
+
+- **`code: ErrorCode`**: A machine-readable string literal that identifies the category of the error. This is useful for programmatic error handling.
+- **`retryable: boolean`**: A flag indicating whether the operation that failed is idempotent and can be safely retried. This is used by [Utilities](../subsystems/utilities.md) like `withRetry` to decide whether to attempt the operation again [Source 1, Source 2].
+- **`provider?: string`**: An optional string that identifies the external provider (e.g., an [LLM](../concepts/llm.md) API provider) that was the source of the error. This is valuable for debugging systems that interact with multiple providers [Source 1].
+- **`message: string`**: (Inherited from `Error`) A human-readable description of the error.
+- **`name: string`**: (Inherited from `Error`) The name of the error class, e.g., `"YAAFError"`.
+- **`stack?: string`**: (Inherited from `Error`) A string containing the stack [Trace](../concepts/trace.md) of where the error was instantiated.
+
+## Examples
+
+The following example demonstrates the recommended pattern for handling YAAF errors. It shows how to catch a specific subclass for special handling (like a rate limit error) and then fall back to a general `YAAFError` catch block for all other framework errors [Source 1].
+
+```typescript
+import { YAAFError, RateLimitError } from 'yaaf'; // Note: RateLimitError is a subclass
+
+async function callModel() {
+  try {
+    // some YAAF operation that might throw
+    await model.complete({ prompt: "..." });
+  } catch (err) {
+    // Check for a specific, actionable error first
+    if (err instanceof RateLimitError) {
+      console.log(`Rate limit hit. Retry after ${err.retryAfterMs}ms`);
+      // Implement retry logic here...
+    } 
+    // Fall back to the base class for any other YAAF error
+    else if (err instanceof YAAFError) {
+      console.error(`A YAAF error occurred: ${err.code}`);
+      console.error(`Message: ${err.message}`);
+      console.error(`Retryable: ${err.retryable}`);
+      if (err.provider) {
+        console.error(`Provider: ${err.provider}`);
+      }
+    } 
+    // Handle any other unexpected errors
+    else {
+      console.error("An unknown error occurred:", err);
     }
   }
 }
 ```
 
-### Handling Subclasses
-Specific errors like `RateLimitError` (which extends `YAAFError`) may provide additional domain-specific fields.
-
-```typescript
-try {
-  await model.complete(params);
-} catch (err) {
-  if (err instanceof RateLimitError) {
-    // Access subclass-specific properties
-    console.log(`Retry after ${err.retryAfterMs}ms`);
-  } else if (err instanceof YAAFError) {
-    // Fallback for other YAAF-specific errors
-    console.error(`YAAF Error [${err.code}]: ${err.message}`);
-  }
-}
-```
-
 ## See Also
-- `classifyAPIError`: A utility function used to convert raw HTTP responses into typed `YAAFError` instances.
-- `parseRetryAfterHeader`: A utility for extracting retry timing information from provider headers.
+
+- **`classifyAPIError`**: A utility function that converts raw HTTP responses and errors into appropriate `YAAFError` subclasses [Source 1].
+- **`withRetry`**: A helper function that implements [Exponential Backoff](../concepts/exponential-backoff.md) retry logic, which relies on the `retryable` property of `YAAFError` instances [Source 2].
+
+## Sources
+
+- [Source 1]: `src/errors.ts`
+- [Source 2]: `src/utils/retry.ts`

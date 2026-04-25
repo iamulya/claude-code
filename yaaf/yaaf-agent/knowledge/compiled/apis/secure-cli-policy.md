@@ -1,69 +1,78 @@
 ---
-title: secureCLIPolicy
-entity_type: api
-summary: A factory function that returns a pre-configured PermissionPolicy with safety defaults for command-line environments.
+summary: A pre-built permission policy for command-line agents that blocks dangerous commands and requires approval for shell execution.
 export_name: secureCLIPolicy
 source_file: src/permissions.ts
 category: function
+title: secureCLIPolicy
+entity_type: api
+search_terms:
+ - default permission policy
+ - secure agent permissions
+ - CLI agent security
+ - block dangerous commands
+ - shell execution approval
+ - command line agent policy
+ - pre-built security rules
+ - how to secure an agent
+ - YAAF permissions
+ - safe tool execution
+ - exec command security
+ - prevent rm -rf
+ - safe by default
 stub: false
-compiled_at: 2026-04-16T14:31:48.637Z
+compiled_at: 2026-04-24T17:36:01.538Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/permissions.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/permissions.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-The `secureCLIPolicy` is a factory function designed to provide a baseline security configuration for agents operating in command-line environments. It initializes a `PermissionPolicy` with sensible defaults aimed at preventing destructive operations while allowing common read-only tasks. 
 
-This policy is particularly useful for developers building CLI-based agents where the LLM might have access to shell execution tools. It automates the process of blocking known dangerous command patterns and ensures that any potentially sensitive execution requires explicit user intervention.
+The `secure[[[[[[[[CLI]]]]]]]]Policy` function is a factory that creates a pre-configured `PermissionPolicy` instance with a set of security rules suitable for agents that interact with a command-line interface (CLI) [Source 1]. It provides a safe-by-default starting point for tool permissions to prevent agents from performing destructive actions without explicit user consent.
 
-## Signature / Constructor
+This policy is configured with three main behaviors [Source 1]:
+1.  **Blocks Dangerous Commands**: It automatically denies [Tool Calls](../concepts/tool-calls.md) whose arguments match a list of potentially destructive shell patterns (e.g., `rm -rf /`, `sudo`, fork bombs). This is achieved using a predicate based on the `isDangerousCommand` utility.
+2.  **Requires Approval for Execution**: Any tool call that involves shell execution (e.g., `exec_command`) is escalated for manual approval.
+3.  **Allows Read-Only Operations**: The policy is designed to permit read-only operations, which are generally considered safe.
+
+Developers should use `secureCLIPolicy` as a baseline and then chain additional rules or attach an `ApprovalHandler` like `cliApproval` to handle the approval flow [Source 1].
+
+## Signature
+
+`secureCLIPolicy` is a function that takes no arguments and returns a new `PermissionPolicy` instance.
+
 ```typescript
-export function secureCLIPolicy(): PermissionPolicy
+export function secureCLIPolicy(): PermissionPolicy;
 ```
 
-### Returns
-- **PermissionPolicy**: A new instance of the policy class, pre-configured with CLI-specific safety rules.
+**Returns:**
 
-## Default Behavior
-The policy returned by `secureCLIPolicy` is pre-configured with the following logic:
-- **Dangerous Pattern Blocking**: It automatically denies tool calls that match high-risk shell patterns (such as recursive deletions of root directories, privilege escalation via `sudo`, or raw disk writes).
-- **Execution Guardrails**: It flags execution-related tools (like `exec` or `shell`) to require manual approval from the user.
-- **Read-Only Access**: It provides a default allowance for tools that follow read-only naming conventions (e.g., `read_*`).
+*   `PermissionPolicy`: An instance of `PermissionPolicy` with pre-configured security rules.
 
 ## Examples
 
-### Basic Usage
-This example shows how to initialize an agent with the secure CLI policy and attach a terminal-based approval handler.
+The most common use case is to create the policy and then attach an interactive approval handler. The policy can also be further customized with additional `allow`, `deny`, or `requireApproval` rules.
 
 ```typescript
-import { Agent, secureCLIPolicy, cliApproval } from 'yaaf';
+import { Agent } from 'yaaf';
+import { secureCLIPolicy, cliApproval } from 'yaaf';
 
+// Create a policy with secure defaults for a CLI agent.
 const policy = secureCLIPolicy()
+  // You can chain additional rules to customize the policy.
+  // This example explicitly allows all tools starting with "read_".
+  .allow('read_*')
+  // Attach an interactive approval handler for escalated tool calls.
   .onRequest(cliApproval());
 
 const agent = new Agent({
-  systemPrompt: 'You are a helpful CLI assistant.',
+  systemPrompt: 'You are a helpful assistant that can use tools.',
   permissions: policy,
+  // ... other agent configuration
 });
 ```
 
-### Customizing the Secure Policy
-The policy returned is a standard instance of `PermissionPolicy`, allowing for further customization or overrides.
-
-```typescript
-import { secureCLIPolicy, cliApproval } from 'yaaf';
-
-const policy = secureCLIPolicy()
-  .allow('read_config')  // Explicitly allow a specific read tool
-  .deny('exec_script', 'Scripts are strictly forbidden') // Add a specific denial
-  .onRequest(cliApproval());
-```
-
-## See Also
-- `PermissionPolicy`
-- `cliApproval`
-- `isDangerousCommand`
-
 ## Sources
-- `src/permissions.ts`
+
+[Source 1]: src/permissions.ts

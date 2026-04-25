@@ -1,92 +1,105 @@
 ---
 title: Observability
 entity_type: concept
-summary: The framework's approach to monitoring agent behavior through traces, metrics, and logs using OpenTelemetry standards.
+summary: YAAF provides observability through optional callback hooks in key subsystems, allowing developers to monitor internal events like model routing and retry attempts for logging and telemetry.
+search_terms:
+ - how to log YAAF events
+ - monitoring agent behavior
+ - telemetry in YAAF
+ - onRetry callback
+ - onRoute callback
+ - debugging agent decisions
+ - instrumenting YAAF
+ - logging retry attempts
+ - tracking model routing
+ - YAAF hooks
+ - agent performance monitoring
+ - instrumentation callbacks
 stub: false
-compiled_at: 2026-04-16T14:37:04.830Z
+compiled_at: 2026-04-24T17:59:26.079Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/telemetry/telemetry.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/router.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/retry.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
-
----
-title: "Observability"
-entity_type: "concept"
-summary: "The framework's approach to monitoring agent behavior through traces, metrics, and logs using OpenTelemetry standards."
-related_subsystems:
-  - "telemetry"
 
 ## What It Is
-Observability in YAAF is the framework's mechanism for monitoring and debugging the behavior of LLM-powered agents. It is built on the OpenTelemetry (OTEL) standard, providing a provider-agnostic way to collect traces, metrics, and logs. 
 
-The primary goal of observability in YAAF is to provide production-grade visibility into agent execution without forcing a specific vendor lock-in. It allows developers to track agent reasoning steps, monitor performance, and capture structured logs that can be exported to various backends like Jaeger, Prometheus, or standard OTLP collectors.
+Observability in YAAF refers to the mechanisms that allow developers to gain insight into the internal state and decision-making processes of agents. Rather than being a distinct subsystem, it is a cross-cutting concern implemented as a pattern of optional callback functions exposed at critical points within the framework.
+
+This pattern enables developers to hook into the agent's lifecycle to implement logging, send metrics to telemetry systems, or perform real-time debugging. It addresses the need to understand why an agent made a particular choice, how it is recovering from transient errors, and how it is performing in terms of cost and latency.
 
 ## How It Works in YAAF
-YAAF implements observability through a dedicated telemetry module that initializes OpenTelemetry providers. The framework manages three primary signals:
 
-1.  **Traces**: Track the flow of execution across agent components and tool calls.
-2.  **Metrics**: Quantitative data such as request counts, latency, and token usage.
-3.  **Logs**: Structured records of internal framework events and agent activities.
+YAAF's approach to observability is decentralized, with individual components offering specific hooks in their configuration objects. [when](../apis/when.md) an event of interest occurs, the framework component invokes the provided callback function, passing a context object with relevant data about the event.
 
-### Initialization
-The telemetry stack is initialized using the `initYAAFTelemetry()` function. This function should be called once at process startup. It reads configuration from environment variables, registers global providers, and sets up flush handlers for process exit events (via `beforeExit` and `exit`).
+Two prominent examples of this pattern are found in [Model Routing](./model-routing.md) and [Retry Logic](./retry-logic.md):
 
-### Key Components
-*   **Meter**: Accessible via `getYAAFMeter()`, this allows developers to create custom counters and histograms for agent-specific metrics.
-*   **Logger**: Accessible via `getYAAFOTelLogger()`, this provides a structured OTLP log emitter for framework and agent logs.
-*   **Flush Mechanism**: The `flushYAAFTelemetry()` function forces an immediate export of all pending telemetry data, which is critical for short-lived processes or clean shutdowns.
+1.  **Model Routing**: The `RouterChatModel` is a component that dynamically chooses between a fast, inexpensive [LLM](./llm.md) and a more capable, expensive one. It exposes an `onRoute` callback in its configuration. This function is called immediately after the routing decision is made, providing the outcome (`'fast'` or `'capable'`) and the context (messages, [Tools](../subsystems/tools.md), iteration number) that informed the decision [Source 1]. This allows for detailed logging of model selection, which is crucial for cost analysis and quality tuning.
 
-### Coexistence
-To support integration into host applications that may already use OpenTelemetry, YAAF supports a `YAAF_OTEL_` prefix for its environment variables. This allows the framework's telemetry configuration to exist independently of the host application's global OTEL settings.
+2.  **Retry Logic**: The `withRetry` utility, used for handling transient API errors, provides an `onRetry` callback. This function is invoked before each retry attempt. The callback receives an object containing the current attempt number, the maximum number of retries, the error that triggered the retry, and the calculated backoff delay in milliseconds [Source 2]. This is useful for monitoring the frequency and nature of transient failures and understanding the resilience of the agent's interactions with external services.
 
 ## Configuration
-Observability is configured primarily through environment variables. YAAF honors standard `OTEL_*` variables but prioritizes `YAAF_OTEL_*` overrides.
 
-### Environment Variables
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `YAAF_OTEL_TRACES_EXPORTER` | — | Override `OTEL_TRACES_EXPORTER` |
-| `YAAF_OTEL_METRICS_EXPORTER` | — | Override `OTEL_METRICS_EXPORTER` |
-| `YAAF_OTEL_LOGS_EXPORTER` | — | Override `OTEL_LOGS_EXPORTER` |
-| `YAAF_OTEL_EXPORTER_OTLP_ENDPOINT` | — | Override `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `YAAF_OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | `grpc`, `http/json`, or `http/protobuf` |
-| `YAAF_OTEL_SHUTDOWN_TIMEOUT_MS` | `2000` | Max ms to wait for flush on shutdown |
+Developers can enable observability by providing callback functions in the configuration objects of relevant YAAF components.
 
-### Exporter Types
-*   `console`: Pretty-prints telemetry to stdout (recommended for development).
-*   `otlp`: Sends data via OpenTelemetry Line Protocol.
-*   `none` or empty: Disables the specific signal.
+### Router Observability
 
-### Code Examples
+The `onRoute` callback can be supplied when instantiating a `RouterChatModel` to log each routing decision.
 
-**Basic Initialization**
-```ts
-import { initYAAFTelemetry } from 'yaaf/telemetry';
+```typescript
+import { RouterChatModel, GeminiChatModel, type RoutingDecision, type RouterContext } from 'yaaf';
 
-// Reads OTEL_* or YAAF_OTEL_* env vars and registers providers
-await initYAAFTelemetry();
+const logRoute = (decision: RoutingDecision, ctx: RouterContext) => {
+  console.log(`Routing decision: ${decision}`, {
+    iteration: ctx.iteration,
+    messageCount: ctx.messages.length,
+    toolCount: ctx.tools?.length ?? 0,
+  });
+};
+
+const model = new RouterChatModel({
+  fast: new GeminiChatModel({ model: 'gemini-2.0-flash' }),
+  capable: new GeminiChatModel({ model: 'gemini-2.0-pro' }),
+  onRoute: logRoute, // Hook for observability
+});
 ```
+This configuration logs the routing choice and the key factors that influenced it for every [LLM Call](./llm-call.md) made through this model [Source 1].
 
-**Custom Metrics**
-```ts
-import { getYAAFMeter } from 'yaaf/telemetry';
+### Retry Observability
 
-const meter = getYAAFMeter();
-if (meter) {
-  const counter = meter.createCounter('agent.tool_usage');
-  counter.add(1, { tool: 'web_search' });
+The `onRetry` callback is provided to the `withRetry` utility to monitor transient errors and recovery attempts.
+
+```typescript
+import { withRetry } from 'yaaf';
+
+async function fallibleOperation() {
+  // An operation that might fail, e.g., an API call
+  if (Math.random() > 0.5) {
+    throw new Error("Transient network error");
+  }
+  return { success: true };
 }
-```
 
-**Production Configuration (OTLP)**
-```ts
-// Example environment setup for Jaeger via OTLP
-process.env.OTEL_TRACES_EXPORTER = 'otlp';
-process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
-
-import { initYAAFTelemetry } from 'yaaf/telemetry';
-await initYAAFTelemetry();
+await withRetry(
+  (attempt) => fallibleOperation(),
+  {
+    maxRetries: 5,
+    onRetry: (info) => {
+      console.warn(`Retrying operation...`, {
+        attempt: info.attempt,
+        maxRetries: info.maxRetries,
+        delayMs: info.delayMs,
+        error: info.error,
+      });
+    },
+  }
+);
 ```
+This example logs a warning with detailed context each time the `fallibleOperation` fails and a retry is scheduled [Source 2].
 
 ## Sources
-* `src/telemetry/telemetry.ts`
+
+[Source 1]: src/models/router.ts
+[Source 2]: src/utils/retry.ts

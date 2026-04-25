@@ -1,103 +1,94 @@
 ---
+summary: A category of agent lifecycle hooks designed to enforce security policies, such as PII redaction or output sanitization, by intercepting and potentially blocking agent execution.
 title: Security Hooks
 entity_type: concept
-summary: A pattern in YAAF where security middleware is composed into agent lifecycles using the hooks system to intercept and validate inputs and outputs.
+see_also:
+ - "[Agent Hooks](./agent-hooks.md)"
+ - "[PII Redaction](./pii-redaction.md)"
+ - "[Prompt Injection Detection](./prompt-injection-detection.md)"
+ - "[Audit Logging (Security)](./audit-logging-security.md)"
+ - "[Defense-in-depth](./defense-in-depth.md)"
+search_terms:
+ - agent security policies
+ - how to redact PII in agents
+ - sanitize LLM output
+ - block dangerous tool calls
+ - prompt injection prevention
+ - fail-safe agent design
+ - fail-closed security
+ - secure agent lifecycle
+ - beforeLLM hook security
+ - afterLLM hook security
+ - output sanitization hook
+ - input validation for LLM
 stub: false
-compiled_at: 2026-04-16T14:34:11.303Z
+compiled_at: 2026-04-25T00:24:19.164Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/piiRedactor.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/promptGuard.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/hooks.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
-
----
-title: "Security Hooks"
-entity_type: "concept"
-summary: "A pattern in YAAF where security middleware is composed into agent lifecycles using the hooks system to intercept and validate inputs and outputs."
-related_subsystems:
-  - "security"
-  - "agents"
 
 ## What It Is
-Security Hooks are a middleware pattern in YAAF used to implement OWASP-aligned security controls for Large Language Model (LLM) applications. By leveraging the framework's lifecycle hooks, developers can intercept data flowing to and from an LLM to mitigate common vulnerabilities such as prompt injection, sensitive data leakage, and insecure output generation.
 
-This concept centralizes security logic, allowing it to be composed across different agents without modifying the core agent logic. It addresses several LLM-specific security risks, including:
-*   **LLM01 (Prompt Injection):** Detecting and blocking malicious instructions.
-*   **LLM02 (Insecure Output Handling):** Sanitizing LLM responses to prevent XSS or HTML injection.
-*   **LLM06 (Sensitive Information Disclosure):** Redacting Personally Identifiable Information (PII) from both inputs and outputs.
+Security Hooks are a specific application of the general [Agent Hooks](./agent-hooks.md) concept in YAAF, designed to implement security controls and policies directly within an agent's execution lifecycle. They serve as interception points that can inspect, modify, or block agent operations to mitigate risks such as data leakage, prompt injection, or the execution of unauthorized actions [Source 1].
+
+These hooks are a key component of a [Defense-in-depth](./defense-in-depth.md) strategy for LLM agents. By embedding security checks at critical junctures—before data is sent to an LLM, after a response is received, or before a tool is executed—developers can enforce policies like PII redaction, input scanning, and output sanitization [Source 1].
 
 ## How It Works in YAAF
-Security Hooks operate by attaching specialized middleware classes to an agent's `beforeLLM` and `afterLLM` lifecycle events. YAAF provides several built-in security components that can be used individually or composed via the `securityHooks()` utility.
 
-### Core Components
-The framework includes several specialized security modules:
-*   **PromptGuard:** A `beforeLLM` hook that scans user messages for injection patterns, instruction overrides, and role hijacking. It can operate in `detect` (log only) or `block` (sanitize) modes.
-*   **PiiRedactor:** A bidirectional scanner that identifies and redacts sensitive data (e.g., emails, SSNs, API keys) in both user inputs and LLM responses.
-*   **OutputSanitizer:** An `afterLLM` hook that strips HTML or potentially malicious scripts from the LLM's output.
-*   **TrustPolicy:** Verifies the integrity of plugins and Model Context Protocol (MCP) tools.
-*   **GroundingValidator:** Cross-references LLM outputs against provided context to reduce hallucinations.
-*   **PerUserRateLimiter:** Manages usage budgets and prevents resource exhaustion.
+Security Hooks are implemented as standard [Lifecycle Hooks](./lifecycle-hooks.md), but they are distinguished by their "fail-closed" design philosophy. This ensures that if a security control fails or throws an error, the agent's operation is halted rather than proceeding in an insecure state [Source 1].
 
-### Lifecycle Integration
-When an agent is initialized, these components are wired into the execution flow:
-1.  **Input Phase (`beforeLLM`):** The `PromptGuard` checks for malicious payloads, and the `PiiRedactor` scrubs sensitive data before the messages are sent to the LLM provider.
-2.  **Output Phase (`afterLLM`):** The `OutputSanitizer` cleans the response, and the `PiiRedactor` ensures the LLM has not inadvertently revealed sensitive information in its completion.
+YAAF's hook dispatchers enforce this behavior for LLM interactions:
 
-If an observability plugin is registered with the agent's `PluginHost`, security events (such as a blocked injection attempt or a PII detection) are automatically forwarded as logs and metrics.
+*   **`beforeLLM` Hooks**: These hooks run before a message list is sent to the LLM. They are commonly used for [PII Redaction](./pii-redaction.md) or [Prompt Injection Detection](./prompt-injection-detection.md). If a `beforeLLM` hook throws an exception (e.g., a PII redaction service is unavailable), the framework blocks the LLM call by re-throwing the exception. This prevents potentially sensitive or malicious content from reaching the LLM when a security mechanism is broken [Source 1].
+
+*   **`afterLLM` Hooks**: These hooks process the LLM's response before it is passed to the user or used for subsequent tool calls. They are ideal for output sanitization. If an `afterLLM` hook throws an error, the framework blocks the LLM's response and stops further execution. This prevents unsanitized output from being exposed if a security filter fails [Source 1].
+
+*   **`beforeToolCall` Hooks**: These hooks can implement access control or safety checks before a tool is executed. A hook can return a `{ action: 'block' }` result to prevent the tool call from proceeding, for example, if a user has not confirmed a destructive action [Source 1].
+
+This fail-closed approach ensures that the failure of a security component defaults to a secure state (blocking the operation) rather than an insecure one (allowing the operation to continue without checks).
 
 ## Configuration
-Developers can configure security hooks either by using the high-level `securityHooks()` helper or by manually composing individual middleware hooks.
 
-### Using the securityHooks Helper
-The `securityHooks()` function provides a pre-wired configuration for the most common security components.
+Security Hooks are configured in the `Agent` constructor, just like any other [Agent Hooks](./agent-hooks.md). The following example demonstrates a hook that acts as a simple security gate, requiring user confirmation before executing a sensitive tool [Source 1].
 
-```ts
-import { Agent, securityHooks } from 'yaaf';
+```typescript
+import { Agent } from '@yaaf/agent';
 
-const agent = new Agent({
-  systemPrompt: 'You are a secure assistant.',
-  // Enables PromptGuard, OutputSanitizer, and PiiRedactor with defaults
-  hooks: securityHooks({
-    promptGuard: { mode: 'block', sensitivity: 'high' },
-    piiRedactor: { mode: 'redact', categories: ['email', 'api_key'] },
-    outputSanitizer: { stripHtml: true }
-  }),
-});
-```
-
-### Manual Hook Composition
-For more granular control, individual components can be instantiated and assigned to specific lifecycle hooks.
-
-```ts
-import { Agent, PromptGuard, PiiRedactor } from 'yaaf';
-
-const guard = new PromptGuard({ mode: 'block', sensitivity: 'medium' });
-const redactor = new PiiRedactor({ mode: 'redact' });
+// Assume auditLog and userConfirmed are defined elsewhere
+declare const auditLog: { record: (data: any) => Promise<void> };
+declare let userConfirmed: boolean;
 
 const agent = new Agent({
+  systemPrompt: 'You are a helpful travel assistant.',
   hooks: {
-    beforeLLM: async (messages) => {
-      // Run prompt injection detection
-      const guarded = await guard.hook()(messages);
-      const msgs = guarded ?? messages;
-      
-      // Run PII redaction on the input
-      return await redactor.beforeHook()(msgs) ?? msgs;
+    // A security hook to prevent a sensitive tool call without confirmation.
+    beforeToolCall: async ({ toolName, arguments: args }) => {
+      if (toolName === 'book_trip' && !userConfirmed) {
+        // Block the execution and provide a reason.
+        return { action: 'block', reason: 'Awaiting user confirmation' };
+      }
+      // Allow all other tool calls to proceed.
+      return { action: 'continue' };
     },
-    afterLLM: async (response, iteration) => {
-      // Run PII redaction on the output
-      return await redactor.afterHook()(response, iteration);
+    // A hook for security audit logging.
+    afterToolCall: async ({ toolName }, result) => {
+      await auditLog.record({ tool: toolName, result });
+      return { action: 'continue' };
     },
   },
 });
 ```
 
-### PromptGuard Sensitivity Levels
-The `PromptGuard` component supports three sensitivity levels:
-*   `low`: Detects obvious instruction overrides.
-*   `medium`: Adds detection for encoding attacks and delimiter escapes.
-*   `high`: Adds role hijacking detection, system prompt extraction attempts, and deep content scanning.
+## See Also
 
-### PiiRedactor Categories
-The `PiiRedactor` can be configured to scan for specific categories, including `email`, `phone`, `ssn`, `credit_card`, `api_key`, `ipv4`, `ipv6`, `passport`, and `iban`. It also supports `customPatterns` using regular expressions.
+*   [Agent Hooks](./agent-hooks.md): The underlying framework mechanism for all lifecycle hooks.
+*   [Defense-in-depth](./defense-in-depth.md): The high-level security strategy that Security Hooks help implement.
+*   [PII Redaction](./pii-redaction.md): A common use case for `beforeLLM` security hooks.
+*   [Prompt Injection Detection](./prompt-injection-detection.md): Another critical security function implemented via `beforeLLM` hooks.
+*   [Audit Logging (Security)](./audit-logging-security.md): A security practice often implemented using `afterToolCall` or `afterLLM` hooks.
+
+## Sources
+
+[Source 1]: src/hooks.ts

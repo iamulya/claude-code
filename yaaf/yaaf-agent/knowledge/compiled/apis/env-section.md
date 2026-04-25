@@ -1,73 +1,91 @@
 ---
-summary: Generates a standard environment section containing CWD, platform, shell, and OS information for the system prompt.
+title: envSection
+entity_type: api
+summary: A factory function to create a prompt section that injects specified environment variables.
 export_name: envSection
 source_file: src/prompt/systemPrompt.ts
 category: function
-title: envSection
-entity_type: api
+search_terms:
+ - inject environment variables into prompt
+ - system prompt environment info
+ - add cwd to prompt
+ - prompt context from environment
+ - dynamic prompt sections
+ - how to add date to system prompt
+ - YAAF prompt builder
+ - SystemPromptBuilder helpers
+ - current working directory in prompt
+ - os info in prompt
+ - platform and shell for agent
+ - session-specific context
 stub: false
-compiled_at: 2026-04-16T14:32:20.226Z
+compiled_at: 2026-04-24T17:04:47.032Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/prompt/systemPrompt.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-The `envSection` function is a utility used to generate a standardized block of system environment information for an agent's system prompt. It captures metadata about the runtime environment, including the current working directory (CWD), operating system platform, shell, OS version, and the current date.
 
-This function is designed to work with the `SystemPromptBuilder` to provide the LLM with context about the system it is operating within. By default, this section is often treated as dynamic (recomputed per turn) because the current working directory or the system time may change during a session, although it can be configured for session-level caching if the environment is stable.
+The `envSection` function is a convenience factory for creating a [System Prompt](../concepts/system-prompt.md) section that contains environment-specific information [Source 1]. It is designed to be used with a `SystemPromptBuilder` or the `fromSections` factory to compose a complete system prompt [Source 1].
 
-## Signature / Constructor
+This function can be used to inject a custom set of key-value pairs, such as deployment region or environment name, into the prompt [Source 1].
+
+Additionally, a standard, parameter-less usage injects common system details like the current working directory (CWD), OS platform, shell, and current date [Source 2]. Because this information, particularly the CWD, can change between agent runs, the section is typically configured with a `turn` cache mode, meaning it is re-evaluated for each `build()` call on the `SystemPromptBuilder` [Source 2].
+
+## Signature
+
+The function accepts an object containing key-value pairs to be injected into the prompt section.
 
 ```typescript
-export function envSection(options: {
-  /**
-   * Configuration options for environment detection and formatting.
-   */
-}): {
-  name: string;
-  fn: () => string;
-  cache: 'session' | 'turn';
-};
+export function envSection(variables: Record<string, string>): PromptSection;
 ```
 
-### Parameters
-- `options`: An object containing configuration for the environment section. (Note: Specific property fields are internal to the implementation but generally control the detail level of the output).
+*   **`variables`**: An object where keys and values are strings. Each key-value pair will be formatted and included in the resulting prompt section.
 
-### Return Value
-Returns a section definition object compatible with `SystemPromptBuilder`, containing:
-- `name`: The identifier for the section (typically "env").
-- `fn`: A function that resolves the environment string.
-- `cache`: The caching strategy, defaulting to `turn` to account for potential changes in the working directory or time.
+The function returns a configuration object compatible with `SystemPromptBuilder` methods.
 
 ## Examples
 
-### Basic Usage with SystemPromptBuilder
-This example demonstrates how to manually add the environment section to a custom prompt builder.
+The following example demonstrates how to use `envSection` within the `fromSections` factory to create a `SystemPromptBuilder` with a custom environment section.
 
 ```typescript
-import { SystemPromptBuilder, envSection } from 'yaaf';
+import {
+  fromSections,
+  identitySection,
+  dateSection,
+  envSection,
+  rulesSection,
+} from 'yaaf';
 
-const builder = new SystemPromptBuilder()
-  .addStatic('identity', () => 'You are a system administrator.')
-  .addSection(envSection({}));
+// Compose a SystemPromptBuilder from section factories
+const customBuilder = fromSections([
+  identitySection('You are a security auditor.'),
+  dateSection(),
+  // Inject specific environment variables into the prompt
+  envSection({ REGION: 'us-east-1', ENVIRONMENT: 'staging' }),
+  rulesSection([
+    'Always check for SQL injection',
+    'Flag hardcoded credentials',
+  ]),
+]);
 
-const systemPrompt = await builder.build();
+const prompt = await customBuilder.build();
 ```
-
-### Output Format
-When rendered, the section typically produces a string similar to the following:
-
-```text
-## Environment
-CWD: /Users/project/yaaf
-Platform: darwin
-Shell: /bin/zsh
-OS: macOS 14.5
-Date: 2023-10-27T10:00:00.000Z
-```
+[Source 1]
 
 ## See Also
-- SystemPromptBuilder
-- defaultPromptBuilder
-- dateSection
+
+*   `SystemPromptBuilder`
+*   `fromSections`
+*   `identitySection`
+*   `rulesSection`
+*   `dateSection`
+*   `defaultPromptBuilder`
+
+## Sources
+
+*   [Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+*   [Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts

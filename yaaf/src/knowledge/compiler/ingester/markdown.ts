@@ -19,38 +19,15 @@ import { readFile } from "fs/promises";
 import { dirname, join } from "path";
 import type { Ingester, IngestedContent, IngesterOptions } from "./types.js";
 import { resolveAllMarkdownImages } from "./images.js";
+import { parseFrontmatter } from "../../utils/frontmatter.js";
 
 // ── Frontmatter extraction ────────────────────────────────────────────────────
+// Replaced hand-rolled YAML parser with shared yaml-library-based implementation.
+// See utils/frontmatter.ts for details.
 
-function extractFrontmatterYaml(markdown: string): {
-  frontmatter: Record<string, string>;
-  body: string;
-} {
-  // R1: CRLF normalization -- Windows Obsidian Web Clipper exports use \r\n.
-  // Without this, frontmatter is silently parsed as {} and body = full raw file.
-  const normalized = markdown.replace(/\r\n/g, "\n");
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!match) return { frontmatter: {}, body: markdown };
-
-  const frontmatter: Record<string, string> = {};
-  for (const line of match[1]!.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx > 0) {
-      const key = line.slice(0, colonIdx).trim();
-      const value = line
-        .slice(colonIdx + 1)
-        .trim()
-        .replace(/^["']|["']$/g, "");
-      frontmatter[key] = value;
-    }
-  }
-
-  return { frontmatter, body: match[2]?.trim() ?? "" };
-}
-
-function extractTitle(markdown: string, frontmatter: Record<string, string>): string | undefined {
+function extractTitle(markdown: string, frontmatter: Record<string, unknown>): string | undefined {
   // Priority: frontmatter title > first H1 > first H2
-  if (frontmatter["title"]) return frontmatter["title"];
+  if (frontmatter["title"]) return String(frontmatter["title"]);
 
   const h1Match = markdown.match(/^#\s+(.+)$/m);
   if (h1Match) return h1Match[1]!.trim();
@@ -70,7 +47,7 @@ export const markdownIngester: Ingester = {
 
   async ingest(filePath: string, options: IngesterOptions = {}): Promise<IngestedContent> {
     const raw = await readFile(filePath, "utf-8");
-    const { frontmatter, body } = extractFrontmatterYaml(raw);
+    const { frontmatter, body } = parseFrontmatter(raw);
     const title = extractTitle(body, frontmatter);
 
     const imageOutputDir = options.imageOutputDir ?? join(dirname(filePath), "assets");
@@ -92,7 +69,7 @@ export const markdownIngester: Ingester = {
       title,
       metadata,
       lossy: false,
-      sourceUrl: options.sourceUrl ?? frontmatter["source"] ?? frontmatter["url"],
+      sourceUrl: options.sourceUrl ?? (frontmatter["source"] as string | undefined) ?? (frontmatter["url"] as string | undefined),
     };
   },
 };

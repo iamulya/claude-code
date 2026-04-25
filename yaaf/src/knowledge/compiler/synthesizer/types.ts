@@ -107,6 +107,24 @@ export type SynthesisOptions = {
   onProgress?: (event: SynthesisProgressEvent) => void;
 
   /**
+   * Finding 17: Per-article completion callback for checkpoint/resume support.
+   *
+   * Called by the synthesizer immediately after each article's file is written
+   * to disk (action = 'created' | 'updated'). The compiler installs a handler
+   * here that atomically appends the docId to `.kb-synthesis-progress.json`.
+   * Finding 17: Per-article completion callback.
+   *
+   * Called immediately after each article is successfully written to disk
+   * (action = 'created' | 'updated'). The compiler uses this to update a
+   * crash-recovery checkpoint file so that a re-run after process death can
+   * skip already-completed articles rather than re-synthesizing from scratch.
+   *
+   * The callback may be async (returns a Promise) or fire-and-forget (void).
+   * Checkpoint failures must NOT stall synthesis — the caller must handle errors.
+   */
+  onArticleComplete?: (docId: string) => void | Promise<void>;
+
+  /**
    * If true, skip synthesis for articles whose source files are older than
    * the current compiled article (based on mtime). Default: false.
    */

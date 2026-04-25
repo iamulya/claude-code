@@ -1,45 +1,47 @@
 ---
 title: LinkGraph
 entity_type: api
-summary: A data structure representing the directed graph of links between articles in the knowledge base.
+summary: A type alias representing the graph structure of inter-article links within the knowledge base, used for validation.
 export_name: LinkGraph
 source_file: src/knowledge/compiler/linter/types.ts
 category: type
+search_terms:
+ - knowledge base validation
+ - broken link checking
+ - article graph
+ - wiki link structure
+ - linting links
+ - knowledge graph
+ - content dependency graph
+ - cross-reference validation
+ - inter-article linking
+ - link validation type
+ - knowledge linter
 stub: false
-compiled_at: 2026-04-16T14:25:11.082Z
+compiled_at: 2026-04-24T17:17:07.485Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/index.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/linter/index.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`LinkGraph` is a data structure used by the YAAF knowledge base compiler and linter to model the relationships between articles. It represents the knowledge base as a directed graph where nodes are articles and edges are the links between them. This structure is primarily used during the linting process to detect broken links, orphan articles, and other structural integrity issues within the documentation.
 
-## Signature / Constructor
+`LinkGraph` is a type alias used within the YAAF [Knowledge Base Compiler](../subsystems/knowledge-base-compiler.md)'s [Linter](../concepts/linter.md) subsystem. It defines the data structure for representing the complete network of [Wikilinks](../concepts/wikilinks.md) between all articles in the knowledge base. This graph representation is primarily used by the linter to perform validation checks, such as identifying broken links that point to non-existent articles [Source 1].
+
+## Signature
+
+The `LinkGraph` type is defined in `src/knowledge/compiler/linter/types.ts` and re-exported from the linter's main entry point [Source 1]. The specific definition of this type alias was not available in the provided source material.
+
 ```typescript
-export type LinkGraph = {
-  // Internal structure defined in src/knowledge/compiler/linter/types.ts
-};
+// Re-exported from src/knowledge/compiler/linter/index.ts
+export type { LinkGraph } from "./types.js";
 ```
 
 ## Examples
-### Using LinkGraph in a Linter Context
-The `LinkGraph` is typically consumed by linting functions to analyze the connectivity of the knowledge base.
 
-```typescript
-import type { LinkGraph, LintIssue } from 'yaaf';
+No usage examples are available in the provided source material.
 
-/**
- * Example of a function that might consume a LinkGraph to 
- * find articles with no incoming links.
- */
-function findOrphanArticles(graph: LinkGraph): LintIssue[] {
-  const issues: LintIssue[] = [];
-  // Logic to traverse the LinkGraph and identify orphans
-  return issues;
-}
-```
+## Sources
 
-## See Also
-*   `LintIssue`
-*   `LintReport`
+[Source 1] src/knowledge/compiler/linter/index.ts

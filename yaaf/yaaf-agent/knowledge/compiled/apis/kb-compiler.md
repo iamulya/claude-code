@@ -1,128 +1,152 @@
 ---
-summary: A class that manages the ingestion of raw sources and synthesis of a structured knowledge base.
+summary: Orchestrates the compilation of raw source material into a structured, wiki-like knowledge base.
 export_name: KBCompiler
-source_file: src/knowledge/index.ts
+source_file: yaaf/knowledge
 category: class
 title: KBCompiler
 entity_type: api
+search_terms:
+ - compile knowledge base
+ - build wiki from documents
+ - YAAF knowledge pipeline
+ - RAG alternative
+ - structured knowledge generation
+ - LLM-powered wiki
+ - ontology-driven compilation
+ - raw to compiled knowledge
+ - knowledge base linter
+ - self-healing knowledge base
+ - Karpathy-style knowledge
+ - how to create a YAAF KB
+ - yaaf/knowledge compiler
 stub: false
-compiled_at: 2026-04-16T14:08:33.628Z
+compiled_at: 2026-04-24T17:16:01.743Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/knowledge-base.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/compiler.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/index.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/knowledge-base.md
+compiled_from_quality: documentation
+confidence: 0.95
 ---
 
 ## Overview
-The `KBCompiler` is the central coordinator for the YAAF knowledge base pipeline. It implements a "compile your knowledge" architecture where raw, unstructured source materials (such as research papers, web clips, and code) are transformed into a structured, human-readable, and LLM-friendly wiki.
 
-The compiler manages four distinct stages:
-1.  **Ingestion**: Parsing various file formats (Markdown, HTML, PDF, etc.) into a common internal representation.
-2.  **Extraction**: Using a fast LLM to identify concepts and plan article updates based on the provided ontology.
-3.  **Synthesis**: Using a high-capability LLM to author or update articles in the `compiled/` directory.
-4.  **Linting & Healing**: Validating the resulting wiki for consistency, broken links, and schema adherence.
+The `KBCompiler` class is the primary coordinator for YAAF's knowledge base compilation pipeline [Source 1]. It implements a "compile your knowledge" approach, which transforms raw source materials (such as documents, code, and web clippings) into a structured, cross-referenced, and human-readable wiki [Source 1]. This process serves as an alternative to traditional Retrieval-Augmented Generation (RAG) by pre-processing knowledge into a coherent structure that an [LLM](../concepts/llm.md) can read as part of its context, rather than retrieving disparate chunks at query time [Source 1].
 
-This approach replaces traditional Retrieval-Augmented Generation (RAG) by providing the LLM with a well-structured context that includes explicit cross-references (wikilinks) and metadata (frontmatter).
+The compiler manages the entire [workflow](../concepts/workflow.md):
+1.  Ingesting source files from a `raw/` directory.
+2.  Using an LLM to extract key concepts and entities based on a user-defined schema (`[[[[[[[[Ontology]]]]]]]].yaml`).
+3.  Using another LLM to synthesize structured wiki articles for each entity, complete with [Frontmatter](../concepts/frontmatter.md) and [Wikilinks](../concepts/wikilinks.md).
+4.  Writing the final articles to a `compiled/` directory.
+5.  Running a self-healing [Linter](../concepts/linter.md) to ensure consistency, validate links, and check frontmatter against the Ontology [Source 1].
+
+A `KBCompiler` instance is configured with a knowledge base directory, which must contain a valid `ontology.yaml` file for the compiler to function [Source 1].
 
 ## Signature / Constructor
 
-The `KBCompiler` is typically initialized using the static `create` factory method, which loads the required `ontology.yaml` and `.kb-registry.json` from the specified directory.
+`KBCompiler` is instantiated using the static asynchronous factory method `KBCompiler.create()`. This method loads the necessary configuration files, such as `ontology.yaml` and `.kb-registry.json`, from the specified knowledge base directory [Source 1].
 
 ```typescript
-class KBCompiler {
-  static create(options: KBCompilerOptions): Promise<KBCompiler>;
-  
-  compile(options?: CompileOptions): Promise<CompileResult>;
+// Static factory method
+static async create(config: KBCompilerConfig): Promise<KBCompiler>;
+
+// Configuration interface
+interface KBCompilerConfig {
+  /** The root directory of the knowledge base. */
+  kbDir: string;
+
+  /** The model function used for the concept extraction stage. */
+  extractionModel: GenerateFn;
+
+  /** The model function used for the article synthesis stage. */
+  synthesisModel: GenerateFn;
 }
 ```
 
-### KBCompilerOptions
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `kbDir` | `string` | Path to the knowledge base root directory. |
-| `extractionModel` | `GenerateFn` | LLM function used for the planning and extraction phase. |
-| `synthesisModel` | `GenerateFn` | LLM function used for authoring and updating articles. |
-| `pluginHost` | `PluginHost` | (Optional) Host for custom ingester or synthesizer plugins. |
-
-### CompileOptions
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `incrementalMode` | `boolean` | If true, only processes source files newer than their compiled counterparts. |
-| `concurrency` | `number` | Max parallel synthesis calls (default: 3). |
-| `dryRun` | `boolean` | Runs the pipeline without writing changes to disk. |
-| `onProgress` | `Function` | Callback for real-time pipeline updates. |
-| `heal` | `boolean \| HealOptions` | Opt-in LLM-powered fixing of lint issues. |
-| `discover` | `boolean \| DiscoveryOptions` | Opt-in LLM-powered identification of knowledge gaps. |
-| `vision` | `boolean \| VisionPassOptions` | Opt-in vision pass for generating image alt-text. |
+The `extractionModel` and `synthesisModel` are of type `GenerateFn`, which is a standardized function signature for interacting with LLMs. The `makeGenerateFn` factory is typically used to adapt a YAAF model instance, like `GeminiChatModel`, for this purpose [Source 1].
 
 ## Methods & Properties
 
-### `compile()`
-Executes the full compilation pipeline.
-*   **Parameters**: `options?: CompileOptions`
-*   **Returns**: `Promise<CompileResult>` containing statistics on created/updated articles, lint reports, and any errors encountered.
+### compile()
 
-### `static create()`
-Factory method to instantiate the compiler. It validates the existence of the `ontology.yaml` file in the `kbDir`.
-*   **Parameters**: `options: KBCompilerOptions`
-*   **Returns**: `Promise<KBCompiler>`
+This method executes the full compilation pipeline, processing files from the `raw/` directory and outputting them to the `compiled/` directory. It returns a summary of the operations performed [Source 1].
 
-## Events
-The compiler provides progress updates via the `onProgress` callback in `CompileOptions`.
+**Signature**
+```typescript
+async compile(): Promise<KBCompilationResult>;
+```
 
-| Event Stage | Payload Description |
-| :--- | :--- |
-| `scan` | `{ stage: 'scan', fileCount: number }` - Initial file discovery. |
-| `ingest` | Progress of reading and parsing raw files. |
-| `extract` | Progress of the LLM planning phase. |
-| `synthesis` | Progress of article authoring. |
+**Return Value**
+A `Promise` that resolves to a `KBCompilationResult` object with the following structure:
+
+```typescript
+interface KBCompilationResult {
+  synthesis: {
+    created: number;    // Number of new articles created
+    updated: number;    // Number of existing articles updated
+    stubsCreated: number; // Number of stub articles created for linking
+  };
+  lint?: {
+    summary: {
+      errors: number;     // Total number of linting errors
+      autoFixable: number; // Number of errors that can be auto-fixed
+    };
+    // ... other linting details
+  };
+}
+```
 
 ## Examples
 
 ### Basic Compilation
-This example demonstrates initializing the compiler with Gemini models and running a standard compilation pass.
+
+The following example demonstrates how to create a `KBCompiler` instance and run the compilation process for a knowledge base located in the `./my-kb` directory [Source 1].
 
 ```typescript
-import { KBCompiler, makeGenerateFn } from 'yaaf/knowledge'
-import { GeminiChatModel } from 'yaaf'
+import { KBCompiler, makeGenerateFn } from 'yaaf/knowledge';
+import { GeminiChatModel } from 'yaaf';
 
-// 1. Initialize the compiler
+// 1. Create the compiler instance.
+// This loads ontology.yaml and .kb-registry.json from disk.
 const compiler = await KBCompiler.create({
   kbDir: './my-kb',
   extractionModel: makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-flash' })),
   synthesisModel:  makeGenerateFn(new GeminiChatModel({ model: 'gemini-2.5-pro' })),
-})
-
-// 2. Run the pipeline
-const result = await compiler.compile({
-  incrementalMode: true,
-  onProgress: (event) => {
-    console.log(`Current stage: ${event.stage}`);
-  }
-})
-
-console.log(`Successfully synthesized ${result.synthesis.created} new articles.`);
-```
-
-### Advanced Pipeline with Healing
-Enabling the "heal" feature allows the compiler to automatically fix broken wikilinks or low-quality articles identified during the linting stage.
-
-```typescript
-const result = await compiler.compile({
-  heal: true,
-  lintOptions: {
-    severity: 'error'
-  }
 });
 
-if (result.fixes) {
-  console.log(`Auto-fixed ${result.fixes.fixedCount} issues.`);
+// 2. Run the compilation pipeline.
+const result = await compiler.compile();
+
+// 3. Log the results.
+console.log(`Created ${result.synthesis.created} articles`);
+console.log(`Updated ${result.synthesis.updated} articles`);
+console.log(`Stubs:   ${result.synthesis.stubsCreated}`);
+
+if (result.lint) {
+  console.log(`Lint errors: ${result.lint.summary.errors}`);
+  console.log(`Auto-fixable: ${result.lint.summary.autoFixable}`);
 }
 ```
 
-## See Also
-*   `KBOntology` — The schema definition required by the compiler.
-*   `KnowledgeBase` — The runtime store for querying compiled articles.
-*   `GenerateFn` — The function signature for LLM integration.
+### Expected Directory Structure
+
+The `kbDir` passed to the compiler should point to a directory with the following structure [Source 1]:
+
+```
+my-kb/
+│
+├── ontology.yaml              ← Required: Defines the KB schema
+│
+├── raw/                       ← Source material for compilation
+│   ├── papers/
+│   └── notes/
+│
+├── compiled/                  ← Output directory for generated articles
+│   ├── concepts/
+│   └── assets/
+│
+├── .kb-registry.json          ← Auto-maintained index of compiled articles
+└── .kb-lint-report.json       ← Output of the last linting run
+```
+
+## Sources
+
+[Source 1] YAAF Knowledge Base. File: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/knowledge-base.md`

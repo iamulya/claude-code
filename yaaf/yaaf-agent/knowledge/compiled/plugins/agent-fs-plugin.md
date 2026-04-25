@@ -1,78 +1,110 @@
 ---
-title: AgentFSPlugin
+title: AgentFS Plugin
 entity_type: plugin
-summary: A plugin providing a virtual filesystem and related tools for agent file operations.
+summary: A YAAF plugin that provides a virtual filesystem for agent tool registries and shared state, implementing FileSystemAdapter, ToolProvider, and ContextProvider capabilities.
 capabilities:
-  - filesystem
-  - tools
-  - context
+ - filesystem
+ - tool-provider
+ - context-provider
+search_terms:
+ - virtual filesystem for agents
+ - agent file storage
+ - how to give agents a workspace
+ - tool registry as a filesystem
+ - shared state for agents
+ - FileSystemAdapter implementation
+ - ToolProvider for file operations
+ - ContextProvider for file tree
+ - agentfs
+ - agent file system
+ - mounting tools in a virtual fs
+ - fs_read tool
+ - fs_write tool
+ - fs_list tool
 stub: false
-compiled_at: 2026-04-16T14:10:26.634Z
+compiled_at: 2026-04-24T18:08:17.584Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/plugins.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/integrations/agentfs.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
----
-title: "AgentFSPlugin"
-entity_type: "plugin"
-summary: "A plugin providing a virtual filesystem and related tools for agent file operations."
-capabilities: ["filesystem", "tools", "context"]
-built_in: true
-
 ## Overview
-The `AgentFSPlugin` is a built-in YAAF plugin that provides agents with a virtual filesystem (VFS) environment. It allows agents to perform file operations within a sandboxed directory, exposes these operations as native tools for LLM consumption, and provides file-based context during prompt assembly.
 
-The plugin implements three primary capability interfaces: `FileSystemAdapter`, `ToolProvider`, and `ContextProvider`.
+The AgentFS Plugin provides a virtual filesystem designed for agent use cases, such as managing tool registries and shared state [Source 1]. It is a single-class integration that implements multiple capabilities to expose filesystem functionality to different parts of the YAAF framework.
+
+It implements the following capabilities [Source 1]:
+*   **[FileSystemAdapter](../concepts/file-system-adapter.md)**: For generic filesystem operations.
+*   **[ToolProvider](../concepts/tool-provider.md)**: To expose filesystem operations as [Tools](../subsystems/tools.md) that an agent can execute.
+*   **[ContextProvider](../concepts/context-provider.md)**: To inject the filesystem's structure into the [LLM](../concepts/llm.md)'s context, giving it awareness of available files and tools.
+
+In addition to these standard capabilities, the plugin also exposes its own specific APIs for direct interaction, such as `mountTool` and `executeTool` [Source 1].
 
 ## Installation
-The `AgentFSPlugin` is included in the core `yaaf` package. No additional peer dependencies are required beyond the framework itself.
+
+The `AgentFSPlugin` is available as part of the core YAAF package. It can be imported directly from the package.
 
 ```typescript
 import { AgentFSPlugin } from 'yaaf';
-```
-
-## Configuration
-The plugin is configured via its constructor, which accepts a root directory and an optional URI prefix for virtual paths.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `rootDir` | `string` | The local directory on the host machine that serves as the root of the virtual filesystem. |
-| `vfsPrefix` | `string` | (Optional) The URI prefix used to identify virtual paths (e.g., `vfs://`). Defaults to `vfs://`. |
-
-### Example
-```typescript
-import { AgentFSPlugin, PluginHost } from 'yaaf';
-
-const agentFS = new AgentFSPlugin({
-  rootDir:   './agent-workspace',
-  vfsPrefix: 'vfs://',
-});
-
-await agentFS.initialize();
+import { PluginHost } from 'yaaf';
 
 const host = new PluginHost();
-await host.register(agentFS);
+await host.register(new AgentFSPlugin());
+```
+
+There are no peer dependencies required for this plugin.
+
+## Configuration
+
+The `AgentFSPlugin` constructor accepts an optional configuration object, `AgentFSConfig`, to customize its behavior [Source 1].
+
+The available configuration options are:
+
+*   `maxFileSize` (number, optional): The maximum size for a single file in bytes. Defaults to 1MB.
+*   `maxTotalSize` (number, optional): The maximum total storage size of the virtual filesystem in bytes. Defaults to 50MB.
+*   `trackChanges` (boolean, optional): Enables or disables change tracking within the filesystem. Defaults to `true`.
+
+### Example
+
+The following example demonstrates how to instantiate and register the `AgentFSPlugin` with custom configuration.
+
+```typescript
+import { AgentFSPlugin } from 'yaaf';
+import { PluginHost } from 'yaaf';
+
+// Configure the virtual filesystem
+const agentFSConfig = {
+  maxFileSize: 2 * 1024 * 1024, // 2MB
+  maxTotalSize: 100 * 1024 * 1024, // 100MB
+  trackChanges: true,
+};
+
+// Create and register the plugin
+const host = new PluginHost();
+const agentFSPlugin = new AgentFSPlugin(agentFSConfig);
+await host.register(agentFSPlugin);
+
+// Access the filesystem via its adapter
+const fs = host.getAdapter<FileSystemAdapter>('filesystem')!;
+await fs.write('/workspace/notes.md', '# Project Findings');
 ```
 
 ## Capabilities
 
-### FileSystemAdapter
-As a `FileSystemAdapter`, the plugin provides programmatic access to the virtual filesystem. This allows the application or other plugins to interact with the agent's workspace directly.
+The AgentFS Plugin implements three distinct capabilities to integrate its virtual filesystem into the agent's environment.
 
-*   `read(path: string)`: Reads the content of a file.
-*   `write(path: string, content: string)`: Writes content to a file.
-*   `list(path: string)`: Lists the entries in a directory.
-*   `tree(path: string, options?: { depth: number })`: Returns a recursive tree structure of the directory.
+### FileSystemAdapter
+
+As a `FileSystemAdapter`, the plugin provides a generic interface for programmatic file operations. This allows other parts of the system to interact with the virtual filesystem for tasks like reading, writing, and listing files and directories [Source 1].
 
 ### ToolProvider
-The plugin automatically generates and exposes a set of tools that can be used by LLM-powered agents. When the plugin is registered with a `PluginHost`, these tools are included in the `getAllTools()` collection.
 
-The following tools are provided:
-*   `agentfs_read_file`: Allows the agent to read file contents.
-*   `agentfs_write_file`: Allows the agent to create or update files.
-*   `agentfs_list_dir`: Allows the agent to view directory contents.
-*   `agentfs_tree`: Allows the agent to visualize the file structure.
+As a `ToolProvider`, the plugin automatically exposes a set of tools that an agent can use to interact with the filesystem. These tools include `fs_read`, `fs_write`, `fs_list`, and `fs_tree`, enabling the agent to perform file operations as part of its task execution [Source 1].
 
 ### ContextProvider
-The `AgentFSPlugin` implements the `ContextProvider` interface, allowing it to inject relevant file information into the prompt assembly process. When the `PluginHost` calls `gatherContext(query)`, the plugin can provide snippets or file structures relevant to the agent's current task.
+
+As a `ContextProvider`, the plugin injects a representation of the filesystem's directory and tool tree into the LLM's context. This provides the agent with awareness of the available files, directories, and mounted tools, allowing it to make more informed decisions about which file operations to perform [Source 1].
+
+## Sources
+
+[Source 1]: src/[Integrations](../subsystems/integrations.md)/agentfs.ts

@@ -1,75 +1,96 @@
 ---
 title: agentTool
-entity_type: api
-summary: Wraps an AgentRunner or WorkflowStep as a Tool for another agent, enabling multi-agent composition.
+summary: Wrap any AgentRunner or WorkflowStep as a Tool for another agent, enabling multi-agent composition.
 export_name: agentTool
 source_file: src/tools/agentTool.ts
 category: function
+relationships:
+ - [object Object]
+ - [object Object]
+ - [object Object]
+ - [object Object]
+ - [object Object]
+ - [object Object]
+ - [object Object]
+entity_type: api
+search_terms:
+ - multi-agent systems
+ - agent composition
+ - hierarchical agents
+ - parent agent child agent
+ - wrap agent as tool
+ - how to make agents talk to each other
+ - coordinator agent
+ - specialist agent
+ - invoke agent from another agent
+ - agent as a function
+ - sub-agent
+ - AgentTool equivalent
+ - agentTools helper
 stub: false
-compiled_at: 2026-04-16T14:37:20.931Z
+compiled_at: 2026-04-24T16:47:45.631Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/agentTool.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/agentTool.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`agentTool` is the fundamental composition primitive for building multi-agent systems in YAAF. It allows an agent (the "parent") to invoke another agent or workflow (the "child") as if it were a standard tool. 
 
-When the parent agent invokes the tool, the child agent is executed with the provided input. The child's final response is then returned to the parent as the tool's result. This pattern allows the parent agent to maintain control of the high-level logic while delegating specialized tasks to subordinate agents.
+The `agentTool` function is a factory that wraps an existing agent, such as an `AgentRunner` or any `WorkflowStep`, and exposes it as a `Tool` that can be used by another agent [Source 1]. This is the fundamental primitive for composing agents and Building [Multi-Agent Systems](../concepts/multi-agent-systems.md) in YAAF. It allows a "parent" or "coordinator" agent to delegate complex tasks to specialized "child" agents, treating them just like any other tool [Source 1].
 
-## Signature / Constructor
+[when](./when.md) the parent agent invokes the tool, the input `query` is passed to the wrapped child agent as a new user message. The child agent then runs its own logic, potentially using its own set of [Tools](../subsystems/tools.md), until it produces a final response. This final response is then returned to the parent agent as the result of the tool call [Source 1].
+
+A related helper function, `agentTools`, is also provided to create multiple agent-based tools from a registry of named agents [Source 1].
+
+## Signature
+
+The `agentTool` function takes an agent instance and a configuration object and returns a `Tool` instance [Source 1].
 
 ```typescript
+import type { Tool } from "./tool.js";
+import type { WorkflowStep } from "../agents/workflow.js";
+
 export function agentTool(
   agent: WorkflowStep,
   config: AgentToolConfig,
-): Tool;
-
-export type AgentToolConfig = {
-  /** Tool name the parent agent will use to invoke this agent */
-  name: string;
-  /** Description sent to the parent LLM so it knows WHEN to invoke this agent */
-  description: string;
-  /** Maximum result length (characters) before truncation. Default: 50,000 */
-  maxResultChars?: number;
-  /** Whether this agent-tool can run concurrently. Default: true */
-  concurrent?: boolean;
-  /** Custom input schema. Default: { query: string } */
-  inputSchema?: {
-    type: 'object';
-    properties: Record<string, unknown>;
-    required?: string[];
-  };
-  /** Transform the agent's raw output before returning to the parent */
-  transformResult?: (output: string) => string | Promise<string>;
-};
+): Tool<{ /* ... */ }>
 ```
 
-## Methods & Properties
+### `AgentToolConfig`
 
-### agentTools()
-A helper function used to create multiple agent-tools simultaneously from a registry of named agents.
+The configuration object has the following properties [Source 1]:
+
+| Property          | Type                                       | Description                                                                                                                            |
+| ----------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | `string`                                   | **Required.** The tool name the parent agent will use to invoke this agent.                                                            |
+| `description`     | `string`                                   | **Required.** A specific description for the parent [LLM](../concepts/llm.md) to understand when to use this agent.                                          |
+| `maxResultChars`  | `number`                                   | Optional. The maximum number of characters in the result before it is truncated. Defaults to `50,000`.                                  |
+| `concurrent`      | `boolean`                                  | Optional. Whether this tool can run concurrently with other tools. Defaults to `true`.                                                 |
+| `inputSchema`     | `object`                                   | Optional. A custom JSON schema for the tool's input. Defaults to `{ query: string }`. Override this for structured agent inputs.       |
+| `transformResult` | `(output: string) => string \| Promise<string>` | Optional. A function to transform the agent's raw output before returning it to the parent, useful for summarization or extraction. |
+
+### `agentTools` Helper
+
+The `agentTools` function provides a convenient way to create multiple agent tools at once from a registry [Source 1].
 
 ```typescript
 export function agentTools(
-  registry: Record<string, { agent: WorkflowStep; description: string; [key: string]: any }>
-): Tool[];
+  registry: Record<string, {
+    agent: WorkflowStep;
+    description: string;
+    // other AgentToolConfig properties...
+  }>
+): Tool<any>[];
 ```
-
-### Configuration Options
-*   **name**: The identifier used by the parent LLM to call the tool.
-*   **description**: A detailed string explaining the child agent's capabilities. Specificity is recommended to help the parent LLM determine when to delegate.
-*   **inputSchema**: By default, the tool expects a `query` string which is passed to the child agent as a user message. This can be overridden to support structured data.
-*   **transformResult**: An optional callback to post-process the child agent's output (e.g., for summarization or data extraction) before the parent receives it.
 
 ## Examples
 
-### Basic Multi-Agent Composition
-In this example, a researcher agent is wrapped as a tool and provided to a coordinator agent.
+### Wrapping a Single Agent
+
+This example demonstrates creating a `researcher` agent and wrapping it as a `researchTool` for a `coordinator` agent to use [Source 1].
 
 ```typescript
-import { AgentRunner, agentTool } from 'yaaf';
-
 const researcher = new AgentRunner({
   model: myModel,
   tools: [searchTool, readUrlTool],
@@ -84,17 +105,16 @@ const researchTool = agentTool(researcher, {
 
 const coordinator = new AgentRunner({
   model: myModel,
-  tools: [researchTool, writeTool],
+  tools: [researchTool, writeTool, reviewTool],
   systemPrompt: 'You coordinate writing tasks. Use research for facts.',
 });
 ```
 
-### Bulk Tool Creation
-Using `agentTools` to register multiple specialists at once.
+### Using the `agentTools` Helper
+
+This example shows how to use the `agentTools` helper to create tools from a registry of specialist agents [Source 1].
 
 ```typescript
-import { agentTools, AgentRunner } from 'yaaf';
-
 const tools = agentTools({
   research: { agent: researcher, description: 'Research a topic' },
   code: { agent: coder, description: 'Write or fix code' },
@@ -103,12 +123,11 @@ const tools = agentTools({
 
 const coordinator = new AgentRunner({
   model: myModel,
-  tools: [...tools],
+  tools: [...tools, ...directTools],
   systemPrompt: 'You coordinate tasks between specialists.',
 });
 ```
 
-## See Also
-*   `AgentRunner`
-*   `WorkflowStep`
-*   `buildTool`
+## Sources
+
+[Source 1] `src/tools/agentTool.ts`

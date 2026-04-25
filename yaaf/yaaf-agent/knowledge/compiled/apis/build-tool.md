@@ -1,83 +1,76 @@
 ---
 title: buildTool
 entity_type: api
-summary: A factory function used to define a tool with validation, execution logic, and safety metadata.
+summary: A factory function to build a complete Tool instance from a partial definition, applying safe defaults.
 export_name: buildTool
-source_file: src/tool.ts
+source_file: src/tools/tool.ts
 category: function
+search_terms:
+ - create a tool
+ - define agent tool
+ - tool factory
+ - tool definition
+ - how to make a tool
+ - ToolDef type
+ - tool safe defaults
+ - tool builder function
+ - agent tool constructor
+ - yaaf tool creation
+ - tool schema
+ - tool call method
+ - isReadOnly tool property
 stub: false
-compiled_at: 2026-04-16T14:07:52.818Z
+compiled_at: 2026-04-24T16:54:08.582Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/getting-started.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/tools.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/add.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/init.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/tool.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/getting-started.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/cli/add.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/doctor/tools.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/agentTool.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/tool.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`buildTool` is the primary factory function for creating tools in YAAF. It takes a partial tool definition and returns a complete `Tool` object by filling in safe, "fail-closed" defaults for safety and execution metadata. 
 
-Tools defined via `buildTool` are used by agents to perform actions, such as fetching weather data, searching the web, or executing shell commands. The factory ensures that every tool conforms to the standard `Tool` interface, which includes JSON Schema validation for inputs and various safety flags (e.g., read-only, destructive) used by the agent's runtime to manage execution.
+The `buildTool` function is a factory for creating complete, production-ready `Tool` instances from a partial definition. It is the standard and recommended way to define [Tools](../subsystems/tools.md) in YAAF [Source 2].
 
-## Signature / Constructor
+The primary purpose of `buildTool` is to simplify tool creation by applying safe, "fail-closed" defaults for properties that are not explicitly provided in the definition. This ensures that tools are secure by default and requires developers to opt-in to more permissive behaviors [Source 6]. For example, a tool is assumed to have side effects (`isReadOnly: false`) and not be safe for concurrent execution (`isConcurrencySafe: false`) unless specified otherwise [Source 6].
+
+This function is used throughout the YAAF framework, including for creating the internal tools for the YAAF Doctor agent and for wrapping agents as tools [Source 1, Source 4, Source 5].
+
+Key defaults applied by `buildTool` include [Source 6]:
+*   `isEnabled`: `true`
+*   `isConcurrencySafe`: `false` (assumes the tool is not safe to run in parallel with others)
+*   `isReadOnly`: `false` (assumes the tool has side effects)
+*   `isDestructive`: `false`
+*   `checkPermissions`: Returns a result that requires user approval
+*   `userFacingName`: Defaults to the tool's `name`
+
+## Signature
 
 ```typescript
-function buildTool<
-  Input = Record<string, unknown>,
-  Output = unknown,
->(def: ToolDef<Input, Output>): Tool<Input, Output>
+export function buildTool<Input = Record<string, unknown>, Output = unknown>(
+  def: ToolDef<Input, Output>,
+): Tool<Input, Output>
 ```
 
 ### Parameters
-*   **def**: A `ToolDef` object containing the tool's configuration.
 
-### ToolDef Configuration
-The `ToolDef` type requires the following fields:
-*   `name`: A unique string identifier for the tool (e.g., `'get_weather'`).
-*   `inputSchema`: A JSON Schema object used to validate the tool's arguments.
-*   `call`: The execution function that performs the tool's logic.
+*   **`def`** (`ToolDef<Input, Output>`): A partial tool definition object. While many properties of the full `Tool` interface are optional, a valid definition must include:
+    *   `name`: A unique string identifier for the tool.
+    *   `description`: A human-readable string explaining [when](./when.md) the [LLM](../concepts/llm.md) should use this tool.
+    *   `inputSchema`: A JSON Schema object defining the tool's expected input.
+    -   `call`: An asynchronous function that contains the tool's core logic. It receives the validated input and a `ToolContext` object.
 
-The following fields are optional and will use defaults if not provided:
-*   `description`: A string explaining when and why the LLM should use this tool.
-*   `maxResultChars`: The maximum length of the result string before truncation (default: no limit specified in source, but often managed by agent budget).
-*   `isReadOnly`: A function returning a boolean indicating if the tool has no side effects (default: `false`).
-*   `isConcurrencySafe`: A function returning a boolean indicating if the tool can run in parallel (default: `false`).
-*   `isDestructive`: A function returning a boolean indicating if the tool performs irreversible operations (default: `false`).
-*   `isEnabled`: A function returning a boolean indicating if the tool is available in the current environment (default: `true`).
-
-> **Note on CLI Templates**: While the core API uses the `call` method for execution, templates generated by the YAAF CLI (e.g., via `yaaf add tool`) may use an `execute` field. The `buildTool` factory handles the mapping of these fields to the internal `Tool` interface.
-
-## Methods & Properties
-The object returned by `buildTool` implements the `Tool` interface:
-
-| Property / Method | Description |
-|:---|:---|
-| `name` | The unique name of the tool. |
-| `inputSchema` | The JSON Schema for input validation. |
-| `maxResultChars` | Truncation limit for the tool's output. |
-| `call(input, context)` | Executes the tool logic. Receives the validated `input` and a `ToolContext`. |
-| `describe(input)` | Returns a human-readable string describing a specific invocation. |
-| `validateInput(input, context)` | Optional method to perform custom validation before execution. |
-| `checkPermissions(input, context)` | Checks if the invocation requires explicit user permission. |
-| `isEnabled()` | Returns whether the tool is active in the current environment. |
-| `isReadOnly(input)` | Returns `true` if the call does not modify state. |
-| `isConcurrencySafe(input)` | Returns `true` if the call is safe for parallel execution. |
-| `isDestructive(input)` | Returns `true` if the call performs a destructive action (e.g., file deletion). |
-| `userFacingName(input)` | Returns a display name for the tool use in UI/logs. |
-| `prompt()` | Optional method to provide a system prompt contribution for the agent. |
-
-### Tool Context
-The `context` (or `ctx`) parameter in the `call` method provides:
-*   `signal`: An `AbortSignal` to handle execution cancellation.
-*   `agentName`: The name of the agent calling the tool.
-*   `exec`: A function to execute shell commands (available if the runtime environment allows).
+The `ToolDef` type is a partial representation of the full `Tool` interface, allowing developers to omit properties for which `buildTool` provides a default [Source 6].
 
 ## Examples
 
-### Basic Tool Definition
-A simple tool that greets a user.
+### Basic Tool
+
+This example creates a simple, read-only tool that greets a user by name. It provides the minimum required fields.
 
 ```typescript
 import { buildTool } from 'yaaf';
@@ -87,55 +80,56 @@ const greetTool = buildTool({
   description: 'Greet someone by name',
   inputSchema: {
     type: 'object',
-    properties: { 
-      name: { type: 'string' } 
-    },
+    properties: { name: { type: 'string' } },
     required: ['name'],
   },
   async call({ name }) {
     return { data: `Hello, ${name}! 👋` };
   },
+  // Explicitly mark as safe
   isReadOnly: () => true,
 });
 ```
+[Source 2]
 
 ### Advanced Tool with Safety Flags
-A tool that fetches weather data with concurrency and truncation settings.
+
+This example defines a more complex `grep` tool. It explicitly sets safety-related properties like `isReadOnly` and `isConcurrencySafe` to `true`, overriding the safer defaults. It also includes a `describe` method to provide a human-readable description of a specific tool invocation.
 
 ```typescript
 import { buildTool } from 'yaaf';
 
-const weatherTool = buildTool({
-  name: 'get_weather',
-  description: 'Get current weather for a location.',
+const grepTool = buildTool({
+  name: 'grep',
   inputSchema: {
     type: 'object',
     properties: {
-      location: { type: 'string', description: 'City name or coordinates' },
-      units: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+      pattern: { type: 'string' }
     },
-    required: ['location'],
+    required: ['pattern'],
   },
-  maxResultChars: 2000,
-  describe: ({ location }) => `Fetching weather for ${location}`,
-
-  async call({ location, units = 'celsius' }, ctx) {
-    // Respect cancellation signals
-    if (ctx.signal.aborted) return { data: '', error: 'Aborted' };
-    
-    const data = await fetchWeather(location, units);
-    return { 
-      data: JSON.stringify(data),
-      metadata: { source: 'weather-api-v1' }
-    };
+  maxResultChars: 50_000,
+  describe: (input) => `Search for "${input.pattern}"`,
+  async call(input, ctx) {
+    // ctx.exec would be provided by a runtime environment
+    const result = await ctx.exec?.(`grep -rn "${input.pattern}" .`);
+    return { data: result?.stdout ?? '' };
   },
-
   isReadOnly: () => true,
   isConcurrencySafe: () => true,
-  isDestructive: () => false,
 });
 ```
+[Source 6]
 
 ## See Also
-* [Agent API](agent.md) — How to register tools with an agent.
-* [Tools Guide](tools.md) — Best practices for building production-grade tools.
+
+*   The `Tool` interface, which represents the complete object returned by `buildTool`.
+*   The `ToolDef` type, which defines the partial object passed to `buildTool`.
+
+## Sources
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/getting-started.md
+[Source 3]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/[CLI](../subsystems/cli.md)/add.ts
+[Source 4]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/doctor/tools.ts
+[Source 5]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/agentTool.ts
+[Source 6]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/tool.ts

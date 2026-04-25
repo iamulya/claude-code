@@ -1,75 +1,88 @@
 ---
+summary: A ChatModel implementation for interacting with Anthropic Claude LLMs.
+export_name: AnthropicChatModel
+source_file: src/models/anthropic.js
+category: class
 title: AnthropicChatModel
 entity_type: api
-summary: A provider-specific adapter for Anthropic's Claude models implementing the Messages API.
-export_name: AnthropicChatModel
-source_file: src/models/anthropic.ts
-category: class
+search_terms:
+ - Anthropic Claude integration
+ - how to use Claude models
+ - Claude API key
+ - ANTHROPIC_API_KEY environment variable
+ - YAAF Claude support
+ - connect to Anthropic
+ - Claude 3 Opus
+ - Claude 3 Sonnet
+ - Claude 3 Haiku
+ - ChatModel for Claude
+ - LLM provider Anthropic
+ - using Claude with YAAF
 stub: false
-compiled_at: 2026-04-16T14:30:32.700Z
+compiled_at: 2026-04-25T00:04:21.753Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/models/anthropic.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/resolver.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`AnthropicChatModel` is a provider-specific adapter that enables YAAF agents to communicate with Anthropic's Claude series of models. It implements the Anthropic Messages API and supports both standard and streaming chat completions.
 
-The class is designed to be lightweight and does not depend on external SDKs, utilizing the native `fetch` API for network requests. It handles the specific requirements of the Anthropic API, such as top-level system prompts, specific tool schema formats (`input_schema`), and specialized usage tracking including cache hits.
+`AnthropicChatModel` is the concrete class that implements the `[[ChatModel]]` interface for interacting with Anthropic's Claude family of [LLMs](../concepts/llm.md). It handles the specifics of communicating with the Anthropic API, using its native SDK [Source 1].
+
+Within the YAAF framework, this model is typically not instantiated directly. Instead, it is automatically selected and configured by the `resolveModel` function when the `ANTHROPIC_API_KEY` environment variable is present. This allows for seamless switching between different [LLM](../concepts/llm.md) providers without changing application code [Source 1].
 
 ## Signature / Constructor
 
+`AnthropicChatModel` is a class that implements the `[[ChatModel]]` interface. It is configured using an `[[AnthropicModelConfig]]` object.
+
 ```typescript
-export class AnthropicChatModel extends BaseLLMAdapter implements StreamingChatModel {
-  constructor(config: AnthropicModelConfig);
+import type { ChatModel } from '../agents/runner.js';
+import type { AnthropicModelConfig } from './anthropic.js';
+
+class AnthropicChatModel implements ChatModel {
+  constructor(config: AnthropicModelConfig) {
+    // ... implementation
+  }
+
+  // ... ChatModel interface methods
 }
 ```
 
-### AnthropicModelConfig
-The constructor accepts a configuration object with the following properties:
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `apiKey` | `string` | **Required.** The Anthropic API key for authentication. |
-| `model` | `string` | The model identifier (e.g., `claude-3-5-sonnet-20240620`). Defaults to `claude-sonnet-4`. |
-| `apiVersion` | `string` | The `anthropic-version` header value. Defaults to `2023-06-01`. |
-| `timeoutMs` | `number` | Request timeout in milliseconds. Defaults to `120,000`. |
-| `headers` | `Record<string, string>` | Optional additional headers to include in requests. |
-| `contextWindowTokens` | `number` | Maximum context window size. Auto-resolved from the registry if omitted. |
-| `maxOutputTokens` | `number` | Maximum tokens allowed in the response. Auto-resolved from the registry if omitted. |
-
-## Methods & Properties
-
-### Implementation Details
-`AnthropicChatModel` translates YAAF's internal representations into the Anthropic Messages format:
-*   **Authentication**: Uses `x-api-key` and `anthropic-version` headers instead of Bearer tokens.
-*   **System Prompts**: Automatically extracts system messages and passes them as a top-level `system` field in the API request.
-*   **Tool Definitions**: Converts standard JSON Schema parameters into Anthropic's `input_schema` format.
-*   **Tool Results**: Formats tool execution outputs as `tool_result` blocks within user messages.
-*   **Usage Tracking**: Maps Anthropic's usage fields (`input_tokens`, `output_tokens`, and `cache_read_input_tokens`) to the framework's usage metrics.
+The configuration, including the API key and model name, is typically derived from environment variables by the framework's model resolver [Source 1].
 
 ## Examples
 
-### Basic Initialization
+### Configuration via Environment Variables
+
+The most common way to use `AnthropicChatModel` is to configure it via environment variables. The YAAF agent's model resolver will automatically detect the `ANTHROPIC_API_KEY` and instantiate the class. The `LLM_MODEL` variable can be used to specify a particular Claude model [Source 1].
+
 ```typescript
-import { AnthropicChatModel } from 'yaaf';
+// Set environment variables before running the application
+// For example, in your .env file or shell:
+//
+// ANTHROPIC_API_KEY="sk-ant-..."
+// LLM_MODEL="claude-3-sonnet-20240229"
 
-const model = new AnthropicChatModel({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-  model: 'claude-3-5-sonnet-20240620'
-});
-```
+import { resolveModel } from './models/resolver.js';
+import type { AgentConfig } from './config.js';
 
-### Usage within an Agent
-```typescript
-import { Agent, AnthropicChatModel } from 'yaaf';
+// An empty config is sufficient if env vars are set
+const config: AgentConfig = {};
 
-const agent = new Agent({
-  model: new AnthropicChatModel({
-    apiKey: process.env.ANTHROPIC_API_KEY!
-  })
-});
+// The resolver will return an instance of AnthropicChatModel
+const chatModel = resolveModel(config);
+
+// Now the model can be used in an agent
+// const agent = new Agent({ chatModel, ... });
 ```
 
 ## See Also
-* [Anthropic Messages API Documentation](https://api.anthropic.com/v1/messages)
+
+- [ChatModel](./chat-model.md): The interface that `AnthropicChatModel` implements.
+- [AnthropicModelConfig](./anthropic-model-config.md): The configuration object for this class.
+- [LLM](../concepts/llm.md): The high-level concept of a Large Language Model.
+
+## Sources
+
+[Source 1]: src/models/resolver.ts

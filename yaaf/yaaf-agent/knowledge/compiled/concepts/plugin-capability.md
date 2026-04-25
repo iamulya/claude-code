@@ -1,108 +1,108 @@
 ---
+summary: A standardized interface or contract that defines a specific extension point or functionality a plugin can provide within YAAF.
 title: Plugin Capability
 entity_type: concept
-summary: A declaration of specific functionality provided by a YAAF plugin, allowing the PluginHost to route requests to the appropriate adapter.
 related_subsystems:
-  - PluginHost
+ - "[Plugin System](../subsystems/plugin-system.md)"
+see_also:
+ - "[Plugin System](../subsystems/plugin-system.md)"
+ - "[IPCAdapter](../apis/ipc-adapter.md)"
+ - "[VectorStoreAdapter](../apis/vector-store-adapter.md)"
+search_terms:
+ - plugin interface
+ - plugin contract
+ - how to extend YAAF
+ - YAAF extension points
+ - plugin adapter
+ - standardized plugin API
+ - what is a capability
+ - IPCAdapter capability
+ - VectorStoreAdapter capability
+ - pluggable architecture
+ - swappable components
+ - YAAF plugin types
 stub: false
-compiled_at: 2026-04-16T14:10:17.479Z
+compiled_at: 2026-04-25T00:23:00.066Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/plugins.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/plugin/base.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/plugin/types.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/integrations/inProcessIPC.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/vectorMemory.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## What It Is
 
-A **Plugin Capability** is a formal declaration of a functional interface implemented by a YAAF plugin. It serves as a contract between the plugin and the `PluginHost`, ensuring that external integrations—such as memory stores, browsers, or filesystems—remain decoupled from the core agent logic.
+A Plugin Capability is a formal, standardized TypeScript interface that defines a specific contract for a piece of functionality within the YAAF framework. It acts as a well-defined extension point, allowing different plugins to provide interchangeable implementations for a core service, such as inter-agent communication or vector storage [Source 1, Source 2].
 
-By using capabilities, YAAF achieves several architectural goals:
-- **Swappable Backends**: Developers can switch from local file-based memory to a cloud provider like Honcho by changing the registered plugin without modifying agent code.
-- **Composability**: Multiple plugins can be registered simultaneously to provide a combined suite of features.
-- **Discoverability**: The `PluginHost` can automatically route requests to the correct adapter based on the capabilities declared by registered plugins.
-- **Testability**: Specific capabilities can be mocked during testing by registering a mock plugin that implements the required interface.
+The primary problem solved by this concept is modularity and extensibility. By having the core framework code interact with the capability interface rather than a concrete plugin implementation, developers can easily swap out default components for more advanced or specialized ones without altering the agent's core logic. For example, a simple in-memory vector store can be replaced with a production-grade, distributed vector database plugin as long as both implement the same `VectorStoreAdapter` capability [Source 2].
 
 ## How It Works in YAAF
 
-In YAAF, a capability is represented by a string identifier defined in the `PluginCapability` type. Every plugin must expose a `capabilities` property—a read-only array of these identifiers.
+In YAAF, a Plugin Capability is defined as a TypeScript `interface`. A key feature of this interface is a `readonly capability` property, which is a string literal that uniquely identifies the functionality. This allows the [Plugin System](../subsystems/plugin-system.md) to discover and manage plugins based on the services they provide [Source 1, Source 2].
 
-### The PluginHost Registry
-The `PluginHost` maintains an internal index of all registered plugins, keyed by their capabilities. This allows for $O(1)$ lookups when an agent or developer requests a specific adapter. When a plugin is registered via `host.register(plugin)`, the host inspects the `capabilities` array and maps the plugin to each declared functional area.
+For example:
+- The `IPCAdapter` interface defines the contract for [Inter-Agent Communication (IPC)](./inter-agent-communication-ipc.md) and is identified by `readonly capability: "ipc"` [Source 1].
+- The `VectorStoreAdapter` interface defines the contract for a semantic vector store and is identified by `readonly capability: "vectorstore"` [Source 2].
 
-### Capability Mapping
-Each capability string corresponds to a specific TypeScript interface (Adapter). Common mappings include:
+A plugin class then implements one or more of these capability interfaces. The [Plugin System](../subsystems/plugin-system.md) can then query for and provide the active implementation for a given capability to other parts of the framework.
 
-| Capability | Interface | Purpose |
-|---|---|---|
-| `memory` | `MemoryAdapter` | Persistent storage, querying, and search. |
-| `browser` | `BrowserAdapter` | Web automation (navigation, interaction, scraping). |
-| `filesystem` | `FileSystemAdapter` | Virtual filesystem operations for agent state. |
-| `tool_provider` | `ToolProvider` | Dynamic contribution of tools to the agent. |
-| `context_provider` | `ContextProvider` | Injection of context sections into system prompts. |
-| `llm` | `LLMAdapter` | Full LLM backend management. |
-| `mcp` | `McpAdapter` | Model Context Protocol server bridging. |
+**Example 1: `IPCAdapter`**
+The `IPCAdapter` capability defines methods for sending, receiving, and subscribing to messages between agents. The built-in [InProcessIPCPlugin](../plugins/in-process-ipc-plugin.md) is one such implementation that uses an in-memory EventEmitter for same-process communication [Source 1].
 
-Note: There is a minor discrepancy in source documentation regarding the tool capability; while some architectural diagrams refer to it as `tools`, the core type definition identifies it as `tool_provider`.
+```typescript
+export interface IPCAdapter {
+  readonly capability: "ipc";
+  send(/* ... */): Promise<void>;
+  readUnread(/* ... */): Promise<IPCMessage[]>;
+  subscribe(/* ... */): () => void;
+  // ... other methods
+}
 
-### Multi-Capability Plugins
-A single plugin can implement multiple capabilities. For example, the `AgentFSPlugin` provides both `filesystem` (for file operations) and `tool_provider` (to expose those operations as tools the agent can call).
+export class InProcessIPCPlugin extends PluginBase implements IPCAdapter { /* ... */ }
+```
+
+**Example 2: `VectorStoreAdapter`**
+The `VectorStoreAdapter` capability defines methods for a vector database, such as `upsert`, `search`, and `delete`. The built-in `VectorMemoryPlugin` provides a basic TF-IDF implementation suitable for smaller projects. A developer could replace it with a `ChromaPlugin` or `QdrantPlugin` that implements the same `VectorStoreAdapter` interface for production use cases [Source 2].
+
+```typescript
+export interface VectorStoreAdapter {
+  readonly capability: "vectorstore";
+  upsert(id: string, text: string, metadata?: Record<string, unknown>): Promise<void>;
+  search(query: string, topK: number): Promise<VectorSearchResult[]>;
+  // ... other methods
+}
+
+export class VectorMemoryPlugin extends PluginBase implements VectorStoreAdapter { /* ... */ }
+```
+
+This design decouples the core agent logic from the specific implementation of its dependencies, making the system highly configurable and adaptable.
 
 ## Configuration
 
-Developers define capabilities when creating custom plugins by implementing the `Plugin` interface or extending the `PluginBase` class.
+A developer selects a specific implementation for a capability by instantiating the corresponding plugin class and registering it with the `PluginHost`. The framework will then use this registered plugin whenever a component requests the associated capability.
 
-### Defining a Custom Plugin
-When defining a plugin, the `capabilities` array must be populated with the supported identifiers.
+The following example shows how to register the `VectorMemoryPlugin` to satisfy the `vectorstore` capability [Source 2].
 
-```typescript
-import type {
-  Plugin,
-  MemoryAdapter,
-  MemoryEntry,
-  PluginCapability,
-} from 'yaaf';
+```ts
+import { PluginHost } from 'yaaf'
+import { VectorMemoryPlugin } from 'yaaf/memory'
 
-class RedisMemoryPlugin implements Plugin, MemoryAdapter {
-  readonly name         = 'redis-memory';
-  readonly version      = '1.0.0';
-  // Declare the capability here
-  readonly capabilities: readonly PluginCapability[] = ['memory'];
+const host = new PluginHost()
+// Registering this plugin makes it the provider for the "vectorstore" capability.
+await host.register(new VectorMemoryPlugin())
 
-  async initialize() {
-    // Setup logic (e.g., connecting to Redis)
-  }
-
-  async save(entry: MemoryEntry) { /* ... */ }
-  async get(id: string) { /* ... */ }
-  async search(query: string) { /* ... */ }
-  // ... other MemoryAdapter methods
-}
+// From this point on, memory retrieval in the agent will automatically
+// use the semantic search functionality provided by VectorMemoryPlugin.
 ```
 
-### Retrieving Adapters by Capability
-Once registered, the `PluginHost` provides the `getAdapter<T>(capability)` method to retrieve the implementation.
+## See Also
 
-```typescript
-import { PluginHost } from 'yaaf';
+*   [Plugin System](../subsystems/plugin-system.md): The subsystem responsible for managing plugins and their capabilities.
+*   [IPCAdapter](../apis/ipc-adapter.md): The API definition for the inter-agent communication capability.
+*   [VectorStoreAdapter](../apis/vector-store-adapter.md): The API definition for the vector store capability.
+*   [InProcessIPCPlugin](../plugins/in-process-ipc-plugin.md): An example of a plugin that implements the [IPCAdapter](../apis/ipc-adapter.md) capability.
 
-const host = new PluginHost();
-await host.register(new RedisMemoryPlugin());
+## Sources
 
-// Retrieve the plugin via its capability string
-const memory = host.getAdapter<MemoryAdapter>('memory');
-
-if (memory) {
-  await memory.save({
-    key: 'session_start',
-    content: 'User initiated session',
-    type: 'event'
-  });
-}
-```
-
-### Built-in Capabilities
-YAAF includes several predefined capability categories:
-- **Core**: `memory`, `browser`, `filesystem`, `tool_provider`, `context_provider`, `llm`, `mcp`.
-- **Safety & Observability**: `security`, `observability`, `notification`, `ingester`.
-- **Extension Points**: `compaction` (custom context strategies), `skill_provider` (dynamic skill injection), `session` (persistence), and `linter_rule` (KB validation).
+*   [Source 1]: `src/integrations/inProcessIPC.ts`
+*   [Source 2]: `src/memory/vectorMemory.ts`

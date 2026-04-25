@@ -683,3 +683,276 @@ describe("serializeOntology", () => {
     expect(yaml).toContain("compiler:");
   });
 });
+
+// ── Finding 1.1: freshness_ttl_days ─────────────────────────────────────────
+
+describe("freshness_ttl_days (Finding 1.1)", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `yaaf-ttl-test-${Date.now()}`);
+    await mkdir(tmpDir, { recursive: true });
+  });
+
+  it("parses freshness_ttl_days from entity type config", async () => {
+    const yaml = `
+domain: "TTL test domain"
+
+entity_types:
+  best_practice:
+    description: "A best practice with freshness tracking"
+    freshness_ttl_days: 30
+    linkable_to: []
+    frontmatter:
+      fields:
+        title:
+          description: "Title"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type"
+          type: string
+          required: true
+    article_structure:
+      - heading: "Overview"
+        description: "What is it?"
+        required: true
+
+vocabulary:
+
+budget:
+  text_document_tokens: 4096
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+compiler:
+`;
+    await writeFile(join(tmpDir, "ontology.yaml"), yaml, "utf-8");
+    const loader = new OntologyLoader(tmpDir);
+    const { ontology } = await loader.load();
+
+    expect(ontology.entityTypes["best_practice"]!.freshness_ttl_days).toBe(30);
+  });
+
+  it("inherits freshness_ttl_days from parent entity type", async () => {
+    const yaml = `
+domain: "Inheritance TTL test"
+
+entity_types:
+  _base:
+    description: "Abstract base with TTL"
+    freshness_ttl_days: 60
+    linkable_to: []
+    frontmatter:
+      fields:
+        title:
+          description: "Title"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type"
+          type: string
+          required: true
+    article_structure:
+      - heading: "Overview"
+        description: "Overview"
+        required: true
+
+  child_type:
+    description: "Inherits TTL from _base"
+    extends: _base
+    linkable_to: []
+    frontmatter:
+      fields: {}
+    article_structure: []
+
+vocabulary:
+
+budget:
+  text_document_tokens: 4096
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+compiler:
+`;
+    await writeFile(join(tmpDir, "ontology.yaml"), yaml, "utf-8");
+    const loader = new OntologyLoader(tmpDir);
+    const { ontology } = await loader.load();
+
+    // Parent has it
+    expect(ontology.entityTypes["_base"]!.freshness_ttl_days).toBe(60);
+    // Child inherits it
+    expect(ontology.entityTypes["child_type"]!.freshness_ttl_days).toBe(60);
+  });
+
+  it("child entity type overrides parent freshness_ttl_days", async () => {
+    const yaml = `
+domain: "Override TTL test"
+
+entity_types:
+  _base:
+    description: "Base with TTL 60"
+    freshness_ttl_days: 60
+    linkable_to: []
+    frontmatter:
+      fields:
+        title:
+          description: "Title"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type"
+          type: string
+          required: true
+    article_structure:
+      - heading: "Overview"
+        description: "Overview"
+        required: true
+
+  child_type:
+    description: "Overrides TTL to 15"
+    extends: _base
+    freshness_ttl_days: 15
+    linkable_to: []
+    frontmatter:
+      fields: {}
+    article_structure: []
+
+vocabulary:
+
+budget:
+  text_document_tokens: 4096
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+compiler:
+`;
+    await writeFile(join(tmpDir, "ontology.yaml"), yaml, "utf-8");
+    const loader = new OntologyLoader(tmpDir);
+    const { ontology } = await loader.load();
+
+    expect(ontology.entityTypes["_base"]!.freshness_ttl_days).toBe(60);
+    expect(ontology.entityTypes["child_type"]!.freshness_ttl_days).toBe(15);
+  });
+
+  it("omitted freshness_ttl_days produces undefined (no TTL)", async () => {
+    const yaml = VALID_ONTOLOGY_YAML; // has no freshness_ttl_days on any type
+    await writeFile(join(tmpDir, "ontology.yaml"), yaml, "utf-8");
+    const loader = new OntologyLoader(tmpDir);
+    const { ontology } = await loader.load();
+
+    expect(ontology.entityTypes["concept"]!.freshness_ttl_days).toBeUndefined();
+    expect(ontology.entityTypes["tool"]!.freshness_ttl_days).toBeUndefined();
+  });
+});
+
+// ── Finding 1.1: buildCompleteFrontmatter expires_at ──────────────────────────
+
+import { buildCompleteFrontmatter } from "../knowledge/compiler/synthesizer/frontmatter.js";
+
+describe("buildCompleteFrontmatter expires_at (Finding 1.1)", () => {
+  const baseMeta = {
+    entityType: "best_practice",
+    canonicalTitle: "Test Article",
+    docId: "test/test-article",
+    sourcePaths: ["raw/test.md"],
+    confidence: 0.9,
+    isStub: false,
+    compiledAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("writes expires_at when freshnessTtlDays is set", () => {
+    const fm = buildCompleteFrontmatter({}, {}, {
+      ...baseMeta,
+      freshnessTtlDays: 30,
+    });
+    expect(fm.expires_at).toBeDefined();
+    // 2026-01-01 + 30 days = 2026-01-31
+    expect(fm.expires_at).toBe("2026-01-31T00:00:00.000Z");
+  });
+
+  it("omits expires_at when freshnessTtlDays is undefined", () => {
+    const fm = buildCompleteFrontmatter({}, {}, baseMeta);
+    expect(fm.expires_at).toBeUndefined();
+  });
+
+  it("omits expires_at when freshnessTtlDays is 0", () => {
+    const fm = buildCompleteFrontmatter({}, {}, {
+      ...baseMeta,
+      freshnessTtlDays: 0,
+    });
+    expect(fm.expires_at).toBeUndefined();
+  });
+
+  it("computes correct expires_at for large TTL", () => {
+    const fm = buildCompleteFrontmatter({}, {}, {
+      ...baseMeta,
+      freshnessTtlDays: 365,
+    });
+    expect(fm.expires_at).toBeDefined();
+    // 2026-01-01 + 365 days = 2027-01-01
+    expect(fm.expires_at).toBe("2027-01-01T00:00:00.000Z");
+  });
+});
+
+// ── Finding 2: Reciprocal relationship validation ────────────────────────────
+
+describe("reciprocal relationship validation (Finding 2)", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `yaaf-reciprocal-test-${Date.now()}`);
+    await mkdir(tmpDir, { recursive: true });
+  });
+
+  it("warns when reciprocal relationship is not defined", async () => {
+    const yaml = `
+domain: "Reciprocal test"
+
+entity_types:
+  concept:
+    description: "A concept"
+    linkable_to: []
+    frontmatter:
+      fields:
+        title:
+          description: "Title"
+          type: string
+          required: true
+        entity_type:
+          description: "Entity type"
+          type: string
+          required: true
+    article_structure:
+      - heading: "Overview"
+        description: "Overview"
+        required: true
+
+relationship_types:
+  - name: IMPLEMENTS
+    from: concept
+    to: concept
+    description: "Implements something"
+    reciprocal: IMPLEMENTED_BY
+
+vocabulary:
+
+budget:
+  text_document_tokens: 4096
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+compiler:
+`;
+    await writeFile(join(tmpDir, "ontology.yaml"), yaml, "utf-8");
+    const loader = new OntologyLoader(tmpDir);
+    // Should NOT throw (it's a warning, not an error)
+    const { issues } = await loader.load();
+
+    const warnings = issues.filter(
+      (i) => i.severity === "warning" && i.message.includes("IMPLEMENTED_BY"),
+    );
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0]!.message).toMatch(/not defined/i);
+  });
+});

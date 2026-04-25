@@ -1,93 +1,119 @@
 ---
-summary: A unified configuration interface that combines identity, authorization, and data scoping strategies for an agent.
+title: AccessPolicy
+summary: The unified configuration surface for the YAAF IAM system, combining authorization, data scoping, and audit.
 export_name: AccessPolicy
 source_file: src/iam/types.ts
 category: type
-title: AccessPolicy
 entity_type: api
+search_terms:
+ - IAM configuration
+ - agent security settings
+ - how to configure authorization
+ - data scoping setup
+ - audit logging for agents
+ - RBAC and ABAC configuration
+ - identity provider setup
+ - tool access control
+ - user permissions in agent
+ - secure agent configuration
+ - access control policy
+ - onDecision callback
+ - TenantScopeStrategy setup
 stub: false
-compiled_at: 2026-04-16T14:19:18.259Z
+compiled_at: 2026-04-24T16:46:38.545Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/index.ts
-confidence: 0.92
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/types.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`AccessPolicy` is the primary configuration interface for Identity and Access Management (IAM) within the YAAF framework. It provides a unified surface to define how an agent identifies users, authorizes tool execution, and scopes data access.
 
-The policy architecture is divided into three functional layers:
-1.  **Identity**: Determining the identity of the user (typically via `UserContext` or an `IdentityProvider`).
-2.  **Authorization**: Determining if a user is permitted to call specific tools (e.g., using RBAC or ABAC strategies).
-3.  **Data Scoping**: Determining what specific data subsets a user is allowed to see or interact with (e.g., tenant-based or ownership-based isolation).
+The `AccessPolicy` type is a configuration object that serves as the unified surface for the YAAF Identity and Access Management (IAM) system [Source 1]. It is provided to the `Agent` constructor to define the security posture of an agent.
 
-`AccessPolicy` is passed to the `Agent` constructor to enforce these security constraints during the agent's runtime.
+This object combines several key security concerns into a single configuration:
+- **[Authorization](../concepts/authorization.md)**: Deciding whether a user is permitted to invoke a specific tool.
+- **[Data Scoping](../concepts/data-scoping.md)**: Determining the subset of data that [Tools](../subsystems/tools.md) are allowed to access for a given user.
+- **Identity**: Resolving the user's identity from an incoming request in server environments.
+- **Auditing**: Logging access control decisions for compliance and monitoring.
 
-## Signature / Constructor
+By centralizing these settings, `AccessPolicy` provides a consistent and comprehensive way to manage agent security [Source 1].
+
+## Signature
+
+`AccessPolicy` is a TypeScript type alias for an object with the following properties [Source 1]:
 
 ```typescript
 export type AccessPolicy = {
+  /**
+   * Authorization strategy — decides if a tool call is allowed.
+   * Default: allow all (backward-compatible)
+   */
   authorization?: AuthorizationStrategy;
+
+  /**
+   * Data scoping strategy — determines what data tools can access.
+   * Default: no scoping (unrestricted)
+   */
   dataScope?: DataScopeStrategy;
+
+  /**
+   * Identity provider — resolve UserContext from incoming requests.
+   * Only used in server modes (A2A, HTTP, WebSocket).
+   */
+  identityProvider?: IdentityProvider;
+
+  /**
+   * Audit callback — called after every authorization decision.
+   * Use for compliance logging.
+   */
+  onDecision?: (event: AccessDecisionEvent) => void;
 };
 ```
 
 ### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `authorization` | `AuthorizationStrategy` | Optional. Defines the logic for permitting or denying tool execution. Common implementations include RBAC and ABAC. |
-| `dataScope` | `DataScopeStrategy` | Optional. Defines how data should be filtered or restricted based on the user's attributes, such as tenant IDs or department codes. |
+- **`authorization`** (optional): An instance of an `AuthorizationStrategy`. This strategy evaluates each tool call against the user's context and decides whether to allow or deny it. If not provided, all [Tool Calls](../concepts/tool-calls.md) are allowed by default [Source 1].
+- **`dataScope`** (optional): An instance of a `DataScopeStrategy`. This strategy resolves a `DataScope` for the current request, which tools then use to filter queries and API calls. If not provided, tools have unrestricted access to data [Source 1].
+- **`identityProvider`** (optional): An instance of an `IdentityProvider`. This is used in server runtimes (like HTTP or WebSocket) to resolve a `UserContext` from an incoming request. It is not needed for standalone agent execution [Source 1].
+- **`onDecision`** (optional): A callback function that is invoked after every authorization decision. It receives an `AccessDecisionEvent` and is primarily used for audit logging and compliance purposes [Source 1].
 
 ## Examples
 
-### Basic Role-Based Access Control (RBAC)
-This example demonstrates a simple policy where tool access is restricted based on the user's assigned role.
+The following example demonstrates how to configure an `Agent` with an `AccessPolicy` that uses a role-based authorization strategy, a tenant-based data scoping strategy, and an audit logger [Source 1].
 
 ```typescript
-import { Agent, rbac } from 'yaaf'
+import { Agent, rbac, TenantScopeStrategy } from 'yaaf';
+
+// A simple audit logger
+const auditLog = {
+  write: (event) => {
+    console.log('AUDIT:', JSON.stringify(event));
+  }
+};
 
 const agent = new Agent({
-  tools: [...],
+  // ... other agent configuration like tools
+  tools: [/* ... your tools ... */],
+
   accessPolicy: {
+    // Use a Role-Based Access Control (RBAC) strategy.
+    // 'viewer' role can call tools starting with 'read_'.
+    // 'admin' role can call any tool ('*').
     authorization: rbac({
-      viewer: ['search_*', 'read_*'],
-      editor: ['search_*', 'read_*', 'write_*'],
-      admin: ['*'],
+      viewer: ['read_*'],
+      admin: ['*']
     }),
+
+    // Isolate data by tenant ID from the user's attributes.
+    dataScope: new TenantScopeStrategy(),
+
+    // Log every access decision.
+    onDecision: (event) => auditLog.write(event),
   },
-})
+});
 ```
 
-### Advanced ABAC and Data Scoping
-This example combines Attribute-Based Access Control (ABAC) with a multi-tenant data scoping strategy.
+## Sources
 
-```typescript
-import { Agent, abac, when, CompositeStrategy, TenantScopeStrategy } from 'yaaf'
-
-const agent = new Agent({
-  accessPolicy: {
-    authorization: CompositeStrategy.firstMatch([
-      abac([
-        when((u) => u.attributes?.isContractor).deny('delete_*', 'Contractors cannot delete'),
-        when((u) => u.attributes?.department === 'finance').allow('query_invoices'),
-      ]),
-      rbac({ viewer: ['read_*'], admin: ['*'] }),
-    ]),
-    dataScope: new TenantScopeStrategy({ bypassRoles: ['super_admin'] }),
-  },
-})
-
-// The policy is evaluated when the agent runs
-await agent.run('Show me invoices', {
-  user: { 
-    userId: 'alice', 
-    roles: ['viewer'], 
-    attributes: { tenantId: 'acme', department: 'finance' } 
-  },
-})
-```
-
-## See Also
-- `AuthorizationStrategy`
-- `DataScopeStrategy`
-- `UserContext`
+[Source 1] src/iam/types.ts

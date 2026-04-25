@@ -1,54 +1,71 @@
 ---
-summary: A strategy for managing large documents by splitting them into smaller, navigable parts to stay within token limits.
+summary: The compile-time process of splitting oversized knowledge base articles into smaller, linked sub-articles to manage token budgets.
 title: Article Segmentation
 entity_type: concept
-stub: false
-compiled_at: 2026-04-16T14:26:17.116Z
-compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/postprocess.ts
-confidence: 0.9
----
-
----
-title: Article Segmentation
-entity_type: concept
-summary: A strategy for managing large documents by splitting them into smaller, navigable parts to stay within token limits.
 related_subsystems:
-  - Knowledge Compiler
+ - Knowledge Compiler
+search_terms:
+ - splitting large articles
+ - how to handle long documents
+ - token budget management
+ - article chunking
+ - knowledge base token limits
+ - oversized article processing
+ - automatic document splitting
+ - H2 section splitting
+ - sub-article creation
+ - knowledge base compilation
+ - post-synthesis processing
+ - managing large markdown files
+stub: false
+compiled_at: 2026-04-24T17:52:03.300Z
+compiled_from:
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/postprocess.ts
+compiled_from_quality: unknown
+confidence: 0.95
+---
 
 ## What It Is
-Article Segmentation is a compile-time transformation in the YAAF knowledge compiler pipeline. It is designed to manage document size by automatically partitioning articles that exceed a defined token budget into a series of smaller, interconnected sub-articles. 
 
-This process ensures that synthesized content remains within the processing limits of LLMs and other downstream tools, preventing context window overflow while maintaining the logical flow of the information through navigation headers.
+Article Segmentation is a compile-time transformation within the YAAF [Knowledge Compiler](../subsystems/knowledge-compiler.md) that automatically splits large articles into smaller, more manageable sub-articles [Source 1]. This process is applied after an article has been synthesized by an [LLM](./llm.md) and before it undergoes [Linting](./linting.md) [Source 1]. The primary purpose of segmentation is to ensure that every article in the knowledge base adheres to a predefined [Token Budget](./token-budget.md), preventing issues with [Context Window](./context-window.md) limits in downstream applications [Source 1].
 
 ## How It Works in YAAF
-Segmentation is applied during the post-synthesis phase, occurring after the LLM has authored the content but before the linter runs. The mechanism is implemented in the `segmentOversizedArticles` function within the knowledge compiler's post-processing module.
 
-### Splitting Logic
-The compiler scans compiled articles and evaluates their size using a token estimation utility. If an article's token count exceeds the `tokenBudget`, the compiler identifies H2 (`##`) section boundaries as the points for segmentation. 
+The segmentation process is handled by the `segmentOversizedArticles` function, which is part of the `postProcessCompiledArticles` pipeline [Source 1].
 
-### Navigation and Structure
-When an article is split, the compiler generates a sequence of files and injects navigation links to maintain continuity:
+[when](../apis/when.md) this step runs, it scans each compiled article and estimates its token count. If an article's token count exceeds the configured `tokenBudget`, the framework splits the article into multiple parts [Source 1]. The splits occur at the boundaries of H2 (`##`) markdown sections [Source 1].
 
-*   **Part 1 (`docId.md`)**: Contains the initial sections and a link to the next part (e.g., `[Next: Section Name →](docId-part-2.md)`).
-*   **Intermediate Parts (`docId-part-N.md`)**: Contain middle sections with links to both the previous and next parts (e.g., `[← Previous](docId-part-N-1.md)` and `[Next →](docId-part-N+1.md)`).
-*   **Final Part (`docId-part-Max.md`)**: Contains the remaining sections and a link back to the previous part.
+Each resulting part is saved as a separate file, and navigation links are automatically inserted to connect them sequentially [Source 1]:
+
+*   The original article (`docId.md`) becomes the first part and has a link to the next part: `[Next: Section Name →](docId-part-2.md)`.
+*   Intermediate parts (e.g., `docId-part-2.md`) receive links to both the previous and next parts: `[← Previous](docId.md)` and `[Next →](docId-part-3.md)`.
+*   The final part (e.g., `docId-part-N.md`) receives a link to the previous part: `[← Previous](docId-part-N-1.md)`.
+
+This creates a browsable, multi-page document from a single oversized source article, ensuring all final artifacts respect token limits [Source 1].
 
 ## Configuration
-Developers can control the segmentation behavior through the `PostProcessOptions` passed to the compiler. The default token budget is 15,000 tokens.
+
+Article Segmentation can be configured or disabled via the `PostProcessOptions` object passed to the knowledge compiler [Source 1].
+
+*   **`segmentArticles`**: A boolean that enables or disables the entire feature. It defaults to `true` [Source 1].
+*   **`tokenBudget`**: A number that sets the maximum token count for a single article file. Articles exceeding this budget will be segmented. The default value is 15,000 tokens [Source 1].
 
 ```typescript
-export type PostProcessOptions = {
-  /** Token budget per article. Default: 15000 */
-  tokenBudget?: number
-  /** Whether to resolve wikilinks. Default: true */
-  resolveLinks?: boolean
-  /** Whether to segment oversized articles. Default: true */
-  segmentArticles?: boolean
-}
+// Example: Configuring post-processing options
+import { postProcessCompiledArticles } from "./postprocess.js";
+
+const options: PostProcessOptions = {
+  // Disable segmentation entirely
+  segmentArticles: false,
+
+  // Or, customize the token budget
+  tokenBudget: 8000, // Split articles larger than 8000 tokens
+};
+
+// This would be called by the compiler
+// await postProcessCompiledArticles(compiledDir, registry, options);
 ```
 
-The segmentation process can be toggled via the `segmentArticles` boolean, and the threshold can be adjusted using the `tokenBudget` property.
-
 ## Sources
-* `src/knowledge/compiler/postprocess.ts`---
+
+[Source 1]: src/knowledge/compiler/postprocess.ts

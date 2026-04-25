@@ -1,83 +1,126 @@
 ---
+title: MemoryStore
+entity_type: api
+summary: A persistent, file-based memory system for storing and retrieving agent knowledge.
 export_name: MemoryStore
 source_file: src/memory/memoryStore.ts
 category: class
-title: MemoryStore
-entity_type: api
-summary: A persistent, file-based memory system for storing non-derivable agent knowledge using a four-type taxonomy.
+search_terms:
+ - persistent agent memory
+ - file-based knowledge store
+ - how to save agent state
+ - user preferences storage
+ - project context memory
+ - agent feedback loop
+ - long-term memory for agents
+ - memory types
+ - private vs team memory
+ - MEMORY.md index
+ - markdown memory files
+ - knowledge persistence
 stub: false
-compiled_at: 2026-04-16T14:29:46.998Z
+compiled_at: 2026-04-24T17:21:52.578Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/memory/memoryStore.ts
-confidence: 0.98
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/memoryStore.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`MemoryStore` is a persistent, file-based memory system designed to store information that is not derivable from a project's current state (such as code patterns, architecture, or git history). It organizes knowledge into a closed four-type taxonomy and stores individual entries as Markdown files with YAML frontmatter.
 
-The system utilizes a dual-directory structure to separate `private` (user-specific) and `team` (shared) scopes. A central `MEMORY.md` index file serves as a lightweight table of contents that can be loaded into conversation contexts, while specific topic files are retrieved on-demand.
+The `[[Memory]]Store` class provides a persistent, file-based [Memory System](../subsystems/memory-system.md) for a YAAF agent. Its primary purpose is to store information that is not directly derivable from the current state of a project's codebase, such as user preferences, project goals, or architectural decisions [Source 1]. This design prevents the [Memory](../concepts/memory.md) from becoming a stale cache of information that can be found in the code or git history [Source 1].
 
-### Memory Taxonomy
-| Type | Scope | Description |
-| :--- | :--- | :--- |
-| `user` | private | User role, goals, preferences, and knowledge. |
-| `feedback` | flexible | Corrections and confirmations of the agent's approach. |
-| `project` | team | Ongoing work, goals, deadlines, and decisions. |
-| `reference` | team | Pointers to external systems and resources. |
+Memories are organized using a closed four-type taxonomy [Source 1]:
 
-## Signature / Constructor
+| Type        | Scope    | Description                                    |
+|-------------|----------|------------------------------------------------|
+| `user`      | private  | User role, goals, preferences, knowledge       |
+| `feedback`  | flexible | Corrections and confirmations of agent approach|
+| `project`   | team     | Ongoing work, goals, deadlines, decisions      |
+| `reference` | team     | Pointers to external systems and resources     |
+
+Each memory entry is stored as an individual markdown file with YAML [Frontmatter](../concepts/frontmatter.md). An index file, `MEMORY.md`, serves as a lightweight table of contents that is loaded into every conversation context. The individual memory files are surfaced on-demand by a [Relevance Engine](../concepts/relevance-engine.md) [Source 1].
+
+## Constructor
+
+The `MemoryStore` is instantiated with a configuration object specifying the directories for private and team-scoped memories.
 
 ```typescript
-export type MemoryType = 'user' | 'feedback' | 'project' | 'reference';
+interface MemoryStoreConfig {
+  /**
+   * The directory for storing private memories (e.g., 'user' type).
+   */
+  privateDir: string;
+
+  /**
+   * The directory for storing team-shared memories (e.g., 'project', 'reference').
+   */
+  teamDir: string;
+}
 
 export class MemoryStore {
-  constructor(config: {
-    privateDir: string;
-    teamDir: string;
-  });
+  constructor(config: MemoryStoreConfig);
 }
 ```
 
-### Configuration Properties
-*   `privateDir`: The local filesystem path where private/user-specific memories are stored.
-*   `teamDir`: The filesystem path for shared project or reference memories.
-
 ## Methods & Properties
 
-### `save()`
-Saves a memory entry to the filesystem as a Markdown file with YAML frontmatter.
+The public methods of `MemoryStore` allow for creating, reading, and indexing memories. The following methods are available based on example usage in the source documentation [Source 1].
+
+### save
+
+Saves a new memory entry to the file system.
+
+**Signature**
 ```typescript
-async save(memory: {
+interface MemoryEntry {
   name: string;
   description: string;
-  type: MemoryType;
+  type: 'user' | 'feedback' | 'project' | 'reference';
   content: string;
   scope: 'private' | 'team';
-}): Promise<void>;
+}
+
+save(entry: MemoryEntry): Promise<void>;
 ```
 
-### `getIndex()`
-Retrieves the contents of the `MEMORY.md` index file, which acts as a table of contents for the store.
+### getIndex
+
+Reads the contents of the `MEMORY.md` index file.
+
+**Signature**
 ```typescript
-async getIndex(): Promise<string>;
+getIndex(): Promise<string>;
 ```
 
-### `scan()`
-Scans the memory directories and returns the headers/metadata for all stored memories.
+### scan
+
+Scans the memory directories and returns the headers (frontmatter) of all memory files.
+
+**Signature**
 ```typescript
-async scan(): Promise<any[]>;
+interface MemoryHeader {
+  name: string;
+  description: string;
+  type: 'user' | 'feedback' | 'project' | 'reference';
+  // ... other frontmatter fields
+}
+
+scan(): Promise<MemoryHeader[]>;
 ```
 
-### `read()`
-Reads a specific memory entry by its filename.
+### read
+
+Reads the full content of a specific memory file.
+
+**Signature**
 ```typescript
-async read(filename: string): Promise<string>;
+read(filename: string): Promise<MemoryEntry>;
 ```
 
 ## Examples
 
-### Basic Usage
-This example demonstrates initializing the store and saving a piece of user feedback.
+The following example demonstrates how to instantiate the `MemoryStore` and use its core methods to save and retrieve memories [Source 1].
 
 ```typescript
 const mem = new MemoryStore({
@@ -85,7 +128,7 @@ const mem = new MemoryStore({
   teamDir: '/home/user/.agent/memory/team',
 });
 
-// Persisting a user preference
+// Create and save a new memory entry
 await mem.save({
   name: 'User prefers terse output',
   description: 'Skip summaries, let diffs speak',
@@ -94,14 +137,18 @@ await mem.save({
   scope: 'private',
 });
 
-// Retrieving memory information
-const index = await mem.getIndex();       // Get MEMORY.md contents
-const files = await mem.scan();           // Get all memory headers
+// Retrieve the main index file
+const index = await mem.getIndex(); // MEMORY.md contents
+
+// Get headers for all memory files
+const files = await mem.scan(); // All memory headers
+
+// Read a specific memory file
+// Note: The exact filename format is an implementation detail.
 const entry = await mem.read('feedback_terse.md');
 ```
 
-### Storage Format
-Memories are stored on disk in the following format:
+An example of the markdown file format for a memory entry [Source 1]:
 
 ```markdown
 ---
@@ -113,3 +160,7 @@ Lead with the change, don't explain what you did.
 **Why:** User said "I can read the diff"
 **How to apply:** Never add trailing summaries.
 ```
+
+## Sources
+
+[Source 1]: src/memory/memoryStore.ts

@@ -1,156 +1,181 @@
 ---
 title: PromptGuard
 entity_type: api
-summary: A middleware class and hook provider for detecting and blocking prompt injection attacks in LLM interactions.
+summary: A `beforeLLM` hook that detects common prompt injection patterns and can block or flag suspicious messages.
 export_name: PromptGuard
 source_file: src/security/promptGuard.ts
 category: class
+search_terms:
+ - prompt injection detection
+ - how to prevent prompt injection
+ - security middleware for LLMs
+ - instruction override attack
+ - role hijacking
+ - system prompt leakage
+ - canary token
+ - LLM input sanitization
+ - regex-based security
+ - LLM classifier for injection
+ - defense in depth for agents
+ - block malicious prompts
+ - detect suspicious user input
+ - input filtering
 stub: false
-compiled_at: 2026-04-16T14:35:00.480Z
+compiled_at: 2026-04-24T17:29:46.856Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/promptGuard.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/security/promptGuard.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/security/promptGuard.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`PromptGuard` is a security middleware designed to protect LLM-powered agents from prompt injection and leakage attacks. It functions as a `beforeLLM` hook, scanning incoming message history for malicious patterns before they are sent to the model provider.
 
-The class detects several categories of attacks:
-*   **Instruction Overrides**: Attempts to bypass system instructions (e.g., "ignore previous instructions").
-*   **Role Hijacking**: Attempts to force the AI into unauthorized personas (e.g., "act as an administrator").
-*   **Encoding Attacks**: Instructions hidden via Base64, Unicode tricks, or other obfuscation methods.
-*   **Delimiter Escapes**: Attempts to break out of structured data formats like XML or Markdown.
-*   **System Prompt Extraction**: Attempts to trick the model into revealing its internal configuration or system prompt.
-*   **Payload Injection**: Embedded scripts, SQL injection markers, or malicious code snippets.
-*   **Canary Token Detection**: Verifies if a unique "canary" string from the system prompt has been leaked into a user response.
+`PromptGuard` is a security middleware class designed to detect and mitigate [Prompt Injection](../concepts/prompt-injection.md) attacks before they reach the Large Language Model ([LLM](../concepts/llm.md)). It functions as a `beforeLLM` hook within an agent's lifecycle, scanning chat messages for common malicious patterns. [Source 1, 2]
+
+It can identify several categories of attacks:
+- **Instruction Overrides**: Attempts to make the model ignore its original instructions (e.g., "ignore previous instructions").
+- **Role Hijacking**: Attempts to make the model adopt a different persona (e.g., "act as...").
+- **Encoding Attacks**: Use of base64 or other encodings to hide malicious instructions.
+- **Delimiter Escapes**: Attempts to break out of structured data formats like XML or Markdown.
+- **[System Prompt](../concepts/system-prompt.md) Extraction**: Attempts to leak the agent's core instructions.
+- **Payload Injection**: Embedding of potentially harmful content like `<script>` tags or SQL fragments.
+- **Canary Token Detection**: Checks if a secret token placed in the system prompt has been leaked into user input.
+- **Homoglyph Normalization**: Normalizes visually similar Unicode characters to prevent evasion.
+- **Multi-language Detection**: Detects injection patterns in non-English text. [Source 1, 2]
 
 `PromptGuard` operates in two primary modes:
-1.  **detect**: Flags suspicious messages and triggers callbacks but allows the original message to proceed.
-2.  **block**: Replaces suspicious content with a sanitized placeholder message to prevent the attack from reaching the LLM.
+- **`detect`**: Logs a warning [when](./when.md) a suspicious pattern is found but allows the message to proceed.
+- **`block`**: Replaces the suspicious message with a sanitized placeholder, preventing it from reaching the LLM. [Source 1, 2]
 
-## Signature / Constructor
+As a regex-based defense layer, `PromptGuard` provides a strong first line of defense. For high-security applications, it is recommended to use it as part of a [Defense-in-depth](../concepts/defense-in-depth.md) strategy, layered with other security measures like LLM-based classifiers, anomaly detection, and strict tool permissions. [Source 1, 2]
 
-### Constructor
+## Constructor
+
+The `PromptGuard` class is instantiated with a configuration object that customizes its behavior.
+
 ```typescript
-constructor(config?: PromptGuardConfig)
+import type { PromptGuardConfig } from 'yaaf';
+
+const guard = new PromptGuard(config?: PromptGuardConfig);
 ```
 
-### Configuration Types
+### `PromptGuardConfig`
 
-#### PromptGuardConfig
-```typescript
-export type PromptGuardConfig = {
-  /**
-   * Detection mode:
-   * - `detect` — log warnings, allow messages through (default)
-   * - `block` — replace detected injection attempts with a sanitized message
-   */
-  mode?: PromptGuardMode
+The constructor accepts an optional `PromptGuardConfig` object with the following properties:
 
-  /**
-   * Sensitivity level controls which patterns are checked:
-   * - `low` — only obvious injection attempts (instruction overrides)
-   * - `medium` — adds encoding attacks, delimiter escapes (default)
-   * - `high` — adds role hijacking, extraction attempts, content scanning
-   */
-  sensitivity?: PromptGuardSensitivity
-
-  /**
-   * Optional canary token to inject into the system prompt.
-   */
-  canaryToken?: string
-
-  /**
-   * Additional custom patterns to detect.
-   */
-  customPatterns?: PromptGuardPattern[]
-
-  /**
-   * Called when an injection attempt is detected.
-   */
-  onDetection?: (event: PromptGuardEvent) => void
-
-  /**
-   * Message to substitute when blocking in `block` mode.
-   * Default: "[Message blocked: potential prompt injection detected]"
-   */
-  blockMessage?: string
-}
-```
-
-#### Supporting Types
-*   **PromptGuardSensitivity**: `'low' | 'medium' | 'high'`
-*   **PromptGuardMode**: `'detect' | 'block'`
-*   **PromptGuardPattern**: An object containing a `name`, a `pattern` (RegExp), a `severity`, and an optional `description`.
+| Property | Type | Description |
+| --- | --- | --- |
+| `mode` | `"detect" \| "block"` | Sets the operational mode. `detect` logs warnings (default), while `block` replaces malicious messages. [Source 1, 2] |
+| `sensitivity` | `"low" \| "medium" \| "high"` | Controls the strictness of the pattern matching. `low` checks for basic instruction overrides. `medium` (default) adds role hijacking and encoding attacks. `high` includes all checks, such as content scanning and multi-language detection. [Source 1, 2] |
+| `canaryToken` | `string` | An optional secret token to inject into the system prompt. If this token appears in user input, it signals a prompt leakage attack. [Source 1, 2] |
+| `customPatterns` | `PromptGuardPattern[]` | An array of custom regex patterns to detect, each with a name, pattern, and severity. [Source 1, 2] |
+| `onDetection` | `(event: PromptGuardEvent) => void` | A callback function invoked whenever an injection attempt is detected. Useful for logging, auditing, or alerting. [Source 1, 2] |
+| `blockMessage` | `string` | A custom message to use as a replacement when a message is blocked in `block` mode. Defaults to `"[Message blocked: potential prompt injection detected]"`. [Source 1, 2] |
+| `classifyFn` | `PromptGuardClassifyFn` | An optional LLM-based classifier function for Layer 2 verification. When a regex pattern (Layer 1) flags a message, this function can perform a semantic check to reduce false positives. Use the `createLLMClassifier` helper to create one. [Source 1, 2] |
 
 ## Methods & Properties
 
-### hook()
-Returns a hook function compatible with the `beforeLLM` agent lifecycle event. This hook processes the conversation history and applies detection or blocking logic based on the instance configuration.
+### `hook()`
 
-### promptGuard(config)
-A factory function that creates a `PromptGuard` instance with sensible production defaults.
+Returns a `beforeLLM` hook function that can be passed to an `Agent`'s configuration. This method integrates the `PromptGuard` instance into the agent's request lifecycle.
 
-### strictPromptGuard(config)
-A factory function that creates a `PromptGuard` instance pre-configured with `mode: 'block'` and `sensitivity: 'high'`.
+```typescript
+public hook(): (messages: ChatMessage[]) => Promise<ChatMessage[]>;
+```
 
 ## Events
-The `PromptGuard` triggers the `onDetection` callback with a `PromptGuardEvent` object when suspicious content is identified.
 
-### PromptGuardEvent
+When a potential injection is detected, `PromptGuard` can trigger the `onDetection` callback, passing a `PromptGuardEvent` object with details about the incident.
+
+### `PromptGuardEvent`
+
 | Property | Type | Description |
-| :--- | :--- | :--- |
-| `patternName` | `string` | The name of the detected attack pattern. |
-| `severity` | `string` | The severity level (`low`, `medium`, `high`). |
-| `messageRole` | `string` | The role of the message (e.g., 'user') that triggered the detection. |
-| `messageIndex` | `number` | The position of the message in the conversation array. |
+| --- | --- | --- |
+| `patternName` | `string` | The human-readable name of the pattern that was matched. |
+| `severity` | `"low" \| "medium" \| "high"` | The severity level of the detected pattern. |
+| `messageRole` | `string` | The role of the message that triggered the detection (e.g., "user"). |
+| `messageIndex` | `number` | The index of the suspicious message within the conversation history. |
 | `matchExcerpt` | `string` | A truncated excerpt of the content that matched the pattern. |
-| `action` | `string` | The action taken: `'detected'` or `'blocked'`. |
-| `timestamp` | `Date` | When the detection occurred. |
+| `action` | `"detected" \| "blocked"` | The action taken by `PromptGuard` in response to the detection. |
+| `timestamp` | `Date` | The timestamp of when the detection occurred. |
+| `layer2Verdict` | `"safe" \| "suspicious" \| "malicious"` | The verdict from the optional Layer 2 LLM classifier. `undefined` if `classifyFn` was not used. A verdict of `"safe"` indicates the LLM overrode the regex detection as a false positive. [Source 1, 2] |
 
 ## Examples
 
-### Basic Usage
-```typescript
-import { PromptGuard, Agent } from 'yaaf';
+### Basic Usage (Block Mode)
 
-const guard = new PromptGuard({ 
-  mode: 'block', 
-  sensitivity: 'high' 
-});
+This example creates a `PromptGuard` in `block` mode with `high` sensitivity and integrates it into an agent.
+
+```typescript
+import { Agent, PromptGuard } from 'yaaf';
+
+// Create a guard that blocks high-sensitivity threats.
+const guard = new PromptGuard({ mode: 'block', sensitivity: 'high' });
 
 const agent = new Agent({
+  // ... other agent config
   hooks: {
-    beforeLLM: guard.hook(),
+    beforeLLM: [guard.hook()],
   },
 });
 ```
 
-### Custom Detection and Logging
-```typescript
-import { promptGuard } from 'yaaf';
+### Custom Logging with `onDetection`
 
-const guard = promptGuard({
-  onDetection: (event) => {
-    console.warn(`Security Alert: ${event.patternName} detected in ${event.messageRole} message.`);
-  },
-  customPatterns: [
-    {
-      name: 'Internal Project Code Leak',
-      pattern: /PROJECT_PHOENIX_[0-9]+/i,
-      severity: 'high'
-    }
-  ]
+This example demonstrates how to use the `onDetection` callback for custom audit logging.
+
+```typescript
+import { PromptGuard } from 'yaaf';
+import type { PromptGuardEvent } from 'yaaf';
+
+function logSuspiciousActivity(event: PromptGuardEvent) {
+  console.warn('Prompt injection attempt detected:', {
+    pattern: event.patternName,
+    severity: event.severity,
+    action: event.action,
+    timestamp: event.timestamp.toISOString(),
+  });
+}
+
+const guard = new PromptGuard({
+  mode: 'detect', // Log only
+  onDetection: logSuspiciousActivity,
 });
 ```
 
-### Strict Mode
+### Using a Layer 2 LLM Classifier
+
+This example shows how to add a second layer of verification using an LLM-based classifier to reduce false positives from the initial regex scan.
+
 ```typescript
-import { strictPromptGuard } from 'yaaf';
+import { Agent, PromptGuard, createLLMClassifier } from 'yaaf';
+import { myLLM } from './my-llm-provider';
+
+// Create a classifier function from an existing LLM generate function.
+const classifyFn = createLLMClassifier(myLLM.generate);
+
+const guard = new PromptGuard({
+  mode: 'block',
+  sensitivity: 'high',
+  // Add the LLM classifier for Layer 2 verification.
+  classifyFn: classifyFn,
+});
 
 const agent = new Agent({
   hooks: {
-    beforeLLM: strictPromptGuard().hook()
-  }
+    beforeLLM: [guard.hook()],
+  },
 });
 ```
+
+## See Also
+
+- `promptGuard`: A factory function for creating `PromptGuard` instances.
+- `strictPromptGuard`: A factory function for creating a pre-configured `PromptGuard` in `block` mode.
+- `createLLMClassifier`: A helper function to create a Layer 2 classifier for `PromptGuard`.
+
+## Sources
+
+[Source 1] src/security/promptGuard.ts
+[Source 2] src/security/promptGuard.ts

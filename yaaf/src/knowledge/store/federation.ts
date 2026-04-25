@@ -33,6 +33,8 @@ import { KnowledgeBase } from "./knowledgeBase.js";
 import { buildTool, type Tool } from "../../tools/tool.js";
 import type { CompiledDocument, KBIndex, KBIndexEntry, SearchResult } from "./store.js";
 import type { KBToolOptions } from "./tools.js";
+import { estimateTokens } from "../../utils/tokens.js";
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,21 @@ export type FederatedKBEntry = {
   kb: KnowledgeBase;
   /** Human-readable label for this KB (used in system prompt). Defaults to namespace. */
   label?: string;
+  /**
+   * ADR-012/Fix-5: Trust weight for this namespace (0.0–1.0). Default: 1.0.
+   *
+   * Applied as a multiplier AFTER fixed-point sigmoid normalization.
+   * Allows operators to explicitly discount KBs from less-trusted sources
+   * in a multi-KB federation, without gating on content-level signals.
+   *
+   * Example: { trustWeight: 0.75 } reduces all scores from this namespace
+   * by 25%, ensuring a high-scoring result from a low-trust KB cannot
+   * outrank a lower-scoring result from a high-trust KB.
+   *
+   * NOTE: This only mitigates the federated score rigging risk (see ADR-012).
+   * It does not substitute for operator-level assessment of KB quality.
+   */
+  trustWeight?: number;
 };
 
 export type FederatedKBConfig = Record<string, KnowledgeBase | FederatedKBEntry>;
@@ -98,14 +115,14 @@ export type FederatedIndex = {
 // ── FederatedKnowledgeBase ────────────────────────────────────────────────────
 
 export class FederatedKnowledgeBase {
-  private readonly namespaces: Map<string, { kb: KnowledgeBase; label: string }>;
+  private readonly namespaces: Map<string, { kb: KnowledgeBase; label: string; trustWeight: number }>;
   private readonly toolOptions: KBToolOptions;
   private readonly systemPromptMaxTokens: number;
   private cachedIndex?: FederatedIndex;
   private cachedTools?: Tool[];
 
   private constructor(
-    namespaces: Map<string, { kb: KnowledgeBase; label: string }>,
+    namespaces: Map<string, { kb: KnowledgeBase; label: string; trustWeight: number }>,
     toolOptions: KBToolOptions = {},
     systemPromptMaxTokens?: number,
   ) {
@@ -128,7 +145,7 @@ export class FederatedKnowledgeBase {
    * ```
    */
   static from(config: FederatedKBConfig, options?: FederatedKBOptions): FederatedKnowledgeBase {
-    const namespaces = new Map<string, { kb: KnowledgeBase; label: string }>();
+    const namespaces = new Map<string, { kb: KnowledgeBase; label: string; trustWeight: number }>();
 
     for (const [ns, value] of Object.entries(config)) {
       if (ns.includes(":")) {
@@ -137,9 +154,12 @@ export class FederatedKnowledgeBase {
 
       const raw = value instanceof KnowledgeBase ? value : value.kb;
       const label = value instanceof KnowledgeBase ? ns : (value.label ?? ns);
+      // ADR-012/Fix-5: clamp to [0,1] at storage time so the runtime path is fast
+      const trustWeight = value instanceof KnowledgeBase ? 1.0
+        : Math.min(1.0, Math.max(0.0, value.trustWeight ?? 1.0));
 
       // Apply namespace to the KB so its tools always emit namespace:docId
-      namespaces.set(ns, { kb: raw.withNamespace(ns), label });
+      namespaces.set(ns, { kb: raw.withNamespace(ns), label, trustWeight });
     }
 
     if (namespaces.size === 0) {
@@ -273,7 +293,10 @@ export class FederatedKnowledgeBase {
   }
 
   private estimateTokenCount(text: string): number {
-    return Math.ceil(text.length / 4);
+    // 4.3 fix: use CJK-aware estimateTokens (same as KnowledgeBase) instead of
+    // naive length/4. For CJK-heavy KBs, length/4 underestimates by ~2.7×,
+    // causing the federated system prompt to silently exceed its token budget.
+    return estimateTokens(text);
   }
 
   // ── Direct access API ───────────────────────────────────────────────────────
@@ -371,18 +394,27 @@ export class FederatedKnowledgeBase {
     //
     // This is NOT data-dependent (no mean/stdev computed), so absolute quality
     // is preserved across all namespaces on the same scale.
+    //
+    // ADR-012/Fix-5: After sigmoid, apply per-namespace trustWeight (default 1.0).
+    // This is a downgrade-only operator control: trustWeight ∈ [0, 1].
     const K = 6;
     const fixedSigmoid = (x: number) => 1 / (1 + Math.exp(-K * (x - 0.5)));
 
     const allResults: NamespacedSearchResult[] = [];
     for (const nsResults of resultsByNs) {
       if (nsResults.length === 0) continue;
+      const ns = nsResults[0]!.namespace;
+      const trustWeight = Math.min(1.0, Math.max(0.0,
+        this.namespaces.get(ns)?.trustWeight ?? 1.0,
+      ));
       for (const r of nsResults) {
-        allResults.push({ ...r, score: fixedSigmoid(r.score) });
+        allResults.push({ ...r, score: fixedSigmoid(r.score) * trustWeight });
       }
     }
 
-    allResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+    // J-3: Code-point tiebreak — localeCompare() without explicit locale varies across
+    // OS environments (LANG=C vs LANG=tr_TR etc). Use < / > for deterministic ordering.
+    allResults.sort((a, b) => b.score - a.score || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0));
     return allResults.slice(0, maxResults);
   }
 
@@ -403,7 +435,8 @@ export class FederatedKnowledgeBase {
         allResults.push({ ...r, namespace: ns, qualifiedId: `${ns}:${r.docId}` });
       }
     }
-    allResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+    // J-3: Code-point tiebreak (same fix as searchAsync).
+    allResults.sort((a, b) => b.score - a.score || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0));
     return allResults.slice(0, maxResults);
   }
 
@@ -427,11 +460,19 @@ export class FederatedKnowledgeBase {
 
   /**
    * Reload all KBs from disk.
+   *
+   * 7.4 fix: clear caches AFTER all constituent KBs have reloaded.
+   * The previous implementation cleared `cachedIndex` before the reload
+   * started, so a concurrent query during the reload window would call
+   * `buildIndex()` against partially-loaded stores and return an
+   * empty or inconsistent index. The stale cache served until reload
+   * completes is a much safer tradeoff.
    */
   async reload(): Promise<void> {
+    await Promise.all(Array.from(this.namespaces.values()).map(({ kb }) => kb.reload()));
+    // Invalidate caches only after all stores are loaded — atomic swap
     this.cachedIndex = undefined;
     this.cachedTools = undefined;
-    await Promise.all(Array.from(this.namespaces.values()).map(({ kb }) => kb.reload()));
   }
 
   // ── Private: index builder ──────────────────────────────────────────────────

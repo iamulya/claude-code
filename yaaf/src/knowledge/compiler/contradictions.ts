@@ -21,6 +21,8 @@
 
 import { readFile, readdir } from "fs/promises";
 import { join, extname } from "path";
+import { splitSentences } from "../utils/sentences.js";
+
 // Note (T-2): We do NOT import the full NEGATION_PATTERN from groundingPlugin here.
 // The grounding plugin's wide pattern (which includes contrastive phrases like
 // "unlike", "rather than", "instead of") is correct for L1 claim escalation —
@@ -195,51 +197,73 @@ async function loadArticles(
   compiledDir: string,
   maxArticles: number,
 ): Promise<Array<{ docId: string; body: string }>> {
-  const articles: Array<{ docId: string; body: string }> = [];
+  // J-5: Collect all .md paths first, then read them concurrently.
+  // The original implementation awaited each readFile() and each sub-directory
+  // scan sequentially, replicating the unbounded pattern that store.ts already
+  // fixed with pAllSettled(IO_CONCURRENCY). For a 200-article KB, sequential
+  // reads block the post-compile contradiction pass unnecessarily.
+  const mdPaths: Array<{ fullPath: string; docId: string }> = [];
 
-  async function scanDir(dir: string, prefix: string): Promise<void> {
-    if (articles.length >= maxArticles) return;
+  async function collectPaths(dir: string, prefix: string): Promise<void> {
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
-
     for (const entry of entries) {
-      if (articles.length >= maxArticles) break;
       const fullPath = join(dir, entry.name);
-
+      const relName = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        await scanDir(fullPath, prefix ? `${prefix}/${entry.name}` : entry.name);
+        await collectPaths(fullPath, relName);
       } else if (extname(entry.name) === ".md") {
-        try {
-          const raw = await readFile(fullPath, "utf-8");
-          const fmMatch = raw.replace(/\r\n/g, "\n").match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
-          if (fmMatch) {
-            const docId = (prefix ? `${prefix}/${entry.name}` : entry.name).replace(/\.md$/, "");
-            articles.push({ docId, body: fmMatch[1]?.trim() ?? "" });
-          }
-        } catch {
-          // Skip unreadable files
-        }
+        mdPaths.push({ fullPath, docId: relName.replace(/\.md$/, "") });
       }
     }
   }
 
-  await scanDir(compiledDir, "");
+  await collectPaths(compiledDir, "");
+
+  // Cap article count before reading (avoid reading more files than needed)
+  const pathsToRead = mdPaths.slice(0, maxArticles);
+
+  // Bounded-concurrent reads — mirrors store.ts IO_CONCURRENCY pattern
+  const IO_CONCURRENCY = 64;
+  const articles: Array<{ docId: string; body: string }> = [];
+
+  // Simple bounded pool: process in chunks of IO_CONCURRENCY
+  for (let i = 0; i < pathsToRead.length; i += IO_CONCURRENCY) {
+    const batch = pathsToRead.slice(i, i + IO_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async ({ fullPath, docId }) => {
+        const raw = await readFile(fullPath, "utf-8");
+        const fmMatch = raw.replace(/\r\n/g, "\n").match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
+        if (fmMatch) {
+          return { docId, body: fmMatch[1]?.trim() ?? "" };
+        }
+        return null;
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value !== null) {
+        articles.push(r.value);
+      }
+    }
+  }
+
   return articles;
 }
 
+// 3.3 / 8.3 fix: use shared abbreviation-aware splitSentences from utils/sentences.ts
 function extractSentences(text: string): string[] {
-  return text
-    .replace(/^#{1,6}\s.*/gm, "") // Remove headings
-    .replace(/```[\s\S]*?```/g, "") // Remove code blocks
-    .replace(/!\[.*?\]\(.*?\)/g, "") // Remove image refs
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 20 && s.split(/\s+/).length >= 5);
+  return splitSentences(
+    text
+      .replace(/^#{1,6}\s.*/gm, "") // Remove headings
+      .replace(/```[\s\S]*?```/g, "") // Remove code blocks
+      .replace(/!\[.*?\]\(.*?\)/g, ""), // Remove image refs
+  ).filter((s) => s.length > 20 && s.split(/\s+/).length >= 5);
 }
+
 
 function tokenize(text: string): Set<string> {
   const tokens = new Set<string>();
@@ -275,46 +299,111 @@ function checkNegationContradiction(a: string, b: string, overlap: number): bool
 function checkNumericDisagreement(a: string, b: string, overlap: number): boolean {
   if (overlap < 0.5) return false;
 
-  const aNumbers: string[] = [];
-  const bNumbers: string[] = [];
-  let m;
+  // H4: Extract numbers WITH their surrounding noun-phrase context.
+  // The naive check flagged any differing number as a contradiction, but
+  // "accuracy: 94.1%" vs "parameters: 175 billion" should NOT contradict.
+  // Solution: require ≥50% overlap in the 3-word window around each number.
+  const aContexts = extractNumberContexts(a);
+  const bContexts = extractNumberContexts(b);
 
-  NUMBER_PATTERN.lastIndex = 0;
-  while ((m = NUMBER_PATTERN.exec(a))) aNumbers.push(m[1]!);
-  NUMBER_PATTERN.lastIndex = 0;
-  while ((m = NUMBER_PATTERN.exec(b))) bNumbers.push(m[1]!);
+  if (aContexts.length === 0 || bContexts.length === 0) return false;
 
-  // If both have numbers and they're different → possible disagreement
-  if (aNumbers.length > 0 && bNumbers.length > 0) {
-    const aSet = new Set(aNumbers);
-    const bSet = new Set(bNumbers);
-    // At least one number in B that isn't in A (and they have overlapping text)
-    for (const n of bSet) {
-      if (!aSet.has(n)) return true;
+  // For each number pair: same subject-entity context + different number = disagreement
+  for (const ctxA of aContexts) {
+    for (const ctxB of bContexts) {
+      // Numbers must be different
+      if (ctxA.number === ctxB.number) continue;
+      // Subject context must overlap significantly (≥50% shared context words)
+      const contextOverlap = wordSetOverlap(ctxA.context, ctxB.context);
+      if (contextOverlap >= 0.5) return true;
     }
   }
   return false;
 }
 
+/** Extract numbers and their surrounding 3-word context windows. */
+function extractNumberContexts(text: string): Array<{ number: string; context: Set<string> }> {
+  const results: Array<{ number: string; context: Set<string> }> = [];
+  const words = text.toLowerCase().replace(/[^\w\s.%]/g, " ").split(/\s+/);
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+    // Match numbers ≥ 2 digits or decimals
+    if (/^\d{2,}$|^\d+\.\d+$/.test(word)) {
+      const context = new Set<string>();
+      // 3-word window on each side
+      for (let j = Math.max(0, i - 3); j <= Math.min(words.length - 1, i + 3); j++) {
+        if (j === i) continue;
+        const w = words[j]!;
+        if (w.length > 2 && !/^\d/.test(w)) context.add(w);
+      }
+      results.push({ number: word, context });
+    }
+  }
+  return results;
+}
+
+/** Compute overlap ratio between two word sets. */
+function wordSetOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const w of a) {
+    if (b.has(w)) intersection++;
+  }
+  return intersection / Math.min(a.size, b.size);
+}
+
+
+/**
+ * 5.3 fix: checkTemporalConflict with verb-context windowing.
+ *
+ * Old behaviour: fire if two high-overlap sentences have ANY different year.
+ * False positive: "released in 2017" vs "updated in 2021" — different events.
+ *
+ * New behaviour: apply the same 3-word context window used in checkNumericDisagreement.
+ * Two year references only conflict if they appear in the SAME verb-phrase context
+ * (the 3 words either side of the year overlap ≥50%).
+ *
+ * "introduced in 2017" vs "introduced in 2019" → same context ("introduced in") → conflict ✓
+ * "released in 2017" vs "updated in 2021" → different context → no conflict ✓
+ */
 function checkTemporalConflict(a: string, b: string, overlap: number): boolean {
   if (overlap < 0.5) return false;
 
-  const aYears: string[] = [];
-  const bYears: string[] = [];
-  let m;
+  const aCtx = extractYearContexts(a);
+  const bCtx = extractYearContexts(b);
 
-  YEAR_PATTERN.lastIndex = 0;
-  while ((m = YEAR_PATTERN.exec(a))) aYears.push(m[1]!);
-  YEAR_PATTERN.lastIndex = 0;
-  while ((m = YEAR_PATTERN.exec(b))) bYears.push(m[1]!);
+  if (aCtx.length === 0 || bCtx.length === 0) return false;
 
-  // If both reference years and they're different → temporal conflict
-  if (aYears.length > 0 && bYears.length > 0) {
-    const aSet = new Set(aYears);
-    const bSet = new Set(bYears);
-    for (const year of bSet) {
-      if (!aSet.has(year)) return true;
+  for (const ca of aCtx) {
+    for (const cb of bCtx) {
+      // Years must be different (same year = no conflict)
+      if (ca.year === cb.year) continue;
+      // Context must overlap significantly — same verb/event frame
+      const contextOverlap = wordSetOverlap(ca.context, cb.context);
+      if (contextOverlap >= 0.5) return true;
     }
   }
   return false;
+}
+
+/** Extract years and their surrounding 3-word verb-phrase context windows. */
+function extractYearContexts(text: string): Array<{ year: string; context: Set<string> }> {
+  const results: Array<{ year: string; context: Set<string> }> = [];
+  const words = text.toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/);
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+    if (/^(?:19|20)\d{2}$/.test(word)) {
+      const context = new Set<string>();
+      for (let j = Math.max(0, i - 3); j <= Math.min(words.length - 1, i + 3); j++) {
+        if (j === i) continue;
+        const w = words[j]!;
+        // Include substantive words (not digits, not single chars)
+        if (w.length > 2 && !/^\d/.test(w)) context.add(w);
+      }
+      results.push({ year: word, context });
+    }
+  }
+  return results;
 }

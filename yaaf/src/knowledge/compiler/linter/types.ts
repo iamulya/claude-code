@@ -92,6 +92,12 @@ export type LintIssue = {
     replaceWith: string;
     /** Only replace the first occurrence (true for UNLINKED_MENTION) */
     firstOccurrenceOnly: boolean;
+    /**
+     * Exact byte offset within the body (after frontmatter) where findText was found.
+     * When set, the fixer applies the replacement at this exact position instead of
+     * using indexOf which may find the wrong occurrence (e.g. inside a markdown link).
+     */
+    bodyOffset?: number;
   };
 };
 

@@ -1,112 +1,148 @@
 ---
-primary_files:
-  - src/telemetry/telemetry.ts
-  - src/telemetry/tracing.ts
-  - src/telemetry/attributes.ts
 title: Telemetry System
 entity_type: subsystem
-summary: A production-grade observability suite providing OpenTelemetry-native tracing, metrics, and logging for agent lifecycles.
+summary: YAAF's integration with OpenTelemetry for automatic and custom tracing, metrics, and structured logging.
+primary_files:
+ - src/telemetry/telemetry.ts
+ - src/telemetry/tracing.ts
+ - src/telemetry/attributes.ts
 exports:
-  - initYAAFTelemetry
-  - flushYAAFTelemetry
-  - executeInSpan
-  - getYAAFMeter
-  - getYAAFOTelLogger
+ - initYAAFTelemetry
+ - flushYAAFTelemetry
+ - getYAAFMeter
+ - getYAAFOTelLogger
+ - executeInSpan
+ - isTracingEnabled
+ - startAgentRunSpan
+ - startLLMRequestSpan
+ - startToolCallSpan
+search_terms:
+ - OpenTelemetry integration
+ - YAAF observability
+ - how to trace agent runs
+ - custom metrics for agents
+ - structured logging in YAAF
+ - OTLP exporter setup
+ - agent performance monitoring
+ - instrumenting LLM calls
+ - instrumenting tool calls
+ - AsyncLocalStorage tracing
+ - YAAF_OTEL environment variables
+ - Jaeger integration
+ - Grafana Tempo integration
+ - console exporter
 stub: false
-compiled_at: 2026-04-16T14:11:29.240Z
+compiled_at: 2026-04-24T18:20:29.683Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/telemetry.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/telemetry/telemetry.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/telemetry/tracing.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/telemetry.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/attributes.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/telemetry.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/tracing.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Purpose
-The Telemetry System provides deep observability into the execution of LLM-powered agents. It is designed to solve the complexity of tracking asynchronous, multi-turn agentic workflows by automatically instrumenting agent turns, LLM requests, and tool executions. 
 
-The system is built on [OpenTelemetry](https://opentelemetry.io/) standards, ensuring compatibility with industry-standard backends like Jaeger, Grafana Tempo, and Honeycomb. It operates with a "zero-overhead" philosophy, where all instrumentation remains dormant and incurs no performance penalty until explicitly activated via configuration.
+The Telemetry System provides comprehensive [Observability](../concepts/observability.md) for YAAF agents by integrating with the [OpenTelemetry](../concepts/open-telemetry.md) (OTel) standard [Source 1]. It is designed to be a zero-overhead, opt-in system that automatically instruments key agent lifecycle events, including agent turns, [LLM](../concepts/llm.md) calls, and tool executions. The system offers capabilities for distributed tracing, custom metrics, and structured logging, allowing developers to monitor, debug, and analyze agent performance in both development and production environments [Source 1, Source 4].
 
 ## Architecture
-The subsystem is structured around three primary OpenTelemetry signals: Traces, Metrics, and Logs.
 
-### Span Hierarchy
-YAAF organizes telemetry data into a hierarchical structure that mirrors the logical execution of an agent. Every `Agent.run()` call initiates a root span, with subsequent operations nested as children:
+The Telemetry System is built upon the OpenTelemetry libraries and is activated by calling `initYAAFTelemetry()` once at process startup [Source 1, Source 3]. [when](../apis/when.md) disabled, the system imposes no performance overhead [Source 1, Source 4].
 
-```text
-yaaf.agent.run
-│  (Attributes: agent.name, run.user_message_length, run.iteration)
-│
-├── yaaf.llm.request
-│     (Attributes: llm.model, llm.input_tokens, llm.output_tokens, llm.duration_ms)
-│
-├── yaaf.tool.call
-│   │  (Attributes: tool.name, tool.duration_ms, tool.blocked)
-│   │
-│   └── yaaf.tool.execution
-│         (Attributes: tool.execution_ms, tool.error)
-│
-└── yaaf.llm.request (next iteration)
-```
+Its core architectural features include:
 
-### Context Propagation
-The system utilizes `AsyncLocalStorage` (ALS) to propagate trace context. This allows child spans (such as those created during tool execution) to automatically link to the parent agent run without requiring developers to manually pass span objects through the call stack.
-
-### Lifecycle Management
-To prevent memory leaks and handle orphaned spans in the event of crashes or aborted runs, the system employs a `WeakRef` and strong-reference pattern combined with a background cleanup interval.
+*   **[Context Propagation](../concepts/context-propagation.md)**: The system uses `AsyncLocalStorage` to automatically propagate tracing context. This eliminates the need for developers to manually pass parent [Span](../apis/span.md) information through their code [Source 1, Source 4].
+*   **Span Hierarchy**: Agent operations are Traced with a structured hierarchy. A root span, `yaaf.agent.run`, is created for each call to `Agent.run()`. Child spans such as `yaaf.llm.request` and `yaaf.tool.call` are nested within it. [Tool Execution](../concepts/tool-execution.md) itself is captured in a `yaaf.tool.execution` span, which is a grandchild of the agent run span [Source 1]. Other instrumented operations include `memory.extract`, `memory.retrieve`, and `compaction` [Source 2].
+*   **Componentization**: The system is organized into logical modules. `telemetry.ts` handles the initialization of OTel providers and configuration from environment variables [Source 3]. `tracing.ts` provides the API for creating and managing spans for agent lifecycle events [Source 4]. `attributes.ts` defines common attribute keys and constants, such as the service name (`yaaf`) and the names for the Tracer (`com.yaaf.tracing`), meter (`com.yaaf.metrics`), and logger (`com.yaaf.logs`) [Source 2].
+*   **Peer Dependencies**: The OpenTelemetry packages are optional peer dependencies. Users only need to install the packages required for their specific use case (e.g., [Trace](../concepts/trace.md)s only, or the full stack of traces, metrics, and logs) and the desired exporters [Source 1].
 
 ## Key APIs
 
-### `initYAAFTelemetry()`
-Initializes the OpenTelemetry stack. It reads environment variables, registers global providers, and sets up automatic flush handlers for process exit. It returns a `Meter` instance for creating custom metrics.
+The public API of the Telemetry System provides functions for initialization, data flushing, and custom instrumentation.
 
-### `flushYAAFTelemetry()`
-Force-flushes all pending spans, metrics, and logs to the configured exporter. This is typically called during process shutdown or at the end of a test suite.
-
-### `executeInSpan<T>(name, fn, attrs)`
-A helper function that wraps arbitrary code in a new span. It automatically attaches the span to the current active context and records any exceptions that occur during execution.
-
-### `getYAAFMeter()` and `getYAAFOTelLogger()`
-Accessors for the initialized OpenTelemetry providers. These return `undefined` if telemetry has not been initialized or if the specific signal (metrics or logs) is disabled.
+*   `initYAAFTelemetry()`: Initializes the OpenTelemetry stack for YAAF. It reads environment variables, registers the necessary global providers, and returns a `Meter` instance for creating custom metrics. This function should be called once at process startup [Source 1, Source 3].
+*   `flushYAAFTelemetry()`: Force-flushes all pending telemetry data. This is useful before process exit or in test teardowns to ensure all data is exported [Source 1, Source 3].
+*   `executeInSpan<T>(spanName, fn, attrs?)`: Wraps an asynchronous function `fn` in a new OpenTelemetry span. It automatically handles span creation, exception recording, and completion [Source 1, 'Source 4].
+*   `getYAAFMeter()`: Returns the initialized YAAF `Meter` instance, which can be used to create custom counters and histograms. It returns `undefined` if `initYAAFTelemetry()` has not been called [Source 1, Source 3].
+*   `getYAAFOTelLogger()`: Returns a structured OTLP log emitter. It returns `undefined` if telemetry is not initialized or if no logs exporter is configured [Source 1, Source 3].
+*   `getCurrentRunSpan()` / `getCurrentToolSpan()`: Functions to retrieve the currently active agent run or tool call span from the context, allowing for direct annotation with custom attributes [Source 1].
+*   `isTracingEnabled()`: A function that returns `true` if a traces exporter is configured and a tracer provider has been registered, indicating that tracing is active [Source 4].
 
 ## Configuration
-Telemetry is configured primarily through environment variables. YAAF supports standard OpenTelemetry variables but also provides `YAAF_OTEL_*` overrides to allow the framework's telemetry to coexist with a host application's own OTel configuration.
 
-| Variable | Purpose |
-|---|---|
-| `OTEL_TRACES_EXPORTER` | Set to `console`, `otlp`, or `none`. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | The URL of the OTLP collector (e.g., `http://localhost:4318`). |
-| `YAAF_OTEL_TRACES_EXPORTER` | Overrides the standard exporter setting specifically for YAAF. |
-| `YAAF_OTEL_SHUTDOWN_TIMEOUT_MS` | Maximum time to wait for data flush during shutdown (default: 2000ms). |
+The Telemetry System is configured primarily through environment variables. It is disabled by default and becomes active when an exporter is specified [Source 1]. The system honors standard `OTEL_*` environment variables and also provides `YAAF_OTEL_*` prefixed versions that take precedence. These overrides allow YAAF's telemetry to be configured independently from a host application's own OpenTelemetry setup [Source 1, Source 3].
+
+Supported exporter types for traces, metrics, and logs include `console`, `otlp`, and `none` (or an empty value) to disable the signal [Source 3].
+
+| Variable                           | Default         | Purpose                                                              |
+| ---------------------------------- | --------------- | -------------------------------------------------------------------- |
+| `OTEL_TRACES_EXPORTER`             | —               | Sets the trace exporter: `console`, `otlp`, or `none`                |
+| `OTEL_METRICS_EXPORTER`            | —               | Sets the metrics exporter: `console`, `otlp`, or `none`              |
+| `OTEL_LOGS_EXPORTER`               | —               | Sets the logs exporter: `console`, `otlp`, or `none`                 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`      | —               | Base URL for the OTLP collector (e.g., Jaeger, Grafana Tempo)        |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`      | `http/protobuf` | OTLP protocol: `grpc`, `http/json`, or `http/protobuf`               |
+| `OTEL_EXPORTER_OTLP_HEADERS`       | —               | Comma-separated key-value pairs for OTLP headers (e.g., for auth)    |
+| `YAAF_OTEL_TRACES_EXPORTER`        | —               | Overrides `OTEL_TRACES_EXPORTER` for YAAF's telemetry pipeline       |
+| `YAAF_OTEL_METRICS_EXPORTER`       | —               | Overrides `OTEL_METRICS_EXPORTER` for YAAF's telemetry pipeline      |
+| `YAAF_OTEL_LOGS_EXPORTER`          | —               | Overrides `OTEL_LOGS_EXPORTER` for YAAF's telemetry pipeline         |
+| `YAAF_OTEL_EXPORTER_OTLP_ENDPOINT` | —               | Overrides the OTLP endpoint specifically for YAAF                    |
+| `YAAF_OTEL_SHUTDOWN_TIMEOUT_MS`    | `2000`          | Maximum milliseconds to wait for telemetry flush on process shutdown |
+| `YAAF_OTEL_FLUSH_TIMEOUT_MS`       | `5000`          | Maximum milliseconds for an explicit `flushYAAFTelemetry()` call     |
+
+[Source 1, Source 3]
 
 ## Extension Points
 
-### Custom Instrumentation
-Developers can extend the default telemetry by manually annotating spans or creating custom metrics within agent hooks or tool logic:
+Developers can extend the built-in observability by creating custom spans, metrics, and logs.
 
-```typescript
-import { executeInSpan, getCurrentRunSpan } from 'yaaf';
+*   **Custom Spans**: The `executeInSpan` function allows developers to wrap any arbitrary block of code in a new span, which will be automatically parented to the current agent operation span [Source 1].
 
-// Annotate the current agent run with business logic metadata
-getCurrentRunSpan()?.setAttribute('business.customer_id', 'cust_123');
+    ```typescript
+    import { executeInSpan } from 'yaaf';
 
-// Wrap a custom service call in a span
-const data = await executeInSpan('external_api.fetch', async (span) => {
-  return fetch(url).then(r => r.json());
-});
-```
+    const data = await executeInSpan('my_service.fetch', async (span) => {
+      span.setAttribute('http.url', url);
+      return fetch(url).then(r => r.json());
+    });
+    ```
 
-### Custom Metrics
-Using the `Meter` provided by `initYAAFTelemetry()`, developers can track domain-specific counters and histograms:
+*   **Span Annotation**: Existing automatic spans can be annotated with custom business-specific attributes using functions like `getCurrentRunSpan()` [Source 1].
 
-```typescript
-import { getYAAFMeter } from 'yaaf';
+    ```typescript
+    import { getCurrentRunSpan } from 'yaaf';
+    getCurrentRunSpan()?.setAttribute('business.customer_id', customerId);
+    ```
 
-const meter = getYAAFMeter();
-const toolErrors = meter?.createCounter('my_agent.tool_errors');
+*   **Custom Metrics**: After initialization, the `getYAAFMeter()` function provides a `Meter` instance that can be used to create and record custom metrics like counters and histograms. This is often done within [Agent Hooks](../concepts/agent-hooks.md) [Source 1].
 
-// In a tool or hook:
-toolErrors?.add(1, { tool: 'database_query', error_type: 'timeout' });
-```
+    ```typescript
+    import { getYAAFMeter } from 'yaaf';
 
-## Peer Dependencies
-To keep the core framework lightweight, OpenTelemetry packages are treated as optional peer dependencies. Users must install the specific exporters and SDK components required for their environment (e.g., `@opentelemetry/exporter-trace-otlp-proto` for OTLP support).
+    const meter = getYAAFMeter();
+    const toolErrors = meter?.createCounter('my_agent.tool_errors');
+
+    // In a tool or hook:
+    toolErrors?.add(1, { tool_name: 'calculator' });
+    ```
+
+*   **Structured Logging**: The `getYAAFOTelLogger()` function provides a logger that can emit structured logs to an OTLP endpoint, associating them with the current trace context [Source 1].
+
+    ```typescript
+    import { getYAAFOTelLogger } from 'yaaf';
+    import { SeverityNumber } from '@opentelemetry/api-logs';
+
+    const otelLog = getYAAFOTelLogger();
+    otelLog?.emit({
+      severityNumber: SeverityNumber.INFO,
+      body: 'Agent session started',
+      attributes: { 'session.id': sessionId },
+    });
+    ```
+
+## Sources
+
+*   [Source 1]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/telemetry.md`
+*   [Source 2]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/attributes.ts`
+*   [Source 3]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/telemetry.ts`
+*   [Source 4]: `/Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/tracing.ts`

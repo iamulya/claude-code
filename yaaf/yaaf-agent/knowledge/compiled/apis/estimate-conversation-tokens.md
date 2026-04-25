@@ -1,84 +1,94 @@
 ---
-title: estimateConversationTokens
-entity_type: api
-summary: Estimate tokens for an array of messages in a conversation history.
+summary: Estimates the total token count for an array of messages, representing a conversation history.
 export_name: estimateConversationTokens
 source_file: src/utils/tokens.ts
 category: function
+title: estimateConversationTokens
+entity_type: api
+search_terms:
+ - calculate conversation tokens
+ - token counting for message history
+ - estimate prompt size
+ - LLM context window management
+ - how to count tokens in a chat
+ - message array token estimation
+ - conversation token heuristic
+ - prevent context overflow
+ - token budget for conversation
+ - YAAF token utilities
+ - chat history token count
 stub: false
-compiled_at: 2026-04-16T14:40:25.762Z
+compiled_at: 2026-04-24T17:04:57.236Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/tokens.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/tokens.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`estimateConversationTokens` is a utility function designed to calculate the approximate token count for a collection of messages. It is primarily used to manage context windows and prevent token overflow when sending conversation histories to Large Language Models (LLMs).
 
-The function aggregates estimates for individual messages, incorporating heuristics that account for the character-to-token ratio and the structural overhead (such as JSON formatting) inherent in multi-turn conversations. The underlying heuristic assumes approximately 4 characters per token for English text and code, intentionally overestimating by 5-15% to provide a safety buffer against context limit violations.
+The `estimateConversationTokens` function calculates an estimated token count for an entire conversation, which is represented as an array of message objects [Source 1]. It iterates through each message in the array, estimates its individual token count using the same logic as `estimateMessageTokens`, and returns the sum.
 
-## Signature / Constructor
+This utility is essential for managing the [Context Window](../concepts/context-window.md) of a Large Language Model ([LLM](../concepts/llm.md)). Before sending a conversation history to an LLM, developers can use this function to check if the total number of tokens is within the model's limit, helping to prevent API errors caused by [Context Overflow](../concepts/context-overflow.md). The estimation is designed to be a conservative heuristic, often overestimating slightly to provide a safe buffer [Source 1].
+
+## Signature
+
+The function takes a single argument: an array of message-like objects.
 
 ```typescript
 export function estimateConversationTokens(
   messages: Array<{
     role: string;
     content: string | any;
-    [key: string]: any;
+    // other properties may exist
   }>
-): number
+): number;
 ```
 
-### Parameters
-- `messages`: An array of message objects. Each object typically contains a `role` (e.g., "system", "user", "assistant") and `content`. The function also accounts for additional fields that might be present in structured tool-use or metadata.
+**Parameters:**
 
-### Returns
-- `number`: The total estimated token count for the entire array, rounded up to the nearest integer.
+- `messages`: An array of objects, where each object represents a message in the conversation. Each object is expected to have at least `role` and `content` properties, similar to the structure used by many LLM provider APIs.
+
+**Returns:**
+
+- `number`: The estimated total token count for all messages in the array, rounded up.
 
 ## Examples
 
-### Estimating a Standard Conversation
-This example demonstrates how to estimate the token usage for a simple system prompt and user query.
+### Basic Usage
+
+Here is an example of estimating the token count for a short conversation history.
 
 ```typescript
 import { estimateConversationTokens } from 'yaaf';
 
-const history = [
-  { 
-    role: 'system', 
-    content: 'You are a helpful assistant that summarizes technical documentation.' 
+const conversationHistory = [
+  {
+    role: 'user',
+    content: 'Hello, what is the capital of France?',
   },
-  { 
-    role: 'user', 
-    content: 'Can you explain how the YAAF token utility works?' 
-  }
+  {
+    role: 'assistant',
+    content: 'The capital of France is Paris.',
+  },
+  {
+    role: 'user',
+    content: 'Thanks!',
+  },
 ];
 
-const estimatedTokens = estimateConversationTokens(history);
-console.log(`Estimated conversation size: ${estimatedTokens} tokens`);
-```
+const totalTokens = estimateConversationTokens(conversationHistory);
 
-### Context Window Management
-Using the estimate to truncate history before calling a provider.
-
-```typescript
-import { estimateConversationTokens } from 'yaaf';
-
-const MAX_CONTEXT = 4096;
-const history = [ /* ... many messages ... */ ];
-
-const currentUsage = estimateConversationTokens(history);
-
-if (currentUsage > MAX_CONTEXT) {
-  // Logic to prune or summarize history
-  console.warn('Conversation exceeds context budget');
-}
+console.log(`Estimated conversation tokens: ${totalTokens}`);
+// Example output might be: Estimated conversation tokens: 25
 ```
 
 ## See Also
-- `estimateTokens`: The underlying function for estimating tokens from raw strings.
-- `estimateMessageTokens`: The function used to estimate tokens for a single message object.
-- `exceedsBudget`: A boolean check for text against a specific token limit.
 
-### Sources
-- `src/utils/tokens.ts`
+- `estimateTokens`: For estimating tokens from a plain string.
+- `estimateMessageTokens`: For estimating tokens for a single structured message object.
+- `exceedsBudget`: For a more efficient boolean check against a token limit.
+
+## Sources
+
+[Source 1]: src/utils/tokens.ts

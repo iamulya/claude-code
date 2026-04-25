@@ -31,6 +31,7 @@ entity_types:
           description: "One-sentence description of the concept"
           type: string
           required: true
+          missing_severity: warning
         related_subsystems:
           description: "Which YAAF subsystems this concept is central to"
           type: string[]
@@ -82,24 +83,30 @@ entity_types:
           description: "One-sentence description of what this API entity does"
           type: string
           required: true
+          missing_severity: warning
         export_name:
           description: "The exact name as exported from the yaaf package"
           type: string
           required: true
+          missing_severity: warning
         source_file:
           description: "Relative path to the source file, e.g. src/agent.ts"
           type: string
           required: true
+          missing_severity: warning
         category:
           description: "Kind of TypeScript entity"
           type: enum
           required: true
+          missing_severity: warning
           enum:
             - class
             - function
             - type
             - interface
             - constant
+            - const
+            - enum
         deprecated:
           description: "Whether this API is deprecated"
           type: boolean
@@ -152,10 +159,12 @@ entity_types:
           description: "One-sentence description of what this subsystem provides"
           type: string
           required: true
+          missing_severity: warning
         primary_files:
           description: "Key source files in this subsystem (relative paths)"
           type: string[]
           required: true
+          missing_severity: warning
         exports:
           description: "Key classes/functions exported by this subsystem"
           type: string[]
@@ -208,6 +217,7 @@ entity_types:
           description: "One-sentence description of what this guide achieves"
           type: string
           required: true
+          missing_severity: warning
         difficulty:
           description: "Approximate difficulty level for a TypeScript developer"
           type: enum
@@ -263,10 +273,12 @@ entity_types:
           description: "One-sentence description of what this plugin provides"
           type: string
           required: true
+          missing_severity: warning
         capabilities:
           description: "Plugin capability types it implements (memory, browser, session, etc.)"
           type: string[]
           required: true
+          missing_severity: warning
         built_in:
           description: "Whether this plugin ships with the yaaf package"
           type: boolean
@@ -363,53 +375,64 @@ relationship_types:
     reciprocal: WRAPS
 
 # ── Vocabulary ────────────────────────────────────────────────────────────────
+# Comprehensive vocabulary derived from src/index.ts public exports + key concepts.
+# Each entry maps a human-readable term to its entity type and aliases.
 
 vocabulary:
 
-  "agent":
+  # ── Core Agent ──────────────────────────────────────────────────
+  "Agent":
     entity_type: api
     aliases:
       - "YAAF agent"
       - "Agent class"
       - "agent instance"
-
-  "agent runner":
+  "AgentConfig":
     entity_type: api
     aliases:
-      - "AgentRunner"
+      - "Agent Config"
+      - "agent configuration"
+  "AgentRunner":
+    entity_type: api
+    aliases:
+      - "Agent Runner"
       - "runner"
       - "LLM loop"
       - "execution loop"
-
-  "plugin host":
+  "AgentRunnerConfig":
+    entity_type: api
+    aliases: ["Agent Runner Config"]
+  "geminiAgent":
+    entity_type: api
+    aliases: ["Gemini agent", "Gemini Agent factory"]
+  "openaiAgent":
+    entity_type: api
+    aliases: ["OpenAI agent", "OpenAI Agent factory"]
+  "ollamaAgent":
+    entity_type: api
+    aliases: ["Ollama agent", "Ollama Agent factory"]
+  "AgentThread":
     entity_type: api
     aliases:
-      - "PluginHost"
-      - "plugin registry"
-      - "adapter registry"
-
-  "context manager":
+      - "Agent Thread"
+      - "thread"
+      - "durable pause-resume"
+  "createThread":
     entity_type: api
-    aliases:
-      - "ContextManager"
-      - "context window management"
-      - "token budget management"
+    aliases: ["create thread"]
+  "forkThread":
+    entity_type: api
+    aliases: ["fork thread"]
 
-  "compaction":
-    entity_type: concept
-    aliases:
-      - "context compaction"
-      - "compaction strategy"
-      - "auto-compaction"
-      - "history compaction"
+  # ── State Store ────────────────────────────────────────────────
+  "createStore":
+    entity_type: api
+    aliases: ["create store", "state store"]
+  "Store":
+    entity_type: api
+    aliases: ["state store", "reactive store"]
 
-  "memory strategy":
-    entity_type: concept
-    aliases:
-      - "MemoryStrategy"
-      - "memory extraction"
-      - "memory retrieval"
-
+  # ── Tool System ────────────────────────────────────────────────
   "tool":
     entity_type: concept
     aliases:
@@ -417,36 +440,277 @@ vocabulary:
       - "tool definition"
       - "buildTool"
       - "tool call"
-
-  "plugin":
-    entity_type: concept
-    aliases:
-      - "YAAF plugin"
-      - "adapter plugin"
-      - "capability plugin"
-
-  "plugin capability":
-    entity_type: concept
-    aliases:
-      - "PluginCapability"
-      - "adapter capability"
-      - "capability type"
-
-  "vigil":
+  "buildTool":
+    entity_type: api
+    aliases: ["build tool", "tool builder"]
+  "findToolByName":
+    entity_type: api
+    aliases: ["find tool by name"]
+  "OpenAPIToolset":
     entity_type: api
     aliases:
-      - "Vigil"
+      - "OpenAPI Toolset"
+      - "REST API toolset"
+      - "OpenAPI tool"
+  "agentTool":
+    entity_type: api
+    aliases: ["agent tool", "agent-as-tool"]
+  "agentTools":
+    entity_type: api
+    aliases: ["agent tools"]
+  "ToolLoopDetector":
+    entity_type: api
+    aliases:
+      - "Tool Loop Detector"
+      - "loop detection"
+      - "tool loop"
+  "StreamingToolExecutor":
+    entity_type: api
+    aliases:
+      - "Streaming Tool Executor"
+      - "concurrent tool execution"
+  "applyToolResultBudget":
+    entity_type: api
+    aliases: ["tool result budget"]
+
+  # ── Memory ─────────────────────────────────────────────────────
+  "MemoryStore":
+    entity_type: api
+    aliases: ["Memory Store", "memory store"]
+  "MemoryRelevanceEngine":
+    entity_type: api
+    aliases: ["Memory Relevance Engine"]
+  "TeamMemory":
+    entity_type: api
+    aliases: ["Team Memory", "shared memory"]
+  "AutoMemoryExtractor":
+    entity_type: api
+    aliases: ["Auto Memory Extractor", "auto-extract"]
+  "memory strategy":
+    entity_type: concept
+    aliases:
+      - "MemoryStrategy"
+      - "memory extraction"
+      - "memory retrieval"
+  "SessionMemoryExtractor":
+    entity_type: api
+    aliases: ["Session Memory Extractor"]
+  "TopicFileExtractor":
+    entity_type: api
+    aliases: ["Topic File Extractor"]
+  "EphemeralBufferStrategy":
+    entity_type: api
+    aliases: ["Ephemeral Buffer Strategy"]
+  "LLMRetrievalStrategy":
+    entity_type: api
+    aliases: ["LLM Retrieval Strategy"]
+  "RecencyRetrievalStrategy":
+    entity_type: api
+    aliases: ["Recency Retrieval Strategy"]
+  "CompositeMemoryStrategy":
+    entity_type: api
+    aliases: ["Composite Memory Strategy"]
+  "HonchoMemoryStrategy":
+    entity_type: api
+    aliases: ["Honcho Memory Strategy"]
+
+  # ── Context Management ─────────────────────────────────────────
+  "ContextManager":
+    entity_type: api
+    aliases:
+      - "Context Manager"
+      - "context window management"
+      - "token budget management"
+  "ContextEngine":
+    entity_type: api
+    aliases: ["Context Engine"]
+  "compaction":
+    entity_type: concept
+    aliases:
+      - "context compaction"
+      - "compaction strategy"
+      - "auto-compaction"
+      - "history compaction"
+  "SummarizeStrategy":
+    entity_type: api
+    aliases: ["Summarize Strategy"]
+  "TruncateStrategy":
+    entity_type: api
+    aliases: ["Truncate Strategy"]
+  "SlidingWindowStrategy":
+    entity_type: api
+    aliases: ["Sliding Window Strategy"]
+  "MicroCompactStrategy":
+    entity_type: api
+    aliases: ["Micro Compact Strategy"]
+  "TimeBasedMicroCompactStrategy":
+    entity_type: api
+    aliases: ["Time Based Micro Compact Strategy"]
+  "CompactionCircuitBreaker":
+    entity_type: api
+    aliases: ["Compaction Circuit Breaker", "circuit breaker"]
+  "snipHistory":
+    entity_type: api
+    aliases: ["snip history", "history snipping"]
+  "ContentReplacementTracker":
+    entity_type: api
+    aliases: ["Content Replacement Tracker"]
+  "buildCompactionPrompt":
+    entity_type: api
+    aliases: ["compaction prompt"]
+
+  # ── Agent Orchestration ────────────────────────────────────────
+  "AgentOrchestrator":
+    entity_type: api
+    aliases:
+      - "Agent Orchestrator"
+      - "orchestrator"
+      - "multi-agent orchestrator"
+      - "agent swarm"
+  "Mailbox":
+    entity_type: api
+    aliases: ["mailbox", "agent mailbox", "IPC"]
+  "TaskManager":
+    entity_type: api
+    aliases: ["Task Manager", "task management"]
+  "AgentRouter":
+    entity_type: api
+    aliases:
+      - "Agent Router"
+      - "delegate architecture"
+      - "agent routing"
+  "buildCoordinatorPrompt":
+    entity_type: api
+    aliases: ["coordinator prompt", "coordinator mode"]
+
+  # ── Workflow Agents ────────────────────────────────────────────
+  "sequential":
+    entity_type: api
+    aliases: ["sequential workflow"]
+  "parallel":
+    entity_type: api
+    aliases: ["parallel workflow"]
+  "loop":
+    entity_type: api
+    aliases: ["loop workflow"]
+  "conditional":
+    entity_type: api
+    aliases: ["conditional workflow"]
+  "transform":
+    entity_type: api
+    aliases: ["transform step"]
+  "WorkflowAgent":
+    entity_type: api
+    aliases: ["Workflow Agent", "workflow"]
+
+  # ── Structured Output ──────────────────────────────────────────
+  "structuredAgent":
+    entity_type: api
+    aliases: ["structured agent", "structured output agent"]
+  "parseStructuredOutput":
+    entity_type: api
+    aliases: ["parse structured output"]
+
+  # ── Vigil (Autonomous Mode) ────────────────────────────────────
+  "Vigil":
+    entity_type: api
+    aliases:
+      - "vigil"
       - "autonomous mode"
       - "scheduled agent"
       - "daemon mode"
-
-  "permission policy":
+  "Heartbeat":
     entity_type: api
     aliases:
-      - "PermissionPolicy"
-      - "tool permission"
-      - "permission system"
+      - "heartbeat"
+      - "proactive scheduling"
+      - "standing order"
 
+  # ── System Prompt ──────────────────────────────────────────────
+  "SystemPromptBuilder":
+    entity_type: api
+    aliases:
+      - "System Prompt Builder"
+      - "system prompt"
+      - "system context"
+  "envSection":
+    entity_type: api
+    aliases: ["env section"]
+  "rulesSection":
+    entity_type: api
+    aliases: ["rules section"]
+  "identitySection":
+    entity_type: api
+    aliases: ["identity section"]
+
+  # ── Hooks ──────────────────────────────────────────────────────
+  "hook":
+    entity_type: concept
+    aliases:
+      - "lifecycle hook"
+      - "beforeLLM hook"
+      - "afterLLM hook"
+      - "agent hook"
+  "Hooks":
+    entity_type: api
+    aliases: ["hooks interface"]
+
+  # ── Permission System ──────────────────────────────────────────
+  "PermissionPolicy":
+    entity_type: api
+    aliases:
+      - "Permission Policy"
+      - "permission system"
+      - "tool permission"
+  "allowAll":
+    entity_type: api
+    aliases: ["allow all policy"]
+  "denyAll":
+    entity_type: api
+    aliases: ["deny all policy"]
+  "cliApproval":
+    entity_type: api
+    aliases: ["CLI approval", "human-in-the-loop"]
+  "secureCLIPolicy":
+    entity_type: api
+    aliases: ["secure CLI policy"]
+
+  # ── IAM (Identity & Access Management) ─────────────────────────
+  "AccessPolicy":
+    entity_type: api
+    aliases: ["access policy", "IAM policy"]
+  "RoleStrategy":
+    entity_type: api
+    aliases: ["Role Strategy", "RBAC"]
+  "AttributeStrategy":
+    entity_type: api
+    aliases: ["Attribute Strategy", "ABAC"]
+  "TenantScopeStrategy":
+    entity_type: api
+    aliases: ["Tenant Scope Strategy", "multi-tenancy"]
+  "OwnershipScopeStrategy":
+    entity_type: api
+    aliases: ["Ownership Scope Strategy"]
+  "HierarchyScopeStrategy":
+    entity_type: api
+    aliases: ["Hierarchy Scope Strategy"]
+  "JwtIdentityProvider":
+    entity_type: api
+    aliases: ["JWT Identity Provider", "JWT provider"]
+  "ApiKeyIdentityProvider":
+    entity_type: api
+    aliases: ["API Key Identity Provider"]
+  "OidcIdentityProvider":
+    entity_type: api
+    aliases: ["OIDC Identity Provider", "OpenID Connect"]
+  "verifyJwt":
+    entity_type: api
+    aliases: ["verify JWT"]
+  "decodeJwt":
+    entity_type: api
+    aliases: ["decode JWT"]
+
+  # ── Security Middleware ────────────────────────────────────────
   "security hooks":
     entity_type: concept
     aliases:
@@ -454,7 +718,287 @@ vocabulary:
       - "prompt guard"
       - "PII redactor"
       - "output sanitizer"
+  "PromptGuard":
+    entity_type: api
+    aliases: ["Prompt Guard", "injection detection"]
+  "OutputSanitizer":
+    entity_type: api
+    aliases: ["Output Sanitizer"]
+  "PiiRedactor":
+    entity_type: api
+    aliases: ["PII Redactor", "PII detection"]
+  "TrustPolicy":
+    entity_type: api
+    aliases: ["Trust Policy", "plugin trust"]
+  "GroundingValidator":
+    entity_type: api
+    aliases: ["Grounding Validator", "hallucination detection"]
+  "PerUserRateLimiter":
+    entity_type: api
+    aliases: ["Per User Rate Limiter", "rate limiting"]
+  "InputAnomalyDetector":
+    entity_type: api
+    aliases: ["Input Anomaly Detector", "anomaly detection"]
+  "StructuredOutputValidator":
+    entity_type: api
+    aliases: ["Structured Output Validator"]
+  "SecurityAuditLog":
+    entity_type: api
+    aliases: ["Security Audit Log", "audit log"]
 
+  # ── Sandbox ────────────────────────────────────────────────────
+  "Sandbox":
+    entity_type: api
+    aliases: ["sandbox", "code sandbox"]
+  "projectSandbox":
+    entity_type: api
+    aliases: ["project sandbox"]
+  "strictSandbox":
+    entity_type: api
+    aliases: ["strict sandbox"]
+
+  # ── Models ─────────────────────────────────────────────────────
+  "OpenAIChatModel":
+    entity_type: api
+    aliases: ["OpenAI Chat Model", "OpenAI model"]
+  "GeminiChatModel":
+    entity_type: api
+    aliases: ["Gemini Chat Model", "Gemini model"]
+  "AnthropicChatModel":
+    entity_type: api
+    aliases: ["Anthropic Chat Model", "Claude model"]
+  "RouterChatModel":
+    entity_type: api
+    aliases: ["Router Chat Model", "model router"]
+  "BaseLLMAdapter":
+    entity_type: api
+    aliases: ["Base LLM Adapter"]
+  "resolveModel":
+    entity_type: api
+    aliases: ["resolve model", "model resolver"]
+  "resolveModelSpecs":
+    entity_type: api
+    aliases: ["model specs"]
+
+  # ── Session ────────────────────────────────────────────────────
+  "Session":
+    entity_type: api
+    aliases:
+      - "session"
+      - "session persistence"
+      - "conversation history"
+      - "JSONL session"
+  "SecureStorage":
+    entity_type: api
+    aliases: ["Secure Storage"]
+
+  # ── Plugin System ──────────────────────────────────────────────
+  "plugin":
+    entity_type: concept
+    aliases:
+      - "YAAF plugin"
+      - "adapter plugin"
+      - "capability plugin"
+  "plugin capability":
+    entity_type: concept
+    aliases:
+      - "PluginCapability"
+      - "adapter capability"
+      - "capability type"
+  "PluginHost":
+    entity_type: api
+    aliases:
+      - "Plugin Host"
+      - "plugin registry"
+      - "adapter registry"
+  "PluginBase":
+    entity_type: api
+    aliases: ["Plugin Base"]
+
+  # ── Plugins (Integrations) ────────────────────────────────────
+  "HonchoPlugin":
+    entity_type: plugin
+    aliases: ["Honcho Plugin", "Honcho integration"]
+  "AgentFSPlugin":
+    entity_type: plugin
+    aliases: ["Agent FS Plugin", "filesystem plugin"]
+  "CamoufoxPlugin":
+    entity_type: plugin
+    aliases: ["Camoufox Plugin", "browser plugin"]
+  "McpPlugin":
+    entity_type: plugin
+    aliases: ["MCP Plugin", "MCP integration"]
+
+  # ── MCP ────────────────────────────────────────────────────────
+  "mcp":
+    entity_type: concept
+    aliases:
+      - "Model Context Protocol"
+      - "McpPlugin"
+      - "MCP server"
+      - "MCP tool"
+  "stdioMcp":
+    entity_type: api
+    aliases: ["stdio MCP", "MCP stdio server"]
+  "sseMcp":
+    entity_type: api
+    aliases: ["SSE MCP"]
+  "McpOAuthClient":
+    entity_type: api
+    aliases: ["MCP OAuth Client"]
+
+  # ── A2A Protocol ───────────────────────────────────────────────
+  "A2AClient":
+    entity_type: api
+    aliases: ["A2A Client", "agent-to-agent client"]
+  "A2AServer":
+    entity_type: api
+    aliases: ["A2A Server", "agent-to-agent server"]
+  "a2aTool":
+    entity_type: api
+    aliases: ["A2A tool"]
+  "serveA2A":
+    entity_type: api
+    aliases: ["serve A2A"]
+
+  # ── Skills ─────────────────────────────────────────────────────
+  "SkillRegistry":
+    entity_type: api
+    aliases: ["Skill Registry"]
+  "loadSkills":
+    entity_type: api
+    aliases: ["load skills"]
+  "defineSkill":
+    entity_type: api
+    aliases: ["define skill"]
+
+  # ── Notifications ──────────────────────────────────────────────
+  "ConsoleNotifier":
+    entity_type: api
+    aliases: ["Console Notifier"]
+  "WebhookNotifier":
+    entity_type: api
+    aliases: ["Webhook Notifier"]
+  "BufferNotifier":
+    entity_type: api
+    aliases: ["Buffer Notifier"]
+  "CompositeNotifier":
+    entity_type: api
+    aliases: ["Composite Notifier"]
+
+  # ── Telemetry ──────────────────────────────────────────────────
+  "telemetry":
+    entity_type: subsystem
+    aliases:
+      - "OpenTelemetry"
+      - "OTel"
+      - "YAAF telemetry"
+      - "tracing"
+  "initYAAFTelemetry":
+    entity_type: api
+    aliases: ["init YAAF telemetry", "telemetry init"]
+  "startAgentRunSpan":
+    entity_type: api
+    aliases: ["start agent run span"]
+  "executeInSpan":
+    entity_type: api
+    aliases: ["execute in span"]
+
+  # ── Cost & Guardrails ──────────────────────────────────────────
+  "CostTracker":
+    entity_type: api
+    aliases:
+      - "Cost Tracker"
+      - "token cost"
+      - "usage tracking"
+  "Guardrails":
+    entity_type: api
+    aliases:
+      - "guardrails"
+      - "budget guardrail"
+      - "resource limit"
+  "BudgetExceededError":
+    entity_type: api
+    aliases: ["Budget Exceeded Error"]
+
+  # ── Errors ─────────────────────────────────────────────────────
+  "YAAFError":
+    entity_type: api
+    aliases: ["YAAF Error", "base error"]
+  "ContextOverflowError":
+    entity_type: api
+    aliases:
+      - "Context Overflow Error"
+      - "context window overflow"
+      - "token limit exceeded"
+  "RateLimitError":
+    entity_type: api
+    aliases: ["Rate Limit Error"]
+  "ToolExecutionError":
+    entity_type: api
+    aliases: ["Tool Execution Error"]
+  "APIError":
+    entity_type: api
+    aliases: ["API Error"]
+  "CompactionError":
+    entity_type: api
+    aliases: ["Compaction Error"]
+  "AbortError":
+    entity_type: api
+    aliases: ["Abort Error"]
+  "RetryExhaustedError":
+    entity_type: api
+    aliases: ["Retry Exhausted Error"]
+  "MaxIterationsError":
+    entity_type: api
+    aliases: ["Max Iterations Error"]
+
+  # ── Utilities ──────────────────────────────────────────────────
+  "EventBus":
+    entity_type: api
+    aliases: ["Event Bus", "event system"]
+  "Logger":
+    entity_type: api
+    aliases: ["logger", "structured logging"]
+  "estimateTokens":
+    entity_type: api
+    aliases: ["estimate tokens", "token counting"]
+  "withRetry":
+    entity_type: api
+    aliases: ["with retry", "retry logic"]
+  "Scratchpad":
+    entity_type: api
+    aliases: ["scratchpad", "agent scratchpad"]
+  "generateAwaySummary":
+    entity_type: api
+    aliases: ["away summary", "resume summary"]
+  "generateToolUseSummary":
+    entity_type: api
+    aliases: ["tool use summary"]
+
+  # ── Runtime & Gateway ──────────────────────────────────────────
+  "adaptStream":
+    entity_type: api
+    aliases: ["adapt stream", "stream adapter"]
+  "toStreamableAgent":
+    entity_type: api
+    aliases: ["streamable agent"]
+  "gateway":
+    entity_type: api
+    aliases:
+      - "Gateway"
+      - "channel adapter"
+      - "messaging transport"
+
+  # ── Doctor ─────────────────────────────────────────────────────
+  "YaafDoctor":
+    entity_type: api
+    aliases:
+      - "YAAF Doctor"
+      - "doctor"
+      - "embedded expert agent"
+
+  # ── Knowledge Base ─────────────────────────────────────────────
   "knowledge base":
     entity_type: subsystem
     aliases:
@@ -463,80 +1007,39 @@ vocabulary:
       - "compiled knowledge"
       - "KBCompiler"
       - "KBStore"
-
-  "session":
+  "KBStore":
     entity_type: api
-    aliases:
-      - "Session"
-      - "session persistence"
-      - "conversation history"
-      - "JSONL session"
-
-  "orchestrator":
+    aliases: ["KB Store", "knowledge store"]
+  "createKBTools":
     entity_type: api
-    aliases:
-      - "AgentOrchestrator"
-      - "multi-agent orchestrator"
-      - "agent swarm"
-
-  "system prompt":
+    aliases: ["create KB tools", "knowledge tools"]
+  "FederatedKnowledgeBase":
     entity_type: api
-    aliases:
-      - "SystemPromptBuilder"
-      - "system prompt builder"
-      - "system context"
+    aliases: ["Federated Knowledge Base"]
 
-  "cost tracker":
+  # ── Stream Adapter ─────────────────────────────────────────────
+  "RuntimeStreamEvent":
     entity_type: api
-    aliases:
-      - "CostTracker"
-      - "token cost"
-      - "usage tracking"
-
-  "guardrails":
+    aliases: ["Runtime Stream Event"]
+  "StreamableAgent":
     entity_type: api
-    aliases:
-      - "Guardrails"
-      - "budget guardrail"
-      - "resource limit"
+    aliases: ["Streamable Agent"]
 
-  "telemetry":
-    entity_type: subsystem
-    aliases:
-      - "OpenTelemetry"
-      - "OTel"
-      - "YAAF telemetry"
-      - "tracing"
-
-  "context overflow":
-    entity_type: concept
-    aliases:
-      - "context window overflow"
-      - "ContextOverflowError"
-      - "token limit exceeded"
-
-  "gateway":
+  # ── Agent Summarization ────────────────────────────────────────
+  "startAgentSummarization":
     entity_type: api
-    aliases:
-      - "Gateway"
-      - "channel adapter"
-      - "messaging transport"
+    aliases: ["agent summarization"]
 
-  "hook":
-    entity_type: concept
-    aliases:
-      - "lifecycle hook"
-      - "beforeLLM hook"
-      - "afterLLM hook"
-      - "agent hook"
-
-  "mcp":
-    entity_type: concept
-    aliases:
-      - "Model Context Protocol"
-      - "McpPlugin"
-      - "MCP server"
-      - "MCP tool"
+  # ── Cron ───────────────────────────────────────────────────────
+  "validateCron":
+    entity_type: api
+    aliases: ["validate cron"]
+  "nextCronRunMs":
+    entity_type: api
+    aliases: ["next cron run"]
+  "describeCron":
+    entity_type: api
+    aliases: ["describe cron"]
 
 # ── Token budget config ───────────────────────────────────────────────────────
 
@@ -548,6 +1051,6 @@ budget:
 # ── Compiler model config ─────────────────────────────────────────────────────
 
 compiler:
-  extraction_model: gemini-3-flash-preview
-  synthesis_model: gemini-3-flash-preview
-  analysis_model: gemini-3-flash-preview
+  extraction_model: gemini-2.5-flash-preview-05-20
+  synthesis_model: gemini-2.5-flash-preview-05-20
+  analysis_model: gemini-2.5-flash-preview-05-20

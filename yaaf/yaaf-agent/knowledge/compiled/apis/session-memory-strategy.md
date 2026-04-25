@@ -1,97 +1,166 @@
 ---
-summary: A memory strategy that extracts structured notes from conversations based on token and tool-call thresholds, mirroring Claude Code's memory architecture.
-export_name: sessionMemoryStrategy
-source_file: src/memory/strategies/session.ts
-category: function
-title: Session Memory Extractor
+title: SessionMemoryStrategy
 entity_type: api
+summary: A CompactionStrategy that leverages session memory to preserve key facts and recent context for long-running agents.
+export_name: SessionMemoryStrategy
+source_file: src/compaction/strategies/session-memory-strategy.ts
+category: class
+search_terms:
+ - context compaction
+ - long-running agent memory
+ - preserve facts during conversation
+ - summarize and keep recent messages
+ - LLM memory management
+ - session memory compact
+ - extract key facts from chat
+ - conversation history reduction
+ - token limit management
+ - hybrid summarization strategy
+ - stateful agent context
+ - reduce conversation tokens
 stub: false
-compiled_at: 2026-04-16T14:09:12.926Z
+compiled_at: 2026-04-25T00:13:56.412Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/memory.md
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/compaction.md
+compiled_from_quality: documentation
+confidence: 1
 ---
 
 ## Overview
-The `sessionMemoryStrategy` is a built-in memory implementation designed for long-running agentic sessions. It mirrors the `SessionMemory` system found in Claude Code, focusing on maintaining a structured markdown document of "notes" that evolves as the conversation progresses.
 
-This strategy is used to synthesize conversation history into a persistent, structured format. It triggers an extraction process—typically involving an LLM call—only when specific thresholds (token counts or tool-call frequency) are met. This ensures that critical context, such as task specifications and learned behaviors, survives context window compaction without requiring an LLM call on every turn.
+`SessionMemoryStrategy` is a [CompactionStrategy](./compaction-strategy.md) that reduces the token count of a conversation by combining fact extraction with recency preservation. It uses an LLM to extract structured facts and key decisions from the conversation history, creating a "session memory" summary. It then discards older messages but retains a configurable number of the most recent messages verbatim [Source 1].
+
+This hybrid approach offers a balance between the high-context preservation of a full summary and the speed of simpler strategies like truncation. It is particularly effective for long-running, stateful agents that need to remember important details from earlier in the conversation while also having immediate access to the most recent interactions [Source 1].
+
+Using this strategy requires providing an [LLMAdapter](./llm-adapter.md), as it needs to make an LLM call to perform the fact extraction [Source 1]. It is often used as a primary compaction step within a [CompositeStrategy](./composite-strategy.md), preceded by faster, non-LLM strategies like `MicroCompactStrategy` [Source 1].
 
 ## Signature / Constructor
-The strategy is instantiated via a factory function that accepts a configuration object.
+
+`SessionMemoryStrategy` is a class that implements the [CompactionStrategy](./compaction-strategy.md) interface. It is instantiated with a configuration object.
 
 ```typescript
-function sessionMemoryStrategy(config: SessionMemoryConfig): MemoryStrategy;
+import type { Message } from 'yaaf';
 
-interface SessionMemoryConfig {
-  /** Function to perform the LLM-based extraction */
-  extractFn: (ctx: {
-    messages: ReadonlyArray<{ role: string; content: string }>;
-    currentNotes: string;
-    systemPrompt: string;
-    signal?: AbortSignal;
-  }) => Promise<string>;
-  /** Filesystem path where the markdown notes are persisted */
-  storagePath: string;
-  /** Threshold to trigger the first extraction (cold-start) */
-  minimumTokensToInit?: number;
-  /** Threshold of new tokens required to trigger a subsequent update */
-  minimumTokensBetweenUpdate?: number;
-  /** Number of tool calls required to trigger an update */
-  toolCallsBetweenUpdates?: number;
-  /** Custom markdown template for the notes */
-  template?: string;
+export interface SessionMemoryStrategyConfig {
+  /**
+   * An async function that receives the current messages and returns a
+   * string summary of key facts, decisions, and context. This typically
+   * involves an LLM call.
+   */
+  extractMemory: (messages: Message[]) => Promise<string>;
+
+  /**
+   * The minimum number of tokens to preserve from the most recent messages.
+   * The strategy will keep recent messages until this token count is met or
+   * exceeded.
+   * @default 10000
+   */
+  minTokens?: number;
+
+  /**
+   * The minimum number of user and assistant messages to keep, regardless of
+   * their token count. This ensures a minimum conversational context is
+   * always preserved.
+   * @default 5
+   */
+  minTextBlockMessages?: number;
+
+  /**
+   * A hard token limit for the recent messages being preserved. If `minTokens`
+   * and `minTextBlockMessages` result in a token count greater than this,
+   * the oldest messages will be dropped to stay under this cap.
+   * @default 40000
+   */
+  maxTokens?: number;
 }
+
+public constructor(config: SessionMemoryStrategyConfig);
 ```
 
 ## Methods & Properties
-The factory returns an object implementing the `MemoryStrategy` interface. Key internal behaviors include:
 
-- **shouldExtract**: Evaluates the `MemoryContext`. It returns `true` if the `totalTokens` exceeds the initialization threshold, or if the `totalTokens` or `toolCallsSinceExtraction` exceed their respective "between update" thresholds.
-- **extract**: Invokes the provided `extractFn`. The resulting markdown is written to the `storagePath`.
-- **retrieve**: Reads the notes from the `storagePath` and formats them into a system prompt section for the agent.
+As an implementation of [CompactionStrategy](./compaction-strategy.md), `SessionMemoryStrategy` has the following public properties and methods:
 
-### Default Template
-If no template is provided, the strategy uses `DEFAULT_SESSION_MEMORY_TEMPLATE`, which organizes information into nine sections:
-1. **Current State**: High-level status of the session.
-2. **Task Specification**: The primary goals defined by the user.
-3. **Files and Functions**: Relevant technical context discovered.
-4. **Workflow**: Established patterns for the current task.
-5. **Errors & Corrections**: Previous mistakes and how they were resolved.
-6. **Codebase Documentation**: Insights into the project structure.
-7. **Learnings**: General knowledge acquired during the session.
-8. **Key Results**: Completed milestones.
-9. **Worklog**: A chronological history of actions taken.
+### Properties
+
+*   `name`: `string` - The identifier for this strategy, which is `'session-memory'`.
+
+### Methods
+
+*   `canApply(ctx: CompactionContext): boolean` - Determines if the strategy can be applied to the current context.
+*   `compact(ctx: CompactionContext): Promise<StrategyResult | null>` - Executes the compaction logic, returning the new message list and a summary of the operation.
 
 ## Examples
-The following example demonstrates how to configure the strategy with a custom LLM call and specific thresholds.
+
+### Basic Usage
+
+This example shows how to configure `SessionMemoryStrategy` with a custom function to extract key facts using an LLM adapter.
 
 ```typescript
-import { sessionMemoryStrategy, DEFAULT_SESSION_MEMORY_TEMPLATE, Agent } from 'yaaf';
+import { SessionMemoryStrategy, type LLMAdapter } from 'yaaf';
 
-const agent = new Agent({
-  memoryStrategy: sessionMemoryStrategy({
-    // Define how the LLM should process the notes
-    extractFn: async ({ messages, currentNotes, systemPrompt, signal }) => {
-      const response = await myModel.complete({
-        messages: [
-          ...messages, 
-          { role: 'user', content: systemPrompt }
-        ],
-        signal,
-      });
-      return response.content ?? '';
-    },
-    storagePath: './.memory/session-notes.md',
-    minimumTokensToInit: 10_000,       // Wait for 10k tokens before first extraction
-    minimumTokensBetweenUpdate: 5_000, // Update every 5k new tokens
-    toolCallsBetweenUpdates: 3,        // Or every 3 tool calls
-    template: DEFAULT_SESSION_MEMORY_TEMPLATE,
-  }),
+declare const myModel: LLMAdapter;
+
+const sessionMemory = new SessionMemoryStrategy({
+  // Define the function to extract facts from the conversation
+  extractMemory: async (messages) => {
+    const result = await myModel.complete({
+      messages: [
+        ...messages,
+        { role: 'user', content: 'Extract key facts, user preferences, and decisions from this conversation.' },
+      ],
+    });
+    return result.content ?? '';
+  },
+
+  // Keep at least 10,000 tokens of recent messages
+  minTokens: 10_000,
+
+  // Always keep the last 5 user/assistant messages
+  minTextBlockMessages: 5,
+
+  // Do not exceed 40,000 tokens for the recent message block
+  maxTokens: 40_000,
 });
 ```
 
+### In a Production Pipeline
+
+`SessionMemoryStrategy` is most effective as part of a multi-stage pipeline using [CompositeStrategy](./composite-strategy.md). This allows faster, cheaper strategies to run first.
+
+```typescript
+import {
+  CompositeStrategy,
+  MicroCompactStrategy,
+  SessionMemoryStrategy,
+  SummarizeStrategy,
+  type LLMAdapter,
+} from 'yaaf';
+
+declare const myModel: LLMAdapter;
+declare const myExtractor: (messages: any[]) => Promise<string>;
+
+const productionStrategy = new CompositeStrategy([
+  // First, try to clear old tool results without an LLM call
+  new MicroCompactStrategy({ keepRecent: 5 }),
+
+  // If more space is needed, use session memory
+  new SessionMemoryStrategy({ extractMemory: myExtractor }),
+
+  // As a final fallback, perform a full summarization
+  new SummarizeStrategy({ additionalInstructions: 'Focus on key outcomes.' }),
+], { continueAfterPartial: true }); // Allows MicroCompact and SessionMemory to run in the same pass
+```
+
 ## See Also
-- `DEFAULT_SESSION_MEMORY_TEMPLATE`
-- `MemoryStrategy`
-- `MemoryContext`
+
+*   [CompactionStrategy](./compaction-strategy.md): The interface this class implements.
+*   [ContextManager](./context-manager.md): The system that uses compaction strategies to manage token limits.
+*   [CompositeStrategy](./composite-strategy.md): For combining multiple compaction strategies into a pipeline.
+*   [SummarizeStrategy](./summarize-strategy.md): An alternative LLM-based strategy that performs a full summary.
+*   [MicroCompactStrategy](./micro-compact-strategy.md): A non-LLM strategy often used before `SessionMemoryStrategy`.
+*   [Memory](../concepts/memory.md): The high-level concept of agent memory that this strategy helps manage.
+
+## Sources
+
+*   [Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/compaction.md

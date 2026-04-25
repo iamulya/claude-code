@@ -1,84 +1,110 @@
 ---
-summary: Extracts all image references from a markdown document, supporting standard and reference-style syntax.
 export_name: extractMarkdownImageRefs
 source_file: src/knowledge/compiler/ingester/images.ts
 category: function
 title: extractMarkdownImageRefs
 entity_type: api
+summary: Extracts all image references from a markdown document string.
+search_terms:
+ - parse markdown images
+ - find images in markdown
+ - extract image src from markdown
+ - markdown image parsing
+ - get all image tags
+ - "![alt](src)"
+ - reference-style images
+ - "![alt][id]"
+ - RawImageRef
+ - knowledge ingester image extraction
+ - how to find image paths in markdown
+ - markdown pre-processing
 stub: false
-compiled_at: 2026-04-16T14:23:43.663Z
+compiled_at: 2026-04-24T17:05:31.646Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/ingester/images.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/ingester/images.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`extractMarkdownImageRefs` is a utility function used within the YAAF Ingester pipeline to identify and extract image metadata from markdown content. It parses the provided markdown string to find image declarations, supporting both standard inline syntax (`![alt](src)`) and reference-style syntax (`![alt][id]`).
 
-This function is typically used as the first step in image processing, providing the raw locations and source strings needed for subsequent resolution and downloading via functions like `resolveImageRef`.
+The `extractMarkdownImageRefs` function parses a string of markdown text and returns an array of all image references it contains [Source 1]. This function is a key part of the [Knowledge Ingestion Pipeline](../concepts/knowledge-ingestion-pipeline.md), serving as the first step in identifying images that need to be resolved, downloaded, and processed.
 
-## Signature / Constructor
+It supports both standard inline image syntax (`![alt](src)`) and reference-style image syntax (`![alt][id]`) [Source 1]. The output is an array of `RawImageRef` objects, each providing structured data about an image reference, including its alt text, source path or identifier, character offset within the original string, and the complete markdown match [Source 1].
+
+## Signature
+
+The function takes a single markdown string as input and returns an array of `RawImageRef` objects.
 
 ```typescript
 export function extractMarkdownImageRefs(markdown: string): RawImageRef[];
 ```
 
-### Related Types
+### `RawImageRef` Type
 
-#### RawImageRef
-The function returns an array of `RawImageRef` objects, which contain the raw data parsed from the markdown text.
+The `RawImageRef` type describes the structure of the objects returned by this function [Source 1].
 
 ```typescript
 export type RawImageRef = {
-  /** The alternative text provided for the image */
+  /** The alternative text for the image. */
   altText: string;
-  /** The source URL or file path, or the reference ID */
+
+  /** The source path, URL, or reference ID. */
   src: string;
-  /** Character offset in the markdown text where this reference was found */
+
+  /** Character offset in the markdown text where this reference is found. */
   offset: number;
-  /** The full original markdown string (e.g., "![alt](src)") */
+
+  /** The full original markdown string, e.g., "![alt text](path/to/image.png)". */
   fullMatch: string;
 };
 ```
 
 ## Examples
 
-### Extracting Standard and Reference Images
-This example demonstrates how the function identifies different markdown image syntaxes.
+### Basic Usage
+
+The following example demonstrates how to extract both inline and reference-style image links from a markdown document.
 
 ```typescript
-import { extractMarkdownImageRefs } from 'yaaf/knowledge/compiler/ingester/images';
+import { extractMarkdownImageRefs } from 'yaaf';
 
-const markdown = `
-# Document
-Here is an inline image: ![Logo](assets/logo.png)
+const markdownContent = `
+# My Document
 
-And a reference-style image: ![Icon][icon-ref]
+Here is an inline image: ![A cute cat](./images/cat.jpg).
 
-[icon-ref]: https://example.com/icon.svg
+And here is a reference-style image: ![A happy dog][dog-ref].
+
+[dog-ref]: /assets/dog.png "A Happy Dog"
 `;
 
-const refs = extractMarkdownImageRefs(markdown);
+const imageRefs = extractMarkdownImageRefs(markdownContent);
 
+console.log(imageRefs);
 /*
-refs will contain:
 [
   {
-    altText: "Logo",
-    src: "assets/logo.png",
-    offset: 35,
-    fullMatch: "![Logo](assets/logo.png)"
+    altText: 'A cute cat',
+    src: './images/cat.jpg',
+    offset: 45,
+    fullMatch: '![A cute cat](./images/cat.jpg)'
   },
   {
-    altText: "Icon",
-    src: "icon-ref",
-    offset: 88,
-    fullMatch: "![Icon][icon-ref]"
+    altText: 'A happy dog',
+    src: 'dog-ref',
+    offset: 119,
+    fullMatch: '![A happy dog][dog-ref]'
   }
 ]
 */
 ```
 
 ## See Also
-- `resolveImageRef`: Resolves the `RawImageRef` to a local file path or downloads remote assets.
-- `resolveAllMarkdownImages`: A higher-level utility that extracts and resolves all images in a document in one pass.
+
+- `resolveImageRef`: A function to resolve a single `RawImageRef` to a local file path or downloaded asset.
+- `resolveAllMarkdownImages`: A higher-level function that uses `extractMarkdownImageRefs` and `resolveImageRef` to process all images in a document.
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/[Ingester](./ingester.md)/images.ts

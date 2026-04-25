@@ -1,81 +1,92 @@
 ---
-title: transform
-entity_type: api
-summary: Creates a simple pass-through step that transforms text without calling an LLM.
 export_name: transform
 source_file: src/agents/workflow.ts
 category: function
+title: transform
+entity_type: api
+summary: Creates a simple, stateless workflow step that transforms text without using an LLM.
+search_terms:
+ - data formatting between agents
+ - workflow text manipulation
+ - pass-through workflow step
+ - modify agent output
+ - connect agents with custom logic
+ - simple workflow utility
+ - no-LLM workflow step
+ - transform agent input
+ - sequential pipeline formatting
+ - add prefix to agent output
+ - custom workflow logic
+ - lightweight workflow step
 stub: false
-compiled_at: 2026-04-16T14:15:36.782Z
+compiled_at: 2026-04-24T17:45:51.205Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/workflow.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/workflow.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-The `transform` function is a utility used within YAAF workflows to modify data as it passes between agents. Unlike standard agents or runners, `transform` does not invoke a Large Language Model (LLM). Instead, it executes a provided synchronous or asynchronous JavaScript function to manipulate the input string.
 
-This is typically used for:
-- Formatting the output of one agent before it is passed to the next.
-- Cleaning or filtering data.
-- Wrapping text in specific prompts or templates.
-- Injecting metadata into the workflow stream.
+The `transform` function is a utility for creating a simple, stateless step within a YAAF [workflow](../concepts/workflow.md) [Source 1]. It wraps a provided function to create a `WorkflowStep` that can modify text as it passes between other agents or steps.
 
-## Signature / Constructor
+This is particularly useful for data formatting, adding prefixes or suffixes, or performing any synchronous or asynchronous text manipulation without the overhead of a full agent or an [[]] Call]]. It serves as a lightweight "glue" to connect more complex steps in a workflow, such as those created by `sequential` or `loop` [Source 1].
+
+## Signature
+
+The function takes a single argument: a function that performs the text transformation.
 
 ```typescript
 export function transform(
-  fn: (input: string) => string | Promise<string>,
-): WorkflowStep
+  fn: (input: string) => string | Promise<string>
+): WorkflowStep;
 ```
 
-### Parameters
-- `fn`: A transformation function that accepts the current input string and returns a modified string (or a Promise resolving to one).
+**Parameters:**
 
-### Returns
-Returns a `WorkflowStep` object, which is a lightweight execution unit compatible with workflow orchestrators like `sequential`, `parallel`, and `loop`.
+*   `fn`: `(input: string) => string | Promise<string>`
+    *   A function that accepts the input string from the previous step and returns the transformed output string, either directly or as a `Promise`.
 
-## Methods & Properties
-The object returned by `transform` implements the `WorkflowStep` interface:
+**Returns:**
 
-### run()
-```typescript
-run(input: string, signal?: AbortSignal): Promise<string>
-```
-Executes the transformation function provided during the creation of the step.
-- **input**: The string to be transformed.
-- **signal**: An optional `AbortSignal` to handle execution cancellation.
-- **Returns**: A `Promise` resolving to the transformed string.
+*   `WorkflowStep`
+    *   An object that conforms to the `WorkflowStep` interface, making it compatible with other workflow composition functions like `sequential`, `parallel`, and `loop` [Source 1].
 
 ## Examples
 
-### Sequential Pipeline Transformation
-In this example, `transform` is used to add context to a researcher's output before it is handed off to a reviewer.
+The most common use case is to format the output of one agent before it becomes the input for the next agent in a `sequential` pipeline.
 
 ```typescript
 import { sequential, transform } from 'yaaf';
 
+// Assume researcher and reviewer are existing AgentRunners
+const researcher = { run: async (input: string) => `Research on ${input}` };
+const reviewer = { run: async (input: string) => `Reviewing: ${input}` };
+
 const pipeline = sequential([
   researcher,
-  transform(output => `Please review this research:\n${output}`),
+  transform(output => `Please review this research summary:\n\n${output}`),
   reviewer,
 ]);
 
-const result = await pipeline.run('Latest trends in renewable energy');
-```
+const finalResult = await pipeline.run('Quantum Computing');
 
-### Asynchronous Transformation
-`transform` can also handle asynchronous operations, such as fetching external data or performing complex computations.
+/*
+Expected finalResult:
+"Reviewing: Please review this research summary:
 
-```typescript
-const augmentStep = transform(async (input) => {
-  const extraData = await fetchExternalContext(input);
-  return `${input}\n\nAdditional Context: ${extraData}`;
-});
+Research on Quantum Computing"
+*/
 ```
+In this example, `transform` inserts a preparatory sentence between the `researcher` and `reviewer` steps [Source 1].
 
 ## See Also
-- `sequential`
-- `parallel`
-- `loop`
-- `asStep`
+
+*   `sequential`: For running workflow steps in a sequence.
+*   `parallel`: For running workflow steps concurrently.
+*   `loop`: For running workflow steps in a loop until a condition is met.
+*   `WorkflowStep`: The interface that `transform` and other workflow [Utilities](../subsystems/utilities.md) implement.
+
+## Sources
+
+*   [Source 1] `src/agents/workflow.ts`

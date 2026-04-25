@@ -12,6 +12,7 @@ import { readFile, stat, mkdir, writeFile } from "fs/promises";
 import { join, dirname, resolve, extname, basename, isAbsolute } from "path";
 import type { ImageRef, IngesterOptions } from "./types.js";
 import { detectMimeType, isSvg } from "./types.js";
+import { validateUrlForSSRF, ssrfSafeFetch } from "./ssrf.js";
 
 // ── MIME type from magic bytes ────────────────────────────────────────────────
 
@@ -200,6 +201,15 @@ export async function downloadImage(
   altText: string,
   imageOutputDir: string,
 ): Promise<ImageRef | null> {
+  // Sprint 3.2: SSRF protection — image URLs from HTML/markdown are untrusted.
+  // A crafted page with <img src="http://169.254.169.254/latest/meta-data/">
+  // would exfiltrate cloud credentials without this check.
+  try {
+    await validateUrlForSSRF(url);
+  } catch {
+    return null; // Silently skip blocked URLs (don't fail the whole ingestion)
+  }
+
   // N1: cap download size to prevent memory exhaustion from malicious servers.
   // A fast server can send gigabytes before AbortSignal.timeout fires.
   // 10MB is generous for any image used in KB source documents.
@@ -208,7 +218,8 @@ export async function downloadImage(
   try {
     await mkdir(imageOutputDir, { recursive: true });
 
-    const response = await fetch(url, {
+    // Use ssrfSafeFetch to block redirect-based SSRF
+    const response = await ssrfSafeFetch(url, {
       headers: { "User-Agent": "YAAF-KB-Ingester/1.0" },
       signal: AbortSignal.timeout(15_000),
     });
@@ -281,8 +292,19 @@ export async function resolveAllMarkdownImages(
   const images: ImageRef[] = [];
   const unresolved: string[] = [];
 
+  // Sprint 3.3 (8.2): Cap total images per document to prevent resource
+  // exhaustion from pages with hundreds of img tags. Combined with the
+  // 10MB/image cap in downloadImage(), this bounds total ingestion to ~200MB.
+  const MAX_IMAGES = 20;
+  const cappedRefs = rawRefs.slice(0, MAX_IMAGES);
+  if (rawRefs.length > MAX_IMAGES) {
+    unresolved.push(
+      `[${rawRefs.length - MAX_IMAGES} images skipped — exceeded ${MAX_IMAGES} image limit]`,
+    );
+  }
+
   await Promise.all(
-    rawRefs.map(async (ref) => {
+    cappedRefs.map(async (ref) => {
       const resolved = await resolveImageRef(ref, documentPath, options);
       if (resolved) {
         images.push(resolved);

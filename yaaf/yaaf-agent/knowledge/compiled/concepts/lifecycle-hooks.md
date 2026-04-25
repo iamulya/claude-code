@@ -1,117 +1,106 @@
 ---
 title: Lifecycle Hooks
+summary: A mechanism to intercept and modify agent execution at key points.
 entity_type: concept
-summary: Interception points in the agent's execution loop that allow developers to observe or alter behavior before and after LLM calls and tool executions.
+search_terms:
+ - agent execution interception
+ - modify agent behavior
+ - YAAF hooks
+ - beforeLLM hook
+ - afterLLM hook
+ - beforeToolCall hook
+ - afterToolCall hook
+ - how to add audit logging to agent
+ - implement rate limiting for tools
+ - agent cost control
+ - stop agent execution programmatically
+ - inject message into agent context
+ - agent lifecycle events
+ - custom agent logic
 stub: false
-compiled_at: 2026-04-16T14:09:55.363Z
+compiled_at: 2026-04-24T17:57:20.159Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/permissions.md
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/permissions.md
+compiled_from_quality: documentation
+confidence: 0.95
 ---
 
 ## What It Is
-Lifecycle Hooks are interception points within the YAAF agent execution loop. They provide a structured mechanism for developers to monitor, modify, or halt an agent's workflow at critical stages of its operation. By using hooks, developers can implement cross-cutting concerns—such as security policies, rate limiting, audit logging, and cost management—without modifying the core logic of the agent or its tools.
+
+Lifecycle Hooks in YAAF are a mechanism for developers to intercept the agent execution process at specific, well-defined points [Source 1]. They provide a way to run custom code before or after critical operations, such as calls to an [LLM](./llm.md) or the execution of a tool. This allows for the implementation of cross-cutting concerns like logging, metrics collection, security checks, [Rate Limiting](../subsystems/rate-limiting.md), and [Cost Management](../subsystems/cost-management.md) without altering the core agent logic [Source 1].
 
 ## How It Works in YAAF
-Hooks are defined as an object of type `Hooks` and are provided to the `Agent` during instantiation. The framework executes these hooks at four specific points in the execution cycle. Each hook receives a context object (`ctx`) containing relevant state information and must return an action object that determines how the agent should proceed.
 
-### Hook Actions
-Every hook must return one of the following actions:
-*   `{ action: 'continue' }`: The agent proceeds with the execution normally.
-*   `{ action: 'block', reason: string }`: The agent stops the current operation and injects the provided reason into the context.
-*   `{ action: 'inject', message: string }`: The agent adds a specific message to the conversation history and continues.
-*   `{ action: 'retry' }`: The agent re-attempts the current operation.
+Hooks are implemented as asynchronous functions that are passed to the agent's configuration. Each hook receives a context object with relevant information about the current state of the execution loop and must return an action object that dictates how the agent should proceed [Source 1].
 
-### Available Hooks
-The framework supports the following interception points:
+The four possible actions a hook can return are [Source 1]:
+*   `{ action: 'continue' }`: Allows the agent's execution to proceed normally.
+*   `{ action: 'block', reason: '...' }`: Halts the current operation and injects the provided reason into the agent's context.
+*   `{ action: 'inject', message: '...'}`: Adds a specified message to the conversation history and then continues execution.
+*   `{ action: 'retry' }`: Instructs the agent to retry the most recent operation.
 
-| Hook | Execution Point | Context Data Available |
-| :--- | :--- | :--- |
-| `beforeLLM` | Before the prompt is sent to the LLM. | Conversation history, tool schemas, turn number. |
-| `afterLLM` | After the LLM returns a response. | LLM text content, requested tool calls, token usage. |
-| `beforeToolCall` | Before a specific tool is executed. | Tool name, input arguments. |
-| `afterToolCall` | After a tool has finished execution. | Execution result, error state, duration (ms). |
+YAAF defines four distinct hooks that correspond to key stages in the agent's request-response cycle [Source 1]:
+
+1.  **`beforeLLM`**: Triggered just before the agent makes a call to the LLM. The context includes the full conversation history, available tool schemas, and the current turn number.
+2.  **`afterLLM`**: Triggered after the agent receives a response from the LLM. The context includes the LLM's response content, any requested [Tool Calls](./tool-calls.md), and token usage statistics.
+3.  **`beforeToolCall`**: Triggered before the agent executes a tool. The context includes the name of the tool and the arguments it will be called with. This is a common place to implement security policies, such as blocking dangerous commands.
+4.  **`afterToolCall`**: Triggered after a tool has finished executing. The context includes the tool's name, execution duration, and the result or error. This is often used for logging and metrics.
+
+Common patterns for using hooks include [Source 1]:
+*   **Rate Limiting**: Using `beforeToolCall` to track and limit the number of times a specific tool can be invoked.
+*   **Audit Logging**: Using `afterToolCall` to record detailed information about every [Tool Execution](./tool-execution.md) for security and compliance purposes.
+*   **Cost Guard**: Using `afterLLM` to monitor cumulative token usage and stop the agent if a predefined budget is exceeded.
 
 ## Configuration
-Hooks are configured by passing a `hooks` object to the `Agent` constructor.
+
+Lifecycle Hooks are configured by providing a `hooks` object during the instantiation of an `Agent`. This object maps hook names to their corresponding asynchronous function implementations [Source 1].
 
 ```typescript
-const agent = new Agent({
-  hooks: {
-    beforeLLM: async (ctx) => {
-      console.log(`Turn ${ctx.turnNumber}: ${ctx.messages.length} messages`);
-      return { action: 'continue' };
-    },
-    afterToolCall: async (ctx, result, error) => {
-      // Logic for post-tool execution
-      return { action: 'continue' };
-    }
+const hooks: Hooks = {
+  // Runs before the agent calls the LLM
+  beforeLLM: async (ctx) => {
+    // ctx.messages — full conversation history
+    // ctx.tools — available tool schemas
+    // ctx.turnNumber — which iteration
+    console.log(`Turn ${ctx.turnNumber}: ${ctx.messages.length} messages`);
+    return { action: 'continue' };
   },
-  // ...other agent configuration
-});
-```
 
-### Common Implementation Patterns
+  // Runs after the agent receives a response from the LLM
+  afterLLM: async (ctx, result) => {
+    // result.content — LLM text
+    // result.toolCalls — requested tool calls
+    // result.usage — token counts
+    if ((result.usage?.totalTokens ?? 0) > 10000) {
+        return { action: 'block', reason: 'Token usage for this turn is too high.' };
+    }
+    return { action: 'continue' };
+  },
 
-#### Rate Limiting
-Developers can prevent tool overuse by tracking call counts within the `beforeToolCall` hook.
-
-```typescript
-const callCounts = new Map<string, number>();
-
-const hooks = {
+  // Runs before a tool is executed
   beforeToolCall: async (ctx) => {
-    const count = (callCounts.get(ctx.toolName) ?? 0) + 1;
-    callCounts.set(ctx.toolName, count);
-
-    if (count > 10) {
-      return {
-        action: 'block',
-        reason: `${ctx.toolName} called too many times (${count})`,
-      };
+    // ctx.toolName — which tool
+    // ctx.arguments — tool inputs
+    if (ctx.toolName === 'exec' && ctx.arguments.cmd?.includes('rm')) {
+      return { action: 'block', reason: 'rm commands are blocked by a hook' };
     }
     return { action: 'continue' };
-  }
-};
-```
+  },
 
-#### Cost Guard
-The `afterLLM` hook can be used to monitor token usage and halt execution if a budget is exceeded.
-
-```typescript
-let totalTokens = 0;
-
-const hooks = {
-  afterLLM: async (_ctx, result) => {
-    totalTokens += result.usage?.totalTokens ?? 0;
-    if (totalTokens > 100_000) {
-      return {
-        action: 'block',
-        reason: 'Token budget exceeded (100k)',
-      };
-    }
-    return { action: 'continue' };
-  }
-};
-```
-
-#### Audit Logging
-The `afterToolCall` hook provides access to execution results and timing, making it suitable for telemetry and auditing.
-
-```typescript
-const hooks = {
+  // Runs after a tool has been executed
   afterToolCall: async (ctx, result, error) => {
-    await auditLog.append({
-      timestamp: new Date(),
+    // Example: log metrics
+    metrics.histogram('tool_duration_ms', ctx.durationMs, {
       tool: ctx.toolName,
-      args: ctx.arguments,
       success: !error,
-      durationMs: ctx.durationMs,
     });
     return { action: 'continue' };
-  }
+  },
 };
+
+const agent = new Agent({ hooks, ... });
 ```
 
-## See Also
-* [[Permissions & Hooks]] (Source material)
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/permissions.md

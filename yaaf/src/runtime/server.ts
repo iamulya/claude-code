@@ -40,6 +40,9 @@ import { Session, listSessions, type SessionLike } from "../session.js";
 import type { IdentityProvider, IncomingRequest, UserContext } from "../iam/types.js";
 import type { SessionAdapter } from "../plugin/types.js";
 import * as crypto from "node:crypto";
+import { Logger } from "../utils/logger.js";
+
+const logger = new Logger("server");
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -348,7 +351,7 @@ export function createServer(agent: ServerAgent, config: ServerConfig = {}): Ser
   // Without authentication, session_id comes verbatim from the client — any user
   // can supply another user's session UUID and read/continue their conversation.
   if (sessionsEnabled && !identityProvider) {
-    console.warn(
+    logger.warn(
       "[YAAF] WARNING: sessions are enabled without an identityProvider. " +
         "Any client can access any session by supplying its session_id. " +
         "Add an identityProvider (e.g. JwtIdentityProvider) to enforce session ownership.",
@@ -364,7 +367,7 @@ export function createServer(agent: ServerAgent, config: ServerConfig = {}): Ser
     !sessionsConfig.encryptionKey &&
     !sessionsConfig.adapter
   ) {
-    console.warn(
+    logger.warn(
       "[YAAF] WARNING: session files are stored unencrypted. " +
         "Anyone with filesystem access can read conversation history. " +
         "Set sessions.encryptionKey to enable AES-256-GCM encryption at rest. " +

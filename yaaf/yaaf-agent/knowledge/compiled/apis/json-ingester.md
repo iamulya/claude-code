@@ -1,98 +1,203 @@
 ---
-summary: An ingester for JSON and YAML files that extracts structural metadata and provides pretty-printed summaries.
+summary: Ingester for JSON and YAML files, extracting metadata and pretty-printing content.
 export_name: jsonIngester
 source_file: src/knowledge/compiler/ingester/text.ts
-category: const
+category: constant
 title: jsonIngester
 entity_type: api
+search_terms:
+ - ingest JSON files
+ - process YAML data
+ - load structured data
+ - knowledge base from JSON
+ - YAAF ingester
+ - file content processor
+ - parse json for agent
+ - extract title from json
+ - pretty-print json
+ - handle .yml files
+ - structured data ingestion
+ - Ingester interface
 stub: false
-compiled_at: 2026-04-16T14:24:35.628Z
+compiled_at: 2026-04-24T17:15:35.762Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/ingester/text.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/ingester/text.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-The `jsonIngester` is a specialized component within the YAAF knowledge compiler system designed to process structured data files. It supports both JSON and YAML formats, transforming raw structured data into a format optimized for LLM consumption. 
 
-The ingester performs three primary functions:
-1.  **Title Extraction**: It attempts to identify a document title by looking for common fields such as `title`, `name`, or `id` within the root of the data structure.
-2.  **Structural Summarization**: It generates a human-readable header that lists the top-level keys present in the document.
-3.  **Markdown Formatting**: It wraps the content in a fenced JSON code block to preserve structure while providing context to the model.
+The `json[[[[[[[[Ingester]]]]]]]]` is a constant that provides an implementation of the `Ingester` interface for handling structured data files like JSON and YAML [Source 1]. It is designed to read files with `.json`, `.yaml`, or `.yml` extensions, process their content, and return a standardized `IngestedContent` object.
 
-## Signature / Constructor
-The `jsonIngester` is a constant that implements the `Ingester` interface.
+[when](./when.md) processing a file, `jsonIngester` first attempts to parse it as JSON. If successful, it performs the following actions:
+- **Title Extraction**: It attempts to find a title for the document by looking for common properties such as `title`, `name`, or `id` in the root of the JSON object.
+- **Structural Summary**: It generates a brief summary listing the top-level keys of the JSON object.
+- **Content Formatting**: The full JSON content is pretty-printed and embedded within a markdown `json` code block, prefixed by the structural summary.
+
+If the file content cannot be parsed as JSON (which is expected for YAML files or malformed JSON), the Ingester falls back to treating the entire file content as raw text [Source 1].
+
+This ingester has no [Optional Dependencies](../concepts/optional-dependencies.md) and is included by default in the YAAF framework.
+
+## Signature
+
+`jsonIngester` is a constant object that conforms to the `Ingester` interface.
 
 ```typescript
-export const jsonIngester: Ingester = {
-  supportedMimeTypes: ['application/json', 'application/yaml'],
-  supportedExtensions: ['json', 'yaml', 'yml'],
-  requiresOptionalDeps: false,
-  async ingest(filePath: string, options: IngesterOptions = {}): Promise<IngestedContent> {
-    // ... implementation ...
-  },
+import type { Ingester } from "./types.js";
+
+export const jsonIngester: Ingester;
+```
+
+The `Ingester` interface has the following structure:
+
+```typescript
+interface Ingester {
+  // A list of supported MIME types, e.g., ["application/json"]
+  supportedMimeTypes: string[];
+
+  // A list of supported file extensions, e.g., ["json", "yaml"]
+  supportedExtensions: string[];
+
+  // Indicates if the ingester requires optional dependencies to be installed
+  requiresOptionalDeps: boolean;
+
+  // The function that processes the file
+  ingest(filePath: string, options?: IngesterOptions): Promise<IngestedContent>;
+}
+
+// Options passed to the ingest method
+interface IngesterOptions {
+  sourceUrl?: string;
+}
+
+// The standardized output of an ingester
+interface IngestedContent {
+  text: string;
+  images: string[];
+  mimeType: string;
+  sourceFile: string;
+  title?: string;
+  metadata: Record<string, unknown>;
+  lossy: boolean;
+  sourceUrl?: string;
 }
 ```
 
-## Methods & Properties
+## Properties
 
-### Properties
-*   **supportedMimeTypes**: `['application/json', 'application/yaml']`.
-*   **supportedExtensions**: `['json', 'yaml', 'yml']`.
-*   **requiresOptionalDeps**: `false`. This ingester relies on standard Node.js and TypeScript capabilities and does not require external heavy dependencies.
+The `jsonIngester` object has the following properties:
 
-### ingest(filePath, options)
-The primary method for processing a file.
-*   **Parameters**:
-    *   `filePath`: `string` - The path to the file on the local filesystem.
-    *   `options`: `IngesterOptions` (optional) - Configuration for the ingestion process, including an optional `sourceUrl`.
-*   **Returns**: `Promise<IngestedContent>`
-*   **Behavior**:
-    *   Reads the file content as a UTF-8 string.
-    *   Attempts to parse the content using `JSON.parse()`.
-    *   If parsing is successful:
-        *   Extracts a title from the root object (checking `title`, `name`, or `id`).
-        *   Identifies top-level keys to create a "Top-level fields" summary.
-        *   Constructs a text representation containing the summary and the pretty-printed JSON inside a markdown code block.
-    *   If parsing fails (e.g., the file is YAML or malformed JSON):
-        *   The raw content is returned as the text without structural summarization.
+- **`supportedMimeTypes`**: `string[]`
+  An array of MIME types this ingester can handle.
+  Value: `["application/json", "application/yaml"]` [Source 1].
+
+- **`supportedExtensions`**: `string[]`
+  An array of file extensions this ingester recognizes.
+  Value: `["json", "yaml", "yml"]` [Source 1].
+
+- **`requiresOptionalDeps`**: `boolean`
+  Indicates whether the ingester requires optional dependencies.
+  Value: `false` [Source 1].
+
+- **`ingest`**: `(filePath: string, options?: IngesterOptions) => Promise<IngestedContent>`
+  The core method that reads and processes the file at `filePath`. It returns a promise that resolves to an `IngestedContent` object.
 
 ## Examples
 
-### Basic Usage
-The ingester is typically used by the knowledge compiler to process data files.
+### Ingesting a JSON file
+
+This example demonstrates how to use `jsonIngester` to process a simple JSON file.
 
 ```typescript
-import { jsonIngester } from 'src/knowledge/compiler/ingester/text';
+import { jsonIngester } from "yaaf/knowledge";
+import { writeFile, unlink } from "fs/promises";
 
-const filePath = './data/config.json';
-const content = await jsonIngester.ingest(filePath);
+async function processJsonFile() {
+  const filePath = "./package.json";
+  const fileContent = JSON.stringify({
+    name: "my-project",
+    version: "1.0.0",
+    description: "A sample project.",
+  }, null, 2);
 
-console.log(content.title); // Extracts from 'title', 'name', or 'id' fields
-console.log(content.text); 
-/* 
-Output format:
-# [Title or JSON Document]
+  // Create a dummy file for the example
+  await writeFile(filePath, fileContent);
 
-Top-level fields: key1, key2, ...
+  try {
+    const ingestedData = await jsonIngester.ingest(filePath);
 
-```json
-{
-  "key1": "value",
-  ...
+    console.log("Title:", ingestedData.title);
+    console.log("--- Content ---");
+    console.log(ingestedData.text);
+    /*
+    Output:
+    Title: my-project
+    --- Content ---
+    # my-project
+
+    Top-level fields: name, version, description
+
+    ```json
+    {
+      "name": "my-project",
+      "version": "1.0.0",
+      "description": "A sample project."
+    }
+    ```
+    */
+  } finally {
+    // Clean up the dummy file
+    await unlink(filePath);
+  }
 }
-```
-*/
+
+processJsonFile();
 ```
 
-### Handling YAML
-While the ingester lists YAML as a supported extension, the current implementation treats it as raw text if it cannot be parsed by `JSON.parse`.
+### Ingesting a YAML file
+
+When a file that is not valid JSON (like a YAML file) is passed, `jsonIngester` treats it as plain text.
 
 ```typescript
-const yamlContent = await jsonIngester.ingest('settings.yaml');
-// Returns IngestedContent where 'text' is the raw YAML string.
+import { jsonIngester } from "yaaf/knowledge";
+import { writeFile, unlink } from "fs/promises";
+
+async function processYamlFile() {
+  const filePath = "./config.yml";
+  const fileContent = `
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+  `;
+
+  await writeFile(filePath, fileContent);
+
+  try {
+    const ingestedData = await jsonIngester.ingest(filePath);
+
+    console.log("Title:", ingestedData.title); // Will be undefined
+    console.log("--- Content ---");
+    console.log(ingestedData.text);
+    /*
+    Output:
+    Title: undefined
+    --- Content ---
+
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: my-service
+    */
+  } finally {
+    await unlink(filePath);
+  }
+}
+
+processYamlFile();
 ```
 
-## See Also
-* `plainTextIngester`
-* `codeIngester`
+## Sources
+
+[Source 1]: src/knowledge/compiler/ingester/text.ts

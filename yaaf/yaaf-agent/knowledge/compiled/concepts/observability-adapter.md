@@ -1,16 +1,19 @@
 ---
-title: "Observability Adapter"
+title: "ObservabilityAdapter"
+summary: "ObservabilityAdapter"
 entity_type: concept
 stub: true
-compiled_at: "2026-04-16T14:41:06.286Z"
+compiled_at: "2026-04-24T18:21:56.235Z"
 compiled_from: []
 confidence: 0.5
+search_terms:
+  - "observabilityadapter"
 ---
 
-# Observability Adapter
+# [Observability](./observability.md)Adapter
 > **Stub article** — This article was auto-generated from mentions in source material.
 > Expand it by adding source documents that cover this topic.
 ## Overview
-A plugin capability interface for receiving structured log entries and telemetry.
+A plugin capability interface for integrating with external Observability systems, allowing plugins to receive and process log entries and other agent events.
 ## Related
-- [[Logger]]
+- [Logger](../apis/logger.md)

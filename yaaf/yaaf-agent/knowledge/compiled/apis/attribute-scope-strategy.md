@@ -1,86 +1,130 @@
 ---
 title: AttributeScopeStrategy
 entity_type: api
-summary: Provides flexible, rule-based data filtering based on arbitrary user attributes.
+summary: A flexible DataScopeStrategy that applies data filters based on a set of configurable rules evaluated against the user's attributes.
 export_name: AttributeScopeStrategy
 source_file: src/iam/scoping.ts
 category: class
+search_terms:
+ - attribute based access control
+ - ABAC data filtering
+ - user attribute scoping
+ - conditional data access
+ - flexible data filtering
+ - how to scope data by user properties
+ - iam scoping rules
+ - dynamic data filters
+ - DataScopeStrategy implementation
+ - user context filtering
+ - AttributeScopeRule
+ - AttributeScopeConfig
 stub: false
-compiled_at: 2026-04-16T14:19:35.324Z
+compiled_at: 2026-04-25T00:05:02.610Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/scoping.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/scoping.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`AttributeScopeStrategy` is a data scoping mechanism used to determine what specific data an LLM-powered tool can access. It is described as the most flexible scoping strategy within the framework, allowing developers to define arbitrary rules that map user context attributes to data filters.
 
-Unlike identity-based permissions that determine if a tool can be called, this strategy focuses on filtering the result sets or parameters of tool execution based on the `UserContext`.
+`AttributeScopeStrategy` is an implementation of [DataScopeStrategy](./data-scope-strategy.md) for attribute-based data filtering. It is considered the most flexible scoping strategy provided by YAAF [Source 1].
+
+This strategy operates by evaluating a list of rules against the current [UserContext](./user-context.md). For each rule where the `condition` function returns `true`, its corresponding `filters` function is executed to generate a set of data filters. The filters from all matching rules are then merged to produce the final [DataScope](./data-scope.md). This allows for creating complex and dynamic data access policies based on user roles, attributes (like department or region), or any other property available in the user context.
 
 ## Signature / Constructor
 
+The `AttributeScopeStrategy` class is instantiated with a configuration object that defines the rules for scoping.
+
 ```typescript
+import type { DataScopeStrategy, AttributeScopeConfig } from 'yaaf';
+
 export class AttributeScopeStrategy implements DataScopeStrategy {
   constructor(config: AttributeScopeConfig);
+  // ...
 }
 ```
 
-### Configuration Types
+### Configuration
 
-#### AttributeScopeConfig
-The configuration object for the strategy.
+The constructor accepts an `AttributeScopeConfig` object [Source 1]:
+
 ```typescript
 export type AttributeScopeConfig = {
-  /** An array of rules to evaluate against the user context */
+  /** An array of rules to evaluate for scoping. */
   rules: AttributeScopeRule[];
-}
+};
 ```
 
-#### AttributeScopeRule
-Defines a single condition and the resulting filter it produces.
+### Rule Definition
+
+Each rule within the `rules` array is an `AttributeScopeRule` object with the following structure [Source 1]:
+
 ```typescript
+import type { UserContext } from 'yaaf';
+
 export type AttributeScopeRule = {
-  /** Condition — when should this rule produce filters? */
+  /**
+   * A function that determines if this rule should be applied.
+   * It receives the user context and should return true if the rule is active.
+   */
   condition: (user: UserContext) => boolean;
 
-  /** Produce filters from user context */
+  /**
+   * A function that generates the filter object for this rule.
+   * It is only called if the `condition` returns true.
+   */
   filters: (user: UserContext) => Record<string, unknown>;
 
-  /** Human-readable description for audit logs */
+  /**
+   * An optional human-readable description for audit logs and debugging.
+   * Can be a static string or a function that generates a string from the user context.
+   */
   description?: string | ((user: UserContext) => string);
-}
+};
 ```
-
-## Methods & Properties
-While `AttributeScopeStrategy` implements the `DataScopeStrategy` interface, its primary public surface is its constructor and the rule-based logic defined in its configuration. It evaluates the provided `AttributeScopeRule` set against a `UserContext` to generate a set of data filters.
 
 ## Examples
 
-### Department and Region Filtering
-This example demonstrates how to restrict data access based on a user's department (for non-admins) and their assigned region.
+The following example creates a scoping strategy with two rules:
+1.  If the user is not an admin, scope data to their department.
+2.  If the user has a region attribute, also scope data to that region.
 
 ```typescript
+import { AttributeScopeStrategy, UserContext } from 'yaaf';
+
 const scope = new AttributeScopeStrategy({
   rules: [
     {
-      // Apply department filter only if the user is not an admin
-      condition: (user) => !user.roles?.includes('admin'),
-      filters: (user) => ({ department: user.attributes?.department }),
-      description: (user) =>
+      condition: (user: UserContext) => !user.roles?.includes('admin'),
+      filters: (user: UserContext) => ({ department: user.attributes?.department }),
+      description: (user: UserContext) =>
         `Scoped to department ${user.attributes?.department}`,
     },
     {
-      // Apply region filter if the region attribute exists
-      condition: (user) => user.attributes?.region !== undefined,
-      filters: (user) => ({ region: user.attributes?.region }),
+      condition: (user: UserContext) => user.attributes?.region !== undefined,
+      filters: (user: UserContext) => ({ region: user.attributes?.region }),
+      description: 'Scoped to user region',
     },
   ],
 });
+
+// --- Example Usage ---
+
+// For a non-admin user in the 'engineering' department and 'us-west' region,
+// both rules match. The resulting DataScope would have filters:
+// { department: 'engineering', region: 'us-west' }
+
+// For an admin user in the 'us-west' region, only the second rule matches.
+// The resulting DataScope would have filters:
+// { region: 'us-west' }
 ```
 
 ## See Also
-* `TenantScopeStrategy`
-* `OwnershipScopeStrategy`
-* `HierarchyScopeStrategy`
-* `ResolverScopeStrategy`
-* `CompositeScope`
+
+-   [DataScopeStrategy](./data-scope-strategy.md): The interface that this class implements.
+-   [UserContext](./user-context.md): The object containing user information that rules are evaluated against.
+
+## Sources
+
+[Source 1]: src/iam/scoping.ts

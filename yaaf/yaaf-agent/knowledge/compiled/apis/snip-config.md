@@ -1,82 +1,106 @@
 ---
-summary: Configuration interface for the history snipping process, defining limits for tool result age, size, and exemptions.
+title: "`SnipConfig`"
+entity_type: api
+summary: Configuration options for the history snipping process.
 export_name: SnipConfig
 source_file: src/context/historySnip.ts
 category: type
-title: SnipConfig
-entity_type: api
+search_terms:
+ - history snipping configuration
+ - context window optimization
+ - pre-compaction settings
+ - snipHistory options
+ - remove old tool results
+ - message history cleanup
+ - token reduction settings
+ - maxOldToolResults
+ - maxToolResultAge
+ - exempt tools from snipping
+ - context management parameters
+ - placeholder for snipped content
 stub: false
-compiled_at: 2026-04-16T14:17:18.175Z
+compiled_at: 2026-04-24T17:38:34.975Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/historySnip.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/historySnip.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`SnipConfig` defines the parameters for the history snipping process, a pre-compaction optimization pass. Snipping is designed to be a computationally "cheap" O(n) operation that requires no LLM calls. It identifies and removes low-value content—such as old, large, or redundant tool results—from the conversation history before more expensive LLM-based compaction or summarization logic is executed.
 
-This configuration allows developers to tune the balance between context retention and token efficiency by specifying thresholds for age, size, and specific tool exemptions.
+`SnipConfig` is a type alias that defines the configuration object for the `snipHistory` function. This object allows developers to customize the behavior of the [History Snipping](../concepts/history-snipping.md) process, which is a lightweight, pre-compaction optimization pass [Source 1].
 
-## Signature / Constructor
+History snipping is designed to remove known low-value content from a message history before running a more expensive, [LLM](../concepts/llm.md)-based compaction process. By removing obvious noise like old, large, or duplicate [tool results](../concepts/tool-results.md) first, the subsequent compaction becomes cheaper and faster. The `SnipConfig` type provides granular control over which tool results are considered eligible for removal based on their age, size, recency, and originating tool [Source 1].
+
+## Signature
+
+`SnipConfig` is a TypeScript type alias with the following properties:
 
 ```typescript
 export type SnipConfig = {
   /** Max number of old tool results to keep. Default: 15. */
-  maxOldToolResults?: number
+  maxOldToolResults?: number;
   /** Tool results older than this many turns get snipped. Default: 20. */
-  maxToolResultAge?: number
+  maxToolResultAge?: number;
   /** Replace snipped content with this placeholder. Default: "[Old tool result cleared]". */
-  placeholderText?: string
+  placeholderText?: string;
   /** Minimum token length of a tool result to be eligible for snipping. Default: 100. */
-  minSnipTokens?: number
+  minSnipTokens?: number;
   /** Keep the most recent N tool results untouched. Default: 5. */
-  keepRecent?: number
+  keepRecent?: number;
   /** Tool names whose results are never snipped. */
-  exemptTools?: string[]
-}
+  exemptTools?: string[];
+};
 ```
 
-## Methods & Properties
+### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `maxOldToolResults` | `number` | The maximum number of historical tool results to retain. Once this limit is exceeded, older results are eligible for snipping. Defaults to `15`. |
-| `maxToolResultAge` | `number` | The number of turns (messages) from the end of the history after which a tool result is considered "old" and eligible for snipping. Defaults to `20`. |
-| `placeholderText` | `string` | The text used to replace the content of a snipped message. Defaults to `"[Old tool result cleared]"`. |
-| `minSnipTokens` | `number` | The minimum estimated token count a tool result must have to be considered for snipping. Small results are often kept to maintain context. Defaults to `100`. |
-| `keepRecent` | `number` | The number of most recent tool results that are explicitly protected from the snipping process, regardless of their age or size. Defaults to `5`. |
-| `exemptTools` | `string[]` | An array of tool names whose outputs should never be snipped, ensuring critical data from specific tools is always preserved. |
+| Property            | Type       | Description                                                                    | Default Value                    |
+| ------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------- |
+| `maxOldToolResults` | `number?`  | The maximum number of old tool results to retain in the history.               | `15`                             |
+| `maxToolResultAge`  | `number?`  | Tool results older than this many turns from the end of the history are snipped. | `20`                             |
+| `placeholderText`   | `string?`  | The text used to replace the content of a snipped tool result.                 | `"[Old tool result cleared]"`    |
+| `minSnipTokens`     | `number?`  | The minimum token length a tool result must have to be eligible for snipping.  | `100`                            |
+| `keepRecent`        | `number?`  | The number of most recent tool results to always keep, regardless of other rules. | `5`                              |
+| `exemptTools`       | `string[]?`| A list of tool names whose results should never be snipped.                    | `undefined`                      |
 
 ## Examples
 
-### Basic Configuration
-Defining a configuration to aggressively snip old tool results while protecting specific critical tools.
+The following example demonstrates how to create a `SnipConfig` object and pass it to the `snipHistory` function to customize the snipping behavior.
 
 ```typescript
-import { SnipConfig, snipHistory } from './src/context/historySnip';
+import { snipHistory, SnipConfig, MessageLike } from 'yaaf';
 
-const config: SnipConfig = {
-  maxOldToolResults: 10,
-  maxToolResultAge: 15,
-  exemptTools: ['search_web', 'get_user_profile'],
-  placeholderText: '[Content removed to save context]'
+// Assume 'messages' is an array of MessageLike objects from a conversation
+const messages: MessageLike[] = [
+  // ... a long conversation history with many tool calls
+];
+
+// Define a custom configuration for the snipping process
+const customSnipConfig: SnipConfig = {
+  // Keep tool results that are no more than 10 turns old
+  maxToolResultAge: 10,
+  // Only snip tool results that are larger than 500 tokens
+  minSnipTokens: 500,
+  // Always preserve the 3 most recent tool results
+  keepRecent: 3,
+  // Never snip results from the 'core_memory' or 'file_system' tools
+  exemptTools: ['core_memory', 'file_system'],
+  // Use a custom placeholder for removed content
+  placeholderText: '[...content removed for brevity...]',
 };
 
-const result = snipHistory(messages, config);
-console.log(`Freed ${result.tokensFreed} tokens by removing ${result.itemsRemoved} items.`);
-```
+// Apply the snipping process with the custom configuration
+const result = snipHistory(messages, customSnipConfig);
 
-### Minimal Snipping
-Configuring the process to only remove extremely large tool results that are very old.
-
-```typescript
-const conservativeConfig: SnipConfig = {
-  minSnipTokens: 1000,
-  maxToolResultAge: 50,
-  keepRecent: 10
-};
+console.log(`Snipped ${result.itemsRemoved} items, freeing ~${result.tokensFreed} tokens.`);
+// result.snipped now contains the message history with old tool results replaced.
 ```
 
 ## See Also
-- `snipHistory`: The primary function that utilizes this configuration to clean conversation history.
-- `deduplicateToolResults`: A related utility for removing redundant consecutive tool outputs.
+
+*   `snipHistory`: The function that consumes the `SnipConfig` object to perform history snipping.
+
+## Sources
+
+[Source 1]: src/context/historySnip.ts

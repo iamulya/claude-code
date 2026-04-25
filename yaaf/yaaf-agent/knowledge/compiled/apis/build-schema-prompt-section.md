@@ -1,59 +1,98 @@
 ---
-summary: Builds a system prompt section instructing the model to output valid JSON matching a schema, used as a fallback for providers without native support.
+title: buildSchemaPromptSection
+entity_type: api
+summary: Generates a system prompt section that instructs an LLM to output valid JSON matching a given schema, serving as a fallback for providers without native structured output.
 export_name: buildSchemaPromptSection
 source_file: src/agents/structuredOutput.ts
 category: function
-title: buildSchemaPromptSection
-entity_type: api
+search_terms:
+ - JSON schema prompt
+ - force LLM to output JSON
+ - structured output without native support
+ - prompt engineering for JSON
+ - fallback for structured output
+ - how to get JSON from LLM
+ - Ollama JSON format
+ - system prompt for JSON schema
+ - instruct model to return JSON
+ - schema enforcement via prompt
+ - generate prompt from schema
+ - text-based JSON enforcement
 stub: false
-compiled_at: 2026-04-16T14:15:04.000Z
+compiled_at: 2026-04-24T16:53:38.080Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/structuredOutput.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/structuredOutput.ts
+compiled_from_quality: unknown
 confidence: 0.98
 ---
 
 ## Overview
-The `buildSchemaPromptSection` function is a utility used to enforce structured output through prompt engineering. While many LLM providers (such as OpenAI and Gemini) support native schema enforcement, others require explicit instructions within the system prompt to ensure the response adheres to a specific JSON format. 
 
-This function generates a standardized string of instructions based on a provided JSON schema. This string is intended to be appended to an agent's system prompt to guide the model toward producing valid, parseable JSON that matches the expected structure.
+The `buildSchemaPromptSection` function generates a string intended for inclusion in a [System Prompt](../concepts/system-prompt.md). This string instructs a Large Language Model ([LLM](../concepts/llm.md)) to generate a response that is a valid JSON object conforming to a provided JSON Schema [Source 1].
+
+This function serves as a crucial fallback mechanism for LLM providers that do not have native support for enforcing structured JSON output. While providers like OpenAI, Gemini, and Anthropic have dedicated API parameters for this purpose, others may require the schema to be described directly in the prompt. This function automates the creation of that instructional text [Source 1].
 
 ## Signature
+
+The function takes a JSON Schema object and returns a formatted string.
+
 ```typescript
-export function buildSchemaPromptSection(schema: OutputSchema): string
+export function buildSchemaPromptSection(schema: OutputSchema): string;
 ```
 
 ### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `schema` | `OutputSchema` | The JSON Schema definition that the model's output must satisfy. |
+
+-   **`schema`** `OutputSchema`: A standard JSON Schema object that defines the structure, types, and constraints of the desired JSON output. `OutputSchema` is a type alias for a JSON Schema definition.
 
 ### Returns
-`string`: A formatted prompt section containing instructions and the stringified schema.
+
+-   **`string`**: A block of text to be included in a system prompt, describing the required JSON format and schema.
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to generate a prompt section and manually append it to a system prompt.
+The primary use case is to construct a system prompt for an agent that needs to produce structured data, especially [when](./when.md) the underlying model provider lacks native JSON output features.
 
 ```typescript
 import { buildSchemaPromptSection } from 'yaaf';
 
-const schema = {
+// 1. Define the desired output schema
+const userProfileSchema = {
   type: 'object',
   properties: {
-    sentiment: { type: 'string', enum: ['positive', 'negative', 'neutral'] },
-    score: { type: 'number', minimum: 0, maximum: 1 }
+    name: { type: 'string', description: 'The full name of the user.' },
+    age: { type: 'number', description: 'The age of the user.' },
+    isVerified: { type: 'boolean', description: 'Whether the user account is verified.' },
   },
-  required: ['sentiment', 'score']
+  required: ['name', 'age'],
 };
 
-const schemaInstructions = buildSchemaPromptSection(schema);
-const systemPrompt = `You are a sentiment analysis assistant. ${schemaInstructions}`;
+// 2. Generate the instructional prompt section from the schema
+const schemaPrompt = buildSchemaPromptSection(userProfileSchema);
 
-// The resulting systemPrompt will contain explicit instructions for the LLM
-// to return JSON matching the sentiment/score schema.
+// 3. Combine it with the main system prompt
+const systemPrompt = `
+You are an expert data extraction assistant.
+Extract user profile information from the given text.
+${schemaPrompt}
+`;
+
+console.log(systemPrompt);
+/*
+Outputs a system prompt containing instructions like:
+"You are an expert data extraction assistant.
+Extract user profile information from the given text.
+You MUST respond with a single, valid JSON object that conforms to the following JSON Schema:
+...[schema details]..."
+*/
+
+// This systemPrompt can now be used with an AgentRunner.
 ```
 
 ## See Also
-- `structuredAgent`: A high-level factory for creating agents with enforced JSON output.
-- `parseStructuredOutput`: A utility for validating and parsing the text returned by a model against a schema.
+
+-   `structuredAgent`: A higher-level utility for creating agents that are dedicated to returning structured JSON and do not use [Tools](../subsystems/tools.md).
+-   `parseStructuredOutput`: A function for parsing and validating JSON from a model's free-text response against a schema, useful for agents that use both tools and [Structured Output](../concepts/structured-output.md).
+
+## Sources
+
+[Source 1]: src/agents/structuredOutput.ts

@@ -1,64 +1,109 @@
 ---
-title: findToolByName
-entity_type: api
-summary: Utility function to locate a tool within a collection by its name or alias.
 export_name: findToolByName
 source_file: src/tools/tool.ts
 category: function
+summary: A utility function to find a Tool by its name or alias within an array of tools.
+title: findToolByName
+entity_type: api
+search_terms:
+ - look up tool
+ - get tool by name
+ - find tool by alias
+ - search for a tool
+ - tool lookup utility
+ - how to select a tool
+ - tool collection management
+ - tool name resolution
+ - tool alias lookup
+ - programmatically find tool
+ - resolve tool name
+ - tool registry search
 stub: false
-compiled_at: 2026-04-16T14:39:00.981Z
+compiled_at: 2026-04-24T17:06:53.594Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/tool.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/tool.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`findToolByName` is a utility function used to retrieve a specific tool instance from a collection of tools. It is designed to resolve tool references by checking both the primary name of the tool and its defined aliases. This is commonly used within agent runtimes to map an LLM's requested tool call to the corresponding implementation.
 
-## Signature / Constructor
+The `findToolByName` function is a utility for searching an array of `Tool` objects to find a specific tool. It matches against both the tool's primary `name` property and any optional `aliases` it may have. This is useful for dynamically selecting a tool for execution based on a string identifier, such as one provided by an [LLM](../concepts/llm.md) or user input.
+
+The function performs a case-sensitive search and returns the first tool that matches the provided name. If no tool in the array has a matching name or alias, it returns `undefined`.
+
+## Signature
+
 ```typescript
 export function findToolByName(
-  tools: readonly Tool[],
-  name: string,
-): Tool | undefined
+  Tools: readonly Tool[],
+  name: string
+): Tool | undefined;
 ```
 
 ### Parameters
-- `tools`: A read-only array of `Tool` objects to search.
-- `name`: The string identifier to search for. This is compared against each tool's `name` property and its `aliases` array.
+
+-   **`Tools`**: `readonly Tool[]`
+    An array of `Tool` objects to search within.
+
+-   **`name`**: `string`
+    The name or alias of the tool to find.
 
 ### Returns
-Returns the first `Tool` object that matches the provided name or alias, or `undefined` if no match is found.
+
+-   `Tool | undefined`
+    The first `Tool` object from the array that matches the given `name` or `alias`. Returns `undefined` if no match is found.
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to find a tool using its primary name or one of its aliases.
+The following example demonstrates how to use `findToolByName` to locate [Tools](../subsystems/tools.md) in a collection by their primary name and by an alias.
 
 ```typescript
-import { findToolByName } from 'yaaf';
+import { buildTool, findToolByName, Tool } from 'yaaf';
 
-// Assuming a collection of tools exists
-const tool = findToolByName(availableTools, 'FileRead');
+// Define a couple of tools for demonstration purposes.
+const fileReaderTool = buildTool({
+  name: 'FileReader',
+  aliases: ['read_file'],
+  inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
+  maxResultChars: 10000,
+  describe: (input) => `Read the file at ${input.path}`,
+  async call(input) {
+    // Implementation would go here
+    return { data: `Contents of ${input.path}` };
+  },
+});
 
-if (tool) {
-  console.log(`Found tool: ${tool.name}`);
-} else {
-  console.log('Tool not found');
-}
-```
+const commandExecutorTool = buildTool({
+  name: 'CommandExecutor',
+  inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+  maxResultChars: 10000,
+  describe: (input) => `Execute the command: ${input.command}`,
+  async call(input) {
+    // Implementation would go here
+    return { data: `Output of ${input.command}` };
+  },
+});
 
-### Finding by Alias
-If a tool is defined with aliases, `findToolByName` will resolve those as well.
+const tools: readonly Tool[] = [fileReaderTool, commandExecutorTool];
 
-```typescript
-// If a tool is defined as:
-// { name: 'BashTool', aliases: ['shell', 'terminal'], ... }
+// 1. Find a tool by its primary name
+const foundByName = findToolByName(tools, 'CommandExecutor');
+console.log(foundByName?.name);
+// Expected output: 'CommandExecutor'
 
-const tool = findToolByName(availableTools, 'shell');
-// Returns the BashTool instance
+// 2. Find a tool by one of its aliases
+const foundByAlias = findToolByName(tools, 'read_file');
+console.log(foundByAlias?.name);
+// Expected output: 'FileReader'
+
+// 3. Attempt to find a tool that does not exist
+const notFound = findToolByName(tools, 'NonExistentTool');
+console.log(notFound);
+// Expected output: undefined
 ```
 
 ## See Also
-- `Tool`
-- `buildTool`
+
+-   `Tool` type: The interface for all tools in the framework.
+-   `buildTool` function: The factory for creating well-formed `Tool` objects.

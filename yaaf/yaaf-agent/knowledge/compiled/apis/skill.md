@@ -1,68 +1,103 @@
 ---
 title: Skill
-entity_type: api
-summary: The core data structure representing a markdown-based capability pack, including frontmatter metadata and instruction content.
+summary: Represents a complete YAAF skill, combining frontmatter metadata with its instructional content.
 export_name: Skill
 source_file: src/skills.ts
 category: type
+entity_type: api
+search_terms:
+ - skill definition
+ - agent capabilities
+ - markdown instructions
+ - system prompt extension
+ - reusable workflows
+ - domain knowledge injection
+ - few-shot examples
+ - SKILL.md format
+ - load skills from directory
+ - define skill inline
+ - skill frontmatter
+ - skill instructions
+ - agent instruction packs
 stub: false
-compiled_at: 2026-04-16T14:36:03.827Z
+compiled_at: 2026-04-24T17:37:46.853Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/skills.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/skills.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/cli/add.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-A `Skill` is a markdown-based capability pack used to extend an agent's instructions at runtime without requiring code changes. Skills serve as modular units of behavior that can inject domain knowledge, constraints, reusable workflows, and few-shot demonstrations into an agent's system prompt.
 
-In practice, a Skill typically originates from a `.md` file containing YAML frontmatter for metadata and markdown content for the instructions. When an agent is initialized with a collection of skills, the framework aggregates their instruction blocks to form the effective system prompt.
+The `Skill` type represents a markdown-based capability pack for a YAAF agent. [Skills](../concepts/skills.md) allow developers to extend an agent's instructions, domain knowledge, and constraints at runtime without requiring code changes. They are typically defined in `.md` files with a YAML [Frontmatter](../concepts/frontmatter.md) block [Source 1].
 
-## Signature / Constructor
-The `Skill` entity is a TypeScript type that combines metadata (frontmatter) with the core instruction content.
+A `Skill` object combines the metadata from its frontmatter (like `name` and `description`) with the main instructional content of the markdown file. These skills are then used to build a "skill injection block" that is appended to the agent's [System Prompt](../concepts/system-prompt.md), effectively augmenting its core instructions [Source 1].
+
+Common use cases for skills include:
+- Adding domain-specific knowledge and constraints.
+- Defining reusable workflows and standard operating procedures.
+- Providing examples and few-shot demonstrations to guide the agent's behavior [Source 1].
+
+## Signature
+
+A `Skill` is a TypeScript type alias that combines `[[[[[[[[SkillFrontmatter]]]]]]]]` with the core instruction content [Source 1].
+
+### SkillFrontmatter
+This type defines the metadata for a skill, typically parsed from the YAML frontmatter of a skill's markdown file [Source 1].
+
+```typescript
+export type SkillFrontmatter = {
+  /** Display name for the skill */
+  name: string;
+  /** Short description shown in skill listings */
+  description?: string;
+  /** Version string */
+  version?: string;
+  /** Whether this skill is always injected (default: true) */
+  always?: boolean;
+  /** List of tags for filtering/search */
+  tags?: string[];
+};
+```
+
+### Skill
+This is the complete type for a skill object [Source 1].
 
 ```typescript
 export type Skill = SkillFrontmatter & {
   /** The full instruction content (after frontmatter) */
-  instructions: string
+  instructions: string;
   /** Source file path, if loaded from disk */
-  filePath?: string
-}
-
-export type SkillFrontmatter = {
-  /** Display name for the skill */
-  name: string
-  /** Short description shown in skill listings */
-  description?: string
-  /** Version string */
-  version?: string
-  /** Whether this skill is always injected (default: true) */
-  always?: boolean
-  /** List of tags for filtering/search */
-  tags?: string[]
-}
+  filePath?: string;
+};
 ```
-
-## Methods & Properties
-As a type definition, `Skill` exposes the following properties:
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | The unique identifier or display name for the skill. |
-| `instructions` | `string` | The actual markdown content that will be injected into the agent's prompt. |
-| `description` | `string` | (Optional) A brief summary of the skill's purpose. |
-| `version` | `string` | (Optional) Versioning information for the skill pack. |
-| `always` | `boolean` | (Optional) If `true` (default), the skill is automatically included in the system prompt. |
-| `tags` | `string[]` | (Optional) Metadata tags used for filtering or searching within a registry. |
-| `filePath` | `string` | (Optional) The filesystem path from which the skill was loaded. |
 
 ## Examples
 
-### Loading Skills from Disk
-Skills are commonly stored as markdown files and loaded into an agent during initialization.
+### Inline Skill Definition
+
+A skill can be defined directly in code without a corresponding markdown file using the `defineSkill` helper function [Source 1].
 
 ```typescript
-import { Agent, loadSkills } from 'yaaf';
+// Inline skill definition
+const securitySkill = defineSkill({
+  name: 'security-review',
+  description: 'OWASP security review checklist',
+  instructions: `
+## Security Review Protocol
+When reviewing code, always check for:
+1. SQL injection vulnerabilities
+2. XSS vulnerabilities
+...`,
+});
+```
 
+### Loading Skills for an Agent
+
+Skills are commonly loaded from a directory and passed to an `Agent`'s constructor. The agent's effective system prompt becomes a combination of its base prompt and the injected skill instructions [Source 1].
+
+```typescript
 // Load all skills from a directory
 const skills = await loadSkills('./skills');
 
@@ -74,26 +109,14 @@ const agent = new Agent({
 // The agent's effective system prompt = base + all skill injections
 ```
 
-### Defining an Inline Skill
-Skills can also be defined programmatically using the `defineSkill` helper.
-
-```typescript
-import { defineSkill } from 'yaaf';
-
-const securitySkill = defineSkill({
-  name: 'security-review',
-  description: 'OWASP security review checklist',
-  instructions: `
-## Security Review Protocol
-When reviewing code, always check for:
-1. SQL injection vulnerabilities
-2. XSS vulnerabilities
-3. Insecure direct object references`,
-});
-```
-
 ## See Also
-- `loadSkills`: Function to load multiple skills from a directory.
-- `loadSkill`: Function to load a single skill from a file.
-- `defineSkill`: Factory function for creating inline skill objects.
-- `SkillRegistry`: Class for managing and watching skill collections.
+
+- `loadSkills`: A function to load all skills from a directory.
+- `defineSkill`: A helper function to define a `Skill` object inline.
+- `buildSkillSection`: A function to construct the text block injected into the system prompt from a list of skills.
+- `SkillRegistry`: A class for managing a collection of skills, including watching for file changes.
+
+## Sources
+
+[Source 1]: src/skills.ts
+[Source 2]: src/[CLI](../subsystems/cli.md)/add.ts

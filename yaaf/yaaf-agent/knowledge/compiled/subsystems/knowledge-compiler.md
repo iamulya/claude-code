@@ -1,78 +1,101 @@
 ---
 title: Knowledge Compiler
 entity_type: subsystem
-summary: The subsystem responsible for analyzing source code and documentation to generate structured knowledge base compilation plans.
+summary: Coordinates the multi-stage compilation pipeline for YAAF knowledge bases, encompassing ingestion, extraction, synthesis, linting, and more.
 primary_files:
-  - src/knowledge/compiler/extractor/index.ts
-  - src/knowledge/compiler/extractor/types.ts
-  - src/knowledge/compiler/extractor/extractor.ts
+ - src/knowledge/compiler/index.ts
+ - src/knowledge/compiler/compiler.ts
+exports:
+ - KBCompilerOptions
+ - CompileOptions
+ - CompileResult
+ - CompilationPlan
+ - SynthesisResult
+ - LintReport
+ - HealResult
+ - DiscoveryResult
+search_terms:
+ - knowledge base generation
+ - how to build a YAAF KB
+ - document ingestion pipeline
+ - extracting concepts from documents
+ - synthesizing articles from notes
+ - linting knowledge base articles
+ - finding contradictions in KB
+ - knowledge graph discovery
+ - multi-modal knowledge extraction
+ - incremental knowledge compilation
+ - PDF to knowledge base
+ - healing broken links in KB
+ - ontology proposal generation
+ - YAAF compilation process
 stub: false
-compiled_at: 2026-04-16T14:22:55.640Z
+compiled_at: 2026-04-24T18:15:24.070Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/prompt.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/heal.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/fixer.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/synthesizer/frontmatter.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/synthesizer/types.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/utils.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/validator.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/versioning.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/index.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
 ## Purpose
-The Knowledge Compiler is the central pipeline of the YAAF knowledge management system. Its primary purpose is to transform raw, unstructured source material—such as source code, documentation, and PDFs—into a structured, interconnected knowledge base of markdown articles. It automates the extraction of concepts, ensures adherence to a defined ontology, validates factual grounding, and maintains version history of the generated content.
+
+The Knowledge Compiler is a comprehensive subsystem responsible for orchestrating the end-to-end process of transforming raw source materials into a structured, interlinked, and validated YAAF knowledge base. It manages a sophisticated multi-stage pipeline that automates tasks from initial data ingestion and analysis to final article generation, quality assurance, and maintenance [Source 1].
 
 ## Architecture
-The Knowledge Compiler operates as a multi-stage pipeline coordinated by the `KBCompiler` class. The architecture is divided into several distinct phases:
 
-### 1. Ingestion and Extraction
-The pipeline begins by ingesting raw content through specialized `Ingester` modules. The **Concept Extractor** then performs an LLM-based analysis (typically using fast models like `gemini-2.5-flash`) to compare the ingested content against the existing **Concept Registry** and **Ontology**. 
+The Knowledge Compiler is architected as a modular pipeline, where each stage performs a distinct transformation or analysis task. The primary barrel file for the subsystem exports types that define the inputs, outputs, and configurations for each of these stages, indicating a clear separation of concerns [Source 1].
 
-This phase produces a `CompilationPlan`, which contains:
-*   **ArticlePlans**: Specific instructions to create, update, or skip articles.
-*   **CandidateConcepts**: New terms identified in the source that do not yet exist in the registry.
-*   **Static Analysis**: Pre-computed facts such as entity mentions and directory hints.
+The key stages of the compilation pipeline include:
 
-### 2. Synthesis
-The **Knowledge Synthesizer** consumes the `CompilationPlan` to generate markdown articles. It performs the following tasks:
-*   **Content Generation**: Uses an LLM to draft the article body based on source material.
-*   **Frontmatter Management**: Generates and validates YAML frontmatter against the ontology schema. It injects mandatory metadata such as `entity_type`, `compiled_at`, and `confidence`.
-*   **Concurrent Processing**: Supports configurable concurrency to balance speed against API rate limits.
+*   **Ingestion**: The entry point of the pipeline, handled by an `Ingester`. It processes raw content, including specialized handling for PDFs with configurable extractors for different providers (Gemini, Claude, OpenAI), and identifies content like images (`ImageRef`) [Source 1].
+*   **Extraction**: This stage analyzes ingested content to create a `CompilationPlan`. It identifies candidate concepts and determines the actions needed to create or update articles (`ArticlePlan`, `ArticleAction`) [Source 1].
+*   **Synthesis**: Generates the final markdown for articles based on the compilation plan. This stage produces a `SynthesisResult` and includes validation for [Frontmatter](../concepts/frontmatter.md) [Source 1].
+*   **[Linting](../concepts/linting.md)**: Analyzes the generated knowledge base for issues such as broken links and style violations. It produces a `LintReport` detailing all `LintIssue` items and supports automatic fixing of certain problems (`AutoFixResult`) [Source 1].
+*   **Post-processing**: A generic stage for applying final transformations to the compiled output [Source 1].
+*   **Differential Planning**: Enables efficient incremental builds by comparing source file hashes against a manifest (`SourceHashManifest`) to create a `DifferentialPlan` that only processes changed content [Source 1].
+*   **[Vision Pass](./vision-pass.md)**: A specialized stage for processing visual information, likely analyzing the images identified during ingestion [Source 1].
+*   **Healing**: A maintenance stage designed to automatically repair issues within the knowledge base, such as broken links or structural inconsistencies, producing a `HealResult` [Source 1].
+*   **[Discovery](../concepts/discovery.md)**: Analyzes the complete knowledge graph to identify structural patterns, such as depth imbalances, and suggest new articles or connections (`DiscoverySuggestion`) [Source 1].
+*   **Deduplication**: A process to identify and report on duplicate or highly similar content within the knowledge base [Source 1].
+*   **Contradiction Detection**: An advanced analysis stage that examines article content to find and report contradictory statements (`ContradictionReport`) [Source 1].
+*   **[Ontology](../concepts/ontology.md) Proposals**: Generates suggestions for new concepts or relationships to enhance the knowledge base's ontology [Source 1].
 
-### 3. Validation and Grounding
-Post-synthesis, the compiler runs a **Grounding Validator** (Phase 5C). This component uses keyword overlap scoring rather than an LLM to detect potential hallucinations. It calculates a grounding score (0-1) based on how many claims in the synthesized article are backed by the original source texts.
-
-### 4. Quality Control: Linting and Healing
-The compiler includes a suite of tools for maintaining KB health:
-*   **Linter**: Identifies issues like broken wikilinks, non-canonical aliases, or missing required fields.
-*   **Auto-Fixer**: Automatically resolves simple issues like rewriting aliases to canonical titles.
-*   **Heal Mode**: An opt-in, LLM-powered repair stage that fixes complex issues such as expanding thin "stub" articles or identifying related articles for cross-linking.
-
-### 5. Versioning and Persistence
-Before writing to disk, the compiler uses a versioning module (Phase 1A) to prevent data loss:
-*   **Identity Check**: Uses SHA-256 hashes to skip writing if content is unchanged.
-*   **Backups**: Moves existing articles to a `.versions/` directory with a timestamp before overwriting.
-*   **Pruning**: Automatically removes old versions beyond a configured limit.
+Underpinning these stages are Core [Utilities](./utilities.md) for interacting with [LLM](../concepts/llm.md)s (`LLMCallFn`, `VisionCallFn`), handling transient API errors (`RetryOptions`), and managing article versions (`ArticleVersion`) [Source 1].
 
 ## Key APIs
-*   `KBCompiler`: The top-level coordinator for the compilation pipeline.
-*   `healLintIssues`: Triggers LLM-powered repair of linting violations.
-*   `validateGrounding`: Performs keyword-based validation of article claims against sources.
-*   `applyFixes`: Programmatically applies auto-fixable changes to the compiled files.
-*   `writeWithVersioning`: Handles the atomic write and backup process for articles.
+
+The public API of the Knowledge Compiler is primarily exposed through a set of type definitions that describe the data structures and configuration options for the pipeline and its individual stages. Key types exported from `src/knowledge/compiler/index.ts` include:
+
+*   `KBCompilerOptions`: The main configuration object for the entire compilation process.
+*   `CompileOptions`: Options specific to a single compilation run.
+*   `CompileResult`: The output of a successful compilation run.
+*   `CompileProgressEvent`: An event type used for reporting progress during a long-running compilation.
+*   `Ingester`: The interface for [Content Ingestion](../concepts/content-ingestion.md) modules.
+*   `CompilationPlan`: The [Structured Output](../concepts/structured-output.md) of the extraction phase, detailing the work to be done.
+*   `SynthesisResult`: The output of the article generation phase.
+*   `LintReport`: The result of the linting phase, containing a list of identified issues.
+*   `HealResult`: The outcome of the knowledge base healing process.
+*   `DiscoveryResult`: The set of suggestions and analytics from the discovery phase [Source 1].
 
 ## Configuration
-The compiler is configured via `KBCompilerOptions` and `CompileOptions`. Key configuration parameters include:
-*   **Concurrency**: The number of articles to synthesize simultaneously (default: 3).
-*   **Incremental Mode**: If enabled, skips synthesis for articles where source files are older than the existing compiled article.
-*   **Stub Confidence Threshold**: The minimum LLM confidence score required to automatically create a stub article for a new concept (default: 0.7).
-*   **Max Versions**: The number of historical versions to retain in the `.versions/` directory.
+
+The Knowledge Compiler is configured through the `KBCompilerOptions` object. This allows developers to customize the behavior of the entire pipeline. Based on the exported types, configuration can be provided for nearly every stage, including:
+
+*   LLM and Vision model clients (`LLMClientOptions`, `ModelLike`).
+*   PDF ingestion methods (`PdfIngesterOptions`, including provider-specific options).
+*   [Retry Logic](../concepts/retry-logic.md) for network requests (`RetryOptions`).
+*   Linting rules and severity levels (`LintOptions`).
+*   Options for advanced stages like healing (`HealOptions`), discovery (`DiscoveryOptions`), and contradiction detection (`ContradictionOptions`) [Source 1].
 
 ## Extension Points
-Developers can extend the compiler's behavior through several interfaces:
-*   **Ingesters**: Custom logic for parsing new file formats (e.g., specialized PDF extractors).
-*   **LLM Clients**: The `LLMCallFn` and `VisionCallFn` types allow developers to provide their own provider-agnostic LLM implementations.
-*   **Ontology**: The entire extraction and synthesis process is governed by a pluggable `KBOntology` that defines the allowed entity types and frontmatter schemas.
+
+The architecture of the Knowledge Compiler is designed to be extensible. The use of function types and interfaces for core components suggests that developers can provide custom implementations. Notable extension points include:
+
+*   **Ingesters**: Developers can implement the `Ingester` interface to support new data sources.
+*   **PDF Extractors**: The `PdfExtractFn` type allows for custom PDF text extraction logic.
+*   **LLM/Vision Functions**: The `GenerateFn`, `LLMCallFn`, and `VisionCallFn` types allow for custom model interaction logic, enabling integration with any model provider.
+*   **Plugins**: The existence of types like `MultiLayerGroundingOptions` suggests a plugin model for adding specialized capabilities like grounding [Source 1].
+
+## Sources
+
+[Source 1] `src/knowledge/compiler/index.ts`

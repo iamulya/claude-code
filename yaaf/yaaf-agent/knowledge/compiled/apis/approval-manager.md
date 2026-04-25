@@ -1,122 +1,181 @@
 ---
-title: ApprovalManager
-entity_type: api
-summary: A class that manages asynchronous user-in-the-loop approval flows for tool execution via external communication channels.
+summary: A YAAF component for managing message approval flows within the Gateway module.
 export_name: ApprovalManager
 source_file: src/gateway/approvals.ts
 category: class
+title: ApprovalManager
+entity_type: api
+search_terms:
+ - user in the loop
+ - human approval for tools
+ - asynchronous permissions
+ - agent safety
+ - dangerous operation confirmation
+ - tool execution approval
+ - PermissionPolicy async
+ - how to ask for permission
+ - Telegram approval flow
+ - Slack tool confirmation
+ - gateway approvals
+ - user confirmation before running code
 stub: false
-compiled_at: 2026-04-16T14:07:15.784Z
+compiled_at: 2026-04-24T16:49:09.985Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/gateway.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/gateway/approvals.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/gateway/approvals.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-The `ApprovalManager` class facilitates human-in-the-loop (HITL) workflows by intercepting tool execution requests and routing them to external communication channels for manual approval. It extends the framework's permission system to support asynchronous decisions, allowing an agent to pause execution while waiting for a human response via platforms such as Slack, Telegram, or a terminal.
 
-This class is typically used when an agent needs to perform "dangerous" operations (e.g., deleting data, making financial transactions) that require explicit authorization beyond static permission policies.
+The `ApprovalManager` class provides a mechanism for "user-in-the-loop" permission requests, enabling agents to seek human approval before executing potentially dangerous operations [Source 2]. It is part of the Gateway subsystem, which must be imported explicitly from `yaaf/gateway` [Source 1].
 
-## Signature / Constructor
+This component extends YAAF's synchronous `PermissionPolicy` with asynchronous approval flows. Instead of immediately granting or denying permission, the agent can use a communication [Channel](./channel.md) (like Telegram, Slack, or WhatsApp) to send a request to a user and wait for their response. This is particularly useful for [Tools](../subsystems/tools.md) that can have significant real-world consequences [Source 2].
+
+The design is inspired by the execution approval system in OpenClaw [Source 2].
+
+## Constructor
+
+The `ApprovalManager` is instantiated with a configuration object that defines its behavior and communication transport [Source 2].
 
 ```typescript
+import type { ApprovalManagerConfig } from 'yaaf/gateway';
+
 export class ApprovalManager {
   constructor(config: ApprovalManagerConfig);
+  // ...
 }
 ```
 
-### Configuration Types
+### `ApprovalManagerConfig`
 
-#### ApprovalManagerConfig
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `transport` | `ApprovalTransport` | The mechanism used to send requests and receive decisions. |
-| `alwaysRequire` | `string[]` | (Optional) Tool names or glob patterns that always trigger an approval request. |
-| `neverRequire` | `string[]` | (Optional) Tool names or glob patterns that bypass approval. |
-| `defaultRisk` | `'low' \| 'medium' \| 'high' \| 'critical'` | (Optional) Default risk level if not specified. Defaults to `'medium'`. |
-| `autoApproveLow` | `boolean` | (Optional) Whether to automatically approve low-risk tools. Defaults to `false`. |
-| `maxPending` | `number` | (Optional) Maximum number of concurrent pending approvals. Defaults to `5`. |
+The configuration object has the following properties:
 
-#### ApprovalTransport
-An interface that must be implemented to bridge the manager with a communication channel.
 ```typescript
+export type ApprovalManagerConfig = {
+  /** Transport for sending approval requests (e.g., Telegram, Slack) */
+  transport: ApprovalTransport;
+  /**
+   * Tools that always require approval, regardless of other policies.
+   * Matches exact names or glob patterns.
+   */
+  alwaysRequire?: string[];
+  /**
+   * Tools that never require approval (bypass).
+   * Matches exact names or glob patterns.
+   */
+  neverRequire?: string[];
+  /**
+   * Default risk level for tools not in explicit lists.
+   * Default: 'medium'.
+   */
+  defaultRisk?: ApprovalRequest["risk"];
+  /**
+   * Auto-approve low-risk tools?
+   * Default: false.
+   */
+  autoApproveLow?: boolean;
+  /**
+   * Maximum pending approvals. New requests are denied if exceeded.
+   * Default: 5.
+   */
+  maxPending?: number;
+};
+```
+
+### Related Types
+
+The configuration relies on several related types for defining the approval flow:
+
+```typescript
+// Defines the communication channel for sending requests.
 export type ApprovalTransport = {
   /**
    * Send an approval request to the user and get their decision.
    * Must handle timeout internally (return 'timeout' if no response).
    */
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
-}
-```
+};
 
-#### ApprovalRequest
-```typescript
+// The data structure for a single approval request.
 export type ApprovalRequest = {
   tool: string;
   description: string;
-  risk: 'low' | 'medium' | 'high' | 'critical';
+  risk: "low" | "medium" | "high" | "critical";
   args: Record<string, unknown>;
   timestamp: number;
-}
+};
+
+// The possible outcomes of an approval request.
+export type ApprovalDecision = "approved" | "denied" | "timeout";
+
+// A complete record of a request and its outcome.
+export type ApprovalRecord = ApprovalRequest & {
+  decision: ApprovalDecision;
+  decidedAt: number;
+  durationMs: number;
+};
 ```
 
 ## Methods & Properties
 
-### request()
-Initiates an approval flow for a specific tool execution.
+### `asPermissionPolicy()`
+
+This method returns an object conforming to the `PermissionPolicy` interface, allowing the `ApprovalManager` to be used directly in an `AgentRunner`'s configuration [Source 2].
+
 ```typescript
-request(request: Omit<ApprovalRequest, 'timestamp'>): Promise<ApprovalDecision>
+asPermissionPolicy(): PermissionPolicy;
 ```
 
-### asPermissionPolicy()
-Converts the `ApprovalManager` instance into a permission policy that can be consumed by an agent runner. This allows the manager to automatically intercept tool calls based on the configured risk levels and patterns.
+**Returns:** A `PermissionPolicy` object that integrates the asynchronous approval flow into the agent's synchronous permission checks.
 
 ## Examples
 
-### Basic Implementation with a Transport
-This example demonstrates creating a transport that prompts a user via a hypothetical Telegram client.
+The following example demonstrates how to create an `ApprovalManager` with a custom transport that uses a hypothetical Telegram client. The resulting permission policy is then passed to an `AgentRunner` [Source 2].
 
 ```typescript
-import { ApprovalManager, type ApprovalDecision } from 'yaaf/gateway';
+import { ApprovalManager } from 'yaaf/gateway';
+import { AgentRunner } from 'yaaf';
+
+// Assume 'telegram' is a client for the Telegram API
+declare const telegram: {
+  send: (message: string) => Promise<void>;
+  waitForReply: (timeout: number) => Promise<{ text: string }>;
+};
 
 const approvals = new ApprovalManager({
   transport: {
-    requestApproval: async (request): Promise<ApprovalDecision> => {
-      // Send message to user
+    requestApproval: async (request) => {
+      // Send the approval request to the user via Telegram
       await telegram.send(
-        `⚠️ Tool Approval Required: ${request.tool}\n` +
-        `Reason: ${request.description}\n` +
-        `Arguments: ${JSON.stringify(request.args)}`
+        `⚠️ ${request.tool} wants to run:\n${request.description}\n\nReply "yes" or "no"`
       );
-      
-      // Wait for a response with a 5-minute timeout
-      const response = await telegram.waitForReply({ timeout: 300_000 });
-      
-      if (!response) return 'timeout';
-      return response.text.toLowerCase() === 'yes' ? 'approved' : 'denied';
-    }
+
+      try {
+        // Wait for the user's response for up to 5 minutes
+        const response = await telegram.waitForReply(300_000);
+        return response.text.toLowerCase().includes('yes') ? 'approved' : 'denied';
+      } catch (error) {
+        // Handle timeout if waitForReply throws
+        return 'timeout';
+      }
+    },
   },
-  alwaysRequire: ['database_delete', 'send_payment']
+  // Configuration to always require approval for file system tools
+  alwaysRequire: ['fs.*'],
+  // Automatically approve tools with low risk
+  autoApproveLow: true,
 });
-```
 
-### Integration with Agent Permissions
-Using the manager to gate tool execution within an agent runner.
-
-```typescript
-import { AgentRunner } from 'yaaf';
-import { ApprovalManager } from 'yaaf/gateway';
-
-const approvals = new ApprovalManager({ transport: myTransport });
-
+// Use the approval manager in the AgentRunner configuration
 const runner = new AgentRunner({
-  agent: myAgent,
-  // Use the manager as the permission policy
+  // ... other agent configuration
   permissions: approvals.asPermissionPolicy(),
 });
 ```
 
-## See Also
-- `Gateway`
-- `Channel`
+## Sources
+
+[Source 1]: src/gateway.ts
+[Source 2]: src/gateway/approvals.ts

@@ -1,55 +1,71 @@
 ---
+summary: A core YAAF concept for providing users with a concise recap of an agent session when they return after a period of inactivity.
 title: Away Summary
 entity_type: concept
-summary: A user experience pattern that provides a concise recap of agent progress and state when a user returns to a session after an absence.
-related_subsystems:
-  - Agents
-  - Session Management
+search_terms:
+ - while you were away
+ - session recap
+ - session summary
+ - user return experience
+ - agent inactivity summary
+ - how to summarize agent conversation
+ - welcome back message
+ - task progress summary
+ - next step reminder
+ - generate session recap
+ - away message
 stub: false
-compiled_at: 2026-04-16T14:39:05.118Z
+compiled_at: 2026-04-24T17:52:52.027Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/awaySummary.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/awaySummary.ts
+compiled_from_quality: unknown
 confidence: 0.9
 ---
 
 ## What It Is
-The **Away Summary** is a user experience pattern designed to facilitate session resumption in LLM-powered applications. It provides a "while you were away" recap that summarizes the agent's progress and current state. The primary goal of this concept is to reduce cognitive load for users returning to a long-running or complex session by providing a 1–3 sentence summary focusing on the high-level task completed and the concrete next step required.
+
+An Away Summary is a concise, automatically generated recap of an [Agent Session](./agent-session.md), presented to a user [when](../apis/when.md) they return after a period of inactivity [Source 1]. This feature, often referred to as a "while you were away" summary, aims to improve the user experience for long-running or asynchronous agent interactions.
+
+The summary typically consists of one to three sentences that highlight the high-level task the agent was working on and the concrete next step, allowing the user to quickly re-orient themselves and understand the current state of the session without needing to review the entire conversation history [Source 1].
 
 ## How It Works in YAAF
-In YAAF, the Away Summary is implemented as a utility function that processes session history to generate a brief narrative. The framework utilizes a language model—typically a smaller, faster model to minimize latency—to analyze the most recent interactions and synthesize the current status.
 
-The core logic is encapsulated in the `generateAwaySummary` function. This function accepts a configuration object containing the message history and returns a string containing the recap. If the session transcript is empty, the process is aborted, or an error occurs, the function returns `null`.
+In YAAF, this functionality is provided by the `generateAwaySummary` asynchronous function [Source 1]. This utility takes a configuration object containing the necessary context to generate the summary.
 
-The mechanism typically considers a specific window of recent messages (defaulting to 30) to ensure the summary remains relevant to the most recent context rather than summarizing the entire historical log.
+The core inputs are the session's message history and a language model (`ChatModel`) to perform the summarization. The framework recommends using a small, [Fast Model](./fast-model.md) for this purpose to ensure a quick response upon session resumption [Source 1]. The function processes a configurable number of recent messages (defaulting to 30) and can also incorporate broader session [Memory](./memory.md) to generate a more contextually aware recap [Source 1].
+
+The function is designed to be robust, returning `null` if the summarization is aborted, if the message history is empty, or if an error occurs during generation [Source 1].
 
 ## Configuration
-Developers configure the Away Summary through the `AwaySummaryConfig` interface. This allows for tuning the context window, providing additional session memory, and specifying the model used for the summarization task.
 
-### AwaySummaryConfig Properties
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `messages` | `ReadonlyArray` | The list of session messages (role and content) to be summarized. |
-| `model` | `ChatModel` | The LLM provider used to generate the summary. |
-| `signal` | `AbortSignal` | Optional signal to cancel the generation process. |
-| `recentMessageWindow` | `number` | The maximum number of recent messages to include in the context (Default: 30). |
-| `sessionMemory` | `string` | Optional broader context or long-term memory to inform the summary. |
+The behavior of the Away Summary generation is controlled via the `AwaySummaryConfig` object passed to the `generateAwaySummary` function.
 
-### Implementation Example
+The configuration options are defined by the `AwaySummaryConfig` type [Source 1]:
 ```typescript
-import { generateAwaySummary } from './utils/awaySummary.js';
+export type AwaySummaryConfig = {
+  /** Session messages to summarize. */
+  messages: ReadonlyArray<{ role: string; content: string }>;
+  /** Model to use (small/fast recommended). */
+  model: ChatModel;
+  /** Abort signal. */
+  signal?: AbortSignal;
+  /** Maximum recent messages to include in context. Default: 30. */
+  recentMessageWindow?: number;
+  /** Optional session memory to include for broader context. */
+  sessionMemory?: string;
+};
+```
 
+A typical implementation involves calling this function when a user's session is resumed and displaying the result as a welcome message [Source 1].
+
+```typescript
 // On session resume:
 const recap = await generateAwaySummary({
   messages: session.messages,
   model: smallModel,
-  recentMessageWindow: 20,
-  sessionMemory: "User is working on a TypeScript migration project."
 });
-
-if (recap) {
-  console.log(`Welcome back! ${recap}`);
-}
+if (recap) console.log(`Welcome back! ${recap}`);
 ```
 
 ## Sources
-- `src/utils/awaySummary.ts`
+[Source 1]: src/utils/awaySummary.ts

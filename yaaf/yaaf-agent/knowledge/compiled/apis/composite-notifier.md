@@ -1,96 +1,122 @@
 ---
-summary: A notification channel implementation that fans out notifications to multiple underlying channels simultaneously.
+title: CompositeNotifier
+summary: A concrete implementation of NotificationChannel that dispatches notifications to multiple registered channels simultaneously, handling errors gracefully.
 export_name: CompositeNotifier
 source_file: src/utils/notifier.ts
 category: class
-title: CompositeNotifier
 entity_type: api
+search_terms:
+ - multiple notification channels
+ - fan-out notifications
+ - aggregate notifiers
+ - how to send notifications to console and webhook
+ - combine notification channels
+ - agent lifecycle alerts
+ - error reporting for agents
+ - agent completion alerts
+ - NotificationChannel implementation
+ - dispatching alerts to multiple systems
+ - YAAF notification system
+ - broadcasting agent events
 stub: false
-compiled_at: 2026-04-16T14:39:54.345Z
+compiled_at: 2026-04-24T16:56:47.252Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/notifier.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/notifier.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`CompositeNotifier` is a utility class used to distribute lifecycle notifications to multiple destinations at once. It implements the `NotificationChannel` interface and acts as a dispatcher, ensuring that a single notification event (such as an agent completion or failure) is delivered to all registered sub-channels, such as console logs, webhooks, or custom email adapters.
 
-The implementation is designed for resilience; errors occurring within one notification channel do not prevent other channels from receiving the notification.
+The `CompositeNotifier` class is an implementation of the `[[[[[[[[Notification]]]]]]]]Channel` interface that allows for fanning out Notifications to multiple Notification Channels at once [Source 1]. It acts as a single entry point for sending an alert, which it then broadcasts to an array of registered Channels, such as a console logger, a webhook, or a custom email sender.
 
-## Signature / Constructor
+A key feature of `CompositeNotifier` is its resilience. Errors that occur within any single notification [Channel](./channel.md) (e.g., a webhook endpoint being down) are logged and swallowed, ensuring that the failure of one channel does not prevent notifications from being sent to the others [Source 1]. This makes it a robust choice for production environments where notifications must be delivered reliably across different systems.
+
+It is commonly used to aggregate different notification mechanisms so that application logic, like an agent orchestrator, only needs to interact with a single notifier instance to alert multiple destinations [Source 1].
+
+## Constructor
+
+The `CompositeNotifier` is instantiated by passing an array of objects that conform to the `NotificationChannel` interface.
 
 ```typescript
+import { CompositeNotifier, NotificationChannel } from 'yaaf';
+
 export class CompositeNotifier implements NotificationChannel {
-  constructor(channels: NotificationChannel[])
+  constructor(channels: NotificationChannel[]);
 }
 ```
 
-### Parameters
-- `channels`: An array of objects implementing the `NotificationChannel` interface.
+**Parameters:**
+
+*   `channels` (`NotificationChannel[]`): An array of `NotificationChannel` instances to which notifications will be dispatched.
 
 ## Methods & Properties
 
-### notify()
-Delivers a notification object to all channels registered in the constructor.
+`CompositeNotifier` implements the `NotificationChannel` interface.
+
+### notify
+
+Sends a notification to all registered channels simultaneously.
 
 ```typescript
-notify(notification: Notification): Promise<void>
+public async notify(notification: Notification): Promise<void>;
 ```
 
-- **Parameters**: 
-    - `notification`: A `Notification` object containing the `type`, `title`, `message`, and optional `metadata` or `timestamp`.
-- **Behavior**: This method iterates through all internal channels and calls their respective `notify` methods. It is designed not to throw; errors from individual channels are typically logged and swallowed to ensure the stability of the calling process.
+**Parameters:**
 
-### destroy()
-Performs cleanup for all underlying channels that implement a `destroy` method.
+*   `notification` (`Notification`): The notification object to be sent.
+
+### destroy
+
+Calls the optional `destroy` method on all registered channels that implement it. This is used for cleanup, such as closing network connections.
 
 ```typescript
-destroy?(): Promise<void>
+public async destroy?(): Promise<void>;
 ```
 
 ## Examples
 
-### Basic Multi-Channel Setup
-This example demonstrates how to combine a console logger and a webhook into a single notifier for use with an orchestrator.
+The following example demonstrates creating a `CompositeNotifier` to send agent completion events to both the console and a Slack webhook.
 
 ```typescript
-import { CompositeNotifier, ConsoleNotifier, WebhookNotifier } from 'yaaf';
+import { CompositeNotifier, Notification } from 'yaaf';
+import { ConsoleNotifier } from './consoleNotifier'; // Assuming these exist
+import { WebhookNotifier } from './webhookNotifier'; // Assuming these exist
 
+// 1. Instantiate individual notification channels.
+const consoleChannel = new ConsoleNotifier();
+const webhookChannel = new WebhookNotifier('https://hooks.slack.com/services/...');
+
+// 2. Create a CompositeNotifier with the desired channels.
 const notifier = new CompositeNotifier([
-  new ConsoleNotifier(),
-  new WebhookNotifier('https://hooks.slack.com/services/...'),
+  consoleChannel,
+  webhookChannel,
 ]);
 
-// Wire into an orchestrator's lifecycle events
+// 3. Use the composite notifier within application logic, like an orchestrator.
+// This event handler will now send a notification to both the console and Slack.
 orchestrator.on('agent:completed', (agentId, result) => {
-  notifier.notify({
+  const notification: Notification = {
     type: 'completed',
-    title: `Agent ${agentId} finished`,
+    title: `Agent ${agentId} finished successfully`,
     message: result.summary,
-    metadata: { agentId, duration: result.duration }
-  });
+    metadata: {
+      agentId: agentId,
+      cost: result.cost,
+    }
+  };
+  notifier.notify(notification);
 });
 ```
-
-### Using with Custom Callbacks
-You can mix standard channels with custom logic using a `CallbackNotifier`.
-
-```typescript
-const notifier = new CompositeNotifier([
-  new ConsoleNotifier(),
-  new CallbackNotifier(async (notif) => {
-    console.log(`Custom processing for: ${notif.title}`);
-  }),
-]);
-
-await notifier.notify({
-  type: 'info',
-  title: 'System Update',
-  message: 'All agents are online.'
-});
-```
+[Source 1]
 
 ## See Also
-- `NotificationChannel`
-- `Notification`
-- `notificationAdapterFromChannel`
+
+*   `NotificationChannel`: The interface that `CompositeNotifier` implements.
+*   `Notification`: The data type for notifications sent through channels.
+*   `BufferNotifier`: An in-[Memory](../concepts/memory.md) notifier useful for testing.
+*   `notificationAdapterFromChannel`: A function to adapt any `NotificationChannel` into a YAAF plugin.
+
+## Sources
+
+*   [Source 1]: `src/utils/notifier.ts`

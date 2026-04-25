@@ -1,62 +1,61 @@
 ---
-title: Tool Provider
+summary: An interface for plugins to register and expose tools to the agent's tool registry.
+title: ToolProvider
 entity_type: concept
-summary: A capability pattern that allows plugins or subsystems to expose executable tools to LLM agents.
 related_subsystems:
-  - PluginHost
-  - AgentFS
+ - plugins
+ - tools
+see_also:
+ - concept:AgentFS Plugin
+ - concept:Tool Use
+ - concept:Agent Skills
+search_terms:
+ - how to add tools to agent
+ - plugin tool registration
+ - making tools available to LLM
+ - tool provider interface
+ - exposing plugin functions as tools
+ - agent tool registry
+ - custom agent tools
+ - YAAF tool integration
+ - implementing ToolProvider
+ - what is a tool provider
+ - tool discovery
 stub: false
-compiled_at: 2026-04-16T14:21:14.691Z
+compiled_at: 2026-04-25T00:25:53.241Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/integrations/agentfs.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/integrations/agentfs.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## What It Is
-The **Tool Provider** is a capability pattern in YAAF that enables plugins and subsystems to register, manage, and expose executable tools to LLM agents. It serves as a standardized interface for tool discovery and execution, allowing the framework to bridge the gap between an agent's reasoning and the execution of specific logic or external system interactions.
 
-By implementing the Tool Provider pattern, a component declares that it can host a registry of tools and handle requests to execute them. This is essential for building complex agents that need to interact with filesystems, APIs, or other specialized environments.
+`ToolProvider` is an interface within the YAAF plugin architecture that establishes a standardized contract for plugins to expose their functionalities as tools. By implementing this interface, a plugin can register one or more tools with the agent's central tool registry, making them discoverable and executable by the agent during its reasoning process. This mechanism allows for the modular extension of an agent's capabilities, where complex logic is encapsulated within a plugin and exposed as a simple, callable tool.
 
 ## How It Works in YAAF
-In YAAF, the Tool Provider pattern is typically realized through an interface implemented by plugins. A primary example is the `AgentFSPlugin`, which implements `ToolProvider` alongside other interfaces like `FileSystemAdapter` and `ContextProvider`.
 
-### Tool Registration and Execution
-A Tool Provider maintains a registry where tools can be "mounted" or registered. These tools are defined using the `Tool` type, often constructed via the `buildTool` utility. When an agent or the framework needs to perform an action, it calls the provider's execution method.
+A plugin class that intends to offer tools must explicitly implement the `ToolProvider` interface. During the plugin registration process, the `PluginHost` identifies plugins that implement this interface and retrieves the list of tools they provide. These tools are then integrated into the agent's environment, becoming available for [tool use](./tool-use.md) and [Tool Execution](./tool-execution.md).
 
-The execution flow generally involves:
-1.  **Mounting**: Tools are added to the provider's registry (e.g., via a `mountTools` method).
-2.  **Invocation**: The provider's execution method (e.g., `executeTool`) is called with a tool identifier, arguments, and a `ToolContext`.
-3.  **Result**: The tool execution returns a `ToolResult`, which contains the output or error state of the operation.
+A concrete example is the [AgentFS Plugin](../plugins/agent-fs-plugin.md), which implements `ToolProvider` to expose a set of virtual filesystem tools to the agent, such as `fs_read`, `fs_write`, `fs_list`, and `fs_tree` [Source 1]. This allows the agent to interact with a virtual filesystem through the standard tool-calling mechanism, without needing to know the internal implementation details of the `AgentFSPlugin`.
 
-### Integration with AgentFS
-When implemented within the `AgentFSPlugin`, the Tool Provider pattern allows the filesystem to act as a virtual registry for tools. Tools can be addressed via paths (e.g., `/tools/grep`), and the provider exposes standard filesystem operations as tools themselves, such as `fs_read`, `fs_write`, `fs_list`, and `fs_tree`.
-
-## Configuration
-Developers interact with Tool Providers by registering them with a `PluginHost` and then using the provider's API to manage tools.
+The class signature for a plugin implementing this interface, along with others, would look like this [Source 1]:
 
 ```typescript
-const host = new PluginHost();
-await host.register(new AgentFSPlugin());
-
-// Access the plugin as a ToolProvider
-const afs = host.getPlugin<AgentFSPlugin>('agentfs')!;
-
-// Register tools with the provider
-afs.mountTools([grepTool, bashTool]);
-
-// Execute a tool through the provider
-const result = await afs.executeTool(
-  '/tools/grep', 
-  { pattern: 'TODO' }, 
-  ctx
-);
+export class AgentFSPlugin
+  extends PluginBase
+  implements FileSystemAdapter, ToolProvider, ContextProvider
+{ /* ... */ }
 ```
 
-### Data Structures
-The Tool Provider pattern relies on several core types:
-*   **Tool**: The definition of the executable logic, including its schema and implementation.
-*   **ToolContext**: Metadata and state passed to the tool during execution.
-*   **ToolResult**: The standardized output format returned after execution.
+By adhering to the `ToolProvider` contract, plugins ensure their tools are compatible with the core agent framework, facilitating a robust and extensible ecosystem of [Agent Skills](./agent-skills.md).
+
+## See Also
+
+- [AgentFS Plugin](../plugins/agent-fs-plugin.md): A concrete example of a plugin that implements the `ToolProvider` interface.
+- [Tool Use](./tool-use.md): The core concept of how agents leverage the tools provided by this interface.
+- [Agent Skills](./agent-skills.md): The high-level concept representing the capabilities that tools provide to an agent.
 
 ## Sources
-* `src/integrations/agentfs.ts`
+
+[Source 1]: src/integrations/agentfs.ts

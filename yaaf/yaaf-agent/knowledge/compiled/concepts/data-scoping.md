@@ -1,86 +1,86 @@
 ---
 title: Data Scoping
+summary: The process of dynamically filtering data access for tools based on the current user's context and defined strategies.
+tags:
+ - security
+ - data-access
 entity_type: concept
-summary: Determines what specific data a tool or agent can access based on user context and organizational rules, distinct from call authorization.
 related_subsystems:
-  - IAM
-  - Tools
+ - iam
+search_terms:
+ - data filtering for agents
+ - multi-tenant data isolation
+ - how to restrict tool data access
+ - user-based data filtering
+ - row-level security for LLM agents
+ - DataScopeStrategy
+ - TenantScopeStrategy
+ - OwnershipScopeStrategy
+ - AttributeScopeStrategy
+ - dynamic data filtering
+ - context-aware data access
+ - YAAF security
+ - what data can a tool see
 stub: false
-compiled_at: 2026-04-16T14:19:28.605Z
+compiled_at: 2026-04-24T17:54:15.485Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/scoping.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/iam/types.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/iam/types.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## What It Is
-Data Scoping is a security mechanism in YAAF that governs the visibility and boundaries of data available to an agent's tools during execution. While **Authorization** determines *whether* a user is permitted to invoke a specific tool, Data Scoping determines *what* specific records or resources that tool is allowed to interact with once invoked.
 
-This concept is critical for building production-grade agents in multi-tenant environments, hierarchical organizations, or systems with complex data ownership rules. It prevents "data bleeding" by ensuring that even if an agent is authorized to use a "Search Documents" tool, it can only retrieve documents the specific end-user is permitted to see.
+Data Scoping is a security mechanism in YAAF that determines what data a tool can access on behalf of a user. It operates downstream from [Authorization](./authorization.md); while authorization decides *if* a tool can be invoked, Data Scoping defines the boundaries of the data that the invoked tool can see or manipulate [Source 1].
+
+The primary purpose of Data Scoping is to enforce data access policies dynamically. This allows agents to operate in multi-tenant environments, respect resource ownership, or apply attribute-based filtering to the data retrieved by [Tools](../subsystems/tools.md). For example, a tool that queries a database can be automatically scoped to only return records belonging to the user's organization or department [Source 1].
 
 ## How It Works in YAAF
-Data Scoping is implemented through the `DataScopeStrategy` interface. When an agent processes a request, the framework uses the configured strategy to resolve a `DataScope` object based on the `UserContext`.
 
-### The DataScope Object
-The result of a scoping operation is a `DataScope` object, which contains:
-- **filters**: A key-value map (e.g., `{ "tenantId": "acme-corp" }`) that tools apply to database queries or API calls.
-- **unrestricted**: A boolean flag. If `true`, the tool may skip filtering (typically reserved for super-admins).
-- **description**: A human-readable string used for audit logging and transparency.
+The core of the Data Scoping mechanism is the `DataScopeStrategy` interface. An implementation of this interface is responsible for resolving a `DataScope` object from the current user's context [Source 1].
 
-### Scoping Strategies
-YAAF provides several built-in strategies to handle common organizational patterns:
+The `DataScopeStrategy` interface defines a `resolve` method which returns a `DataScope` object. This `DataScope` object contains the specific filtering rules that tools must apply. Its key properties are [Source 1]:
 
-1.  **TenantScopeStrategy**: Provides multi-tenant isolation by filtering data based on a tenant identifier (e.g., `tenantId`) found in the user's attributes.
-2.  **OwnershipScopeStrategy**: Filters data based on resource ownership. It can be configured to allow users to see their own data, while allowing managers to see data owned by their team members.
-3.  **AttributeScopeStrategy**: The most flexible strategy, using Attribute-Based Access Control (ABAC) logic. It evaluates rules against the `UserContext` to produce dynamic filters.
-4.  **HierarchyScopeStrategy**: Uses an organizational chart or tree structure to determine access. It can resolve access "down" (managers seeing reports), "up" (employees seeing department data), or "both".
-5.  **ResolverScopeStrategy**: Integrates with external systems (like Confluence, Jira, or Google Drive) via a `PermissionResolver`. It queries the external system to discover what resources the user can access and translates those into filters.
-6.  **CompositeScope**: Allows developers to combine multiple strategies using `merge` (combining all filters) or `firstMatch` (priority-based) logic.
-7.  **SystemAwareScope**: Routes scoping requests to different strategies based on the tool being called. For example, a Jira tool might use a `ResolverScopeStrategy` while a local database tool uses a `TenantScopeStrategy`.
+*   `filters`: A record of key-value pairs that tools use to filter their data access. For example, a tool might interpret `{ tenantId: 'acme-corp' }` as a `WHERE` clause in a SQL query or a filter parameter in an API call.
+*   `unrestricted`: A boolean flag. If `true`, it indicates that the tool has unrestricted access and can skip filtering.
+*   `strategy`: The name of the strategy that generated the scope, used for logging.
+*   `description`: A human-readable summary of the applied scope for audit logs.
+
+YAAF provides several built-in `DataScopeStrategy` implementations to cover common patterns [Source 1]:
+
+*   **`TenantScopeStrategy`**: Enforces multi-tenant data isolation.
+*   **`OwnershipScopeStrategy`**: Filters data based on a user's ownership of resources.
+*   **`AttributeScopeStrategy`**: Applies filters based on attributes in the user's `UserContext`.
+*   **`HierarchyScopeStrategy`**: Scopes data based on an organizational hierarchy.
+*   **`ResolverScopeStrategy`**: Works with a `PermissionResolver` to query an external system (like Jira or Confluence) to determine a user's access rights and translates them into data filters.
+
+The resolved `DataScope` is passed to tools through their execution context, making the filtering information available at runtime [Source 1].
 
 ## Configuration
-Data Scoping is configured within the `AccessPolicy` of an `Agent`. If no strategy is provided, the framework defaults to unrestricted access.
 
-### Example: Tenant and Attribute Scoping
-This example demonstrates a multi-tenant setup where non-admins are further restricted by their department.
+Data Scoping is configured on an agent via the `accessPolicy` property in the agent's constructor. A developer provides an instance of a `DataScopeStrategy` to the `dataScope` field within the policy [Source 1].
+
+If the `dataScope` property is not set, the agent defaults to unrestricted data access for all tools [Source 1].
 
 ```typescript
-import { Agent, TenantScopeStrategy, AttributeScopeStrategy, CompositeScope } from '@yaaf/core';
-
-const tenantStrategy = new TenantScopeStrategy({
-  tenantKey: 'tenantId',
-  bypassRoles: ['super_admin'],
-});
-
-const departmentStrategy = new AttributeScopeStrategy({
-  rules: [
-    {
-      condition: (user) => !user.roles?.includes('admin'),
-      filters: (user) => ({ department: user.attributes?.department }),
-      description: (user) => `Scoped to department: ${user.attributes?.department}`,
-    },
-  ],
-});
-
+// Example: Configuring an agent with a TenantScopeStrategy
 const agent = new Agent({
   tools: [...],
   accessPolicy: {
-    // Merge both strategies: user must match tenant AND department
-    dataScope: CompositeScope.merge([tenantStrategy, departmentStrategy]),
+    // Authorization strategy decides IF a tool can be called
+    authorization: rbac({ viewer: ['read_*'], admin: ['*'] }),
+
+    // Data Scoping strategy decides WHAT DATA the tool can access
+    dataScope: new TenantScopeStrategy(),
+
+    // Audit callback for logging decisions
+    onDecision: (event) => auditLog.write(event),
   },
 });
 ```
 
-### Example: External System Scoping
-For tools interacting with third-party SaaS platforms, the `ResolverScopeStrategy` maps external permissions to tool filters.
+In this example, the `TenantScopeStrategy` will be used to resolve a `DataScope` for every tool call, ensuring that tools only access data relevant to the current user's tenant [Source 1].
 
-```typescript
-const scope = new ResolverScopeStrategy({
-  resolver: new ConfluencePermissionResolver({ /* config */ }),
-  toScope: (grants) => ({
-    strategy: 'confluence',
-    filters: { allowedSpaces: grants.map(g => g.resourceId) },
-  }),
-  cache: { ttl: 300, maxEntries: 1000 },
-});
-```
+## Sources
+
+[Source 1]: src/iam/types.ts

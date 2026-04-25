@@ -1,76 +1,103 @@
 ---
 title: DevUiOptions
 entity_type: api
-summary: Configuration options for the YAAF Dev UI, including agent metadata and feature flags.
+summary: Defines the configuration options for the YAAF Dev UI.
 export_name: DevUiOptions
 source_file: src/runtime/devUi.ts
 category: type
+search_terms:
+ - dev ui configuration
+ - development server options
+ - configure agent name in ui
+ - show system prompt in dev ui
+ - enable streaming in dev ui
+ - set model name for dev server
+ - multi-turn history setting
+ - agent version display
+ - YAAF server UI settings
+ - debug interface options
+ - createServer dev ui
+ - buildDevUiHtml options
 stub: false
-compiled_at: 2026-04-16T14:32:48.952Z
+compiled_at: 2026-04-24T17:02:03.248Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/runtime/devUi.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/runtime/devUi.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`DevUiOptions` is a configuration type used to define the metadata and feature capabilities of an agent for the YAAF Dev UI. The Dev UI is a self-contained, zero-dependency HTML interface served during development to provide a chat interface, inspector, and debugging tools.
 
-These options are typically passed to the `buildDevUiHtml` function at server startup to customize the UI's appearance and behavior based on the specific agent's configuration.
+The `DevUiOptions` type defines the configuration object used to customize the YAAF Development UI [Source 1]. This UI is a self-contained HTML page served by the YAAF server (created via `createServer()`) [when](./when.md) its `devUi` option is enabled. The properties of a `DevUiOptions` object control the information displayed about the agent, such as its name, version, and capabilities like [Streaming](../concepts/streaming.md) support [Source 1].
 
-## Signature / Constructor
+This configuration is passed to the `buildDevUiHtml` function at server startup to generate the UI's HTML content [Source 1].
+
+## Signature
+
+`DevUiOptions` is a TypeScript type alias for an object with the following properties [Source 1]:
 
 ```typescript
 export type DevUiOptions = {
   /** Agent display name */
-  name: string
+  name: string;
   /** Agent version */
-  version: string
+  version: string;
   /** Whether the agent supports runStream() */
-  streaming: boolean
+  streaming: boolean;
   /** Model identifier (shown in inspector). Null = not known. */
-  model: string | null
+  model: string | null;
   /** Whether server-side multi-turn history formatting is active */
-  multiTurn: boolean
+  multiTurn: boolean;
   /** System prompt to show read-only in Settings. Null = not exposed. */
-  systemPrompt: string | null
-}
+  systemPrompt: string | null;
+};
 ```
 
-## Methods & Properties
+### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | The display name of the agent, shown in the UI header and welcome state. |
-| `version` | `string` | The version identifier for the agent. |
-| `streaming` | `boolean` | Indicates if the agent supports streaming responses. When true, the UI enables partial markdown previews during message generation. |
-| `model` | `string \| null` | The identifier of the underlying LLM (e.g., "gpt-4"). Displayed in the mobile inspector/drawer. |
-| `multiTurn` | `boolean` | Specifies if the agent is configured to handle multi-turn conversation history formatting on the server side. |
-| `systemPrompt` | `string \| null` | The system instructions used by the agent. If provided, it is displayed as a read-only field in the UI's Settings section. |
+- **`name`**: `string`
+  The display name of the agent, which appears in the UI header.
+
+- **`version`**: `string`
+  The version of the agent, also displayed in the UI.
+
+- **`streaming`**: `boolean`
+  Set to `true` if the agent supports streaming responses via a `runStream()` method. This affects UI elements related to streaming.
+
+- **`model`**: `string | null`
+  The identifier of the language model being used by the agent (e.g., "gpt-4o"). This is shown in the UI's inspector panel. If the model is not known or not applicable, this should be `null`.
+
+- **`multiTurn`**: `boolean`
+  Indicates whether the server is configured to handle multi-turn conversation history.
+
+- **`systemPrompt`**: `string | null`
+  The [System Prompt](../concepts/system-prompt.md) used by the agent. If a string is provided, it will be displayed in a read-only format in the UI's settings panel. If `null`, the system prompt is not exposed in the UI.
 
 ## Examples
 
-### Basic Configuration
+Below is an example of a `DevUiOptions` object for a fictional "HelpDesk" agent.
+
 ```typescript
 import { DevUiOptions } from 'yaaf';
 
-const options: DevUiOptions = {
-  name: "WeatherBot",
-  version: "1.2.0",
+const helpDeskAgentUiOptions: DevUiOptions = {
+  name: 'HelpDesk Agent',
+  version: '1.2.0',
   streaming: true,
-  model: "gpt-4o",
+  model: 'claude-3-5-sonnet-20240620',
   multiTurn: true,
-  systemPrompt: "You are a helpful assistant that provides weather updates."
+  systemPrompt: 'You are a helpful assistant for our internal IT help desk.',
 };
+
+// This object would be passed to a function like buildDevUiHtml
+// to generate the development UI.
 ```
 
-### Minimal Configuration
-```typescript
-const options: DevUiOptions = {
-  name: "SimpleAgent",
-  version: "0.1.0",
-  streaming: false,
-  model: null,
-  multiTurn: false,
-  systemPrompt: null
-};
-```
+## See Also
+
+- The `buildDevUiHtml` function, which consumes this options object to generate the UI.
+- The `createServer` function, which can be configured to serve the Development UI.
+
+## Sources
+
+[Source 1]: src/runtime/devUi.ts

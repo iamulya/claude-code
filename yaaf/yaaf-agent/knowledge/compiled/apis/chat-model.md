@@ -1,113 +1,81 @@
 ---
 title: ChatModel
-entity_type: api
-summary: Interface for LLM providers to implement OpenAI-compatible tool calling and message exchange.
+summary: Represents an interface for a chat-oriented language model used by the agent for various tasks.
 export_name: ChatModel
 source_file: src/agents/runner.ts
-category: interface
+category: type
+entity_type: api
+search_terms:
+ - language model interface
+ - LLM abstraction
+ - chat model type
+ - how to use a model with an agent
+ - provider-agnostic model
+ - YAAF model type
+ - agent model configuration
+ - passing a model to a function
+ - what is ChatModel
+ - LLM provider integration
 stub: false
-compiled_at: 2026-04-16T14:13:58.336Z
+compiled_at: 2026-04-24T16:54:46.650Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/runner.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/toolSummary.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`ChatModel` is the primary abstraction for Large Language Model (LLM) providers within the YAAF framework. It defines a standardized, OpenAI-compatible interface for message exchange and tool calling. By implementing this interface, developers can integrate various LLM backends—such as OpenAI, Google Gemini, Ollama, or Groq—into the framework's agentic workflows.
 
-The interface is designed to be LLM-agnostic, allowing the `AgentRunner` to interact with any provider that can process a list of messages and return either text or tool execution requests.
+The `ChatModel` type is a generic interface that represents a chat-oriented large language model ([LLM](../concepts/llm.md)) within the YAAF framework. It serves as a standardized contract, allowing different components of the framework, such as agents and utility functions, to interact with various underlying LLM providers without being coupled to a specific implementation. This abstraction is central to YAAF's provider-agnostic architecture.
 
-## Signature / Constructor
+Components that require LLM capabilities, such as the `generateToolUseSummary` function, accept an object conforming to the `ChatModel` type to perform their operations [Source 1].
 
-### Interface Definition
-```typescript
-export interface ChatModel {
-  /** Optional model identifier — propagated to OTel spans */
-  readonly model?: string
+## Signature
 
-  complete(params: {
-    messages: ChatMessage[]
-    tools?: ToolSchema[]
-    temperature?: number
-    maxTokens?: number
-    signal?: AbortSignal
-  }): Promise<ChatResult>
-}
-```
-
-### Supporting Types
-The interface relies on several standardized types for message and tool definitions:
+The provided source material does not include the full definition of the `ChatModel` type itself. However, its usage as a type annotation in other components illustrates its role. For example, the `ToolSummaryConfig` type requires a `model` property of type `ChatModel` [Source 1].
 
 ```typescript
-export type ChatMessage =
-  | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
-  | { role: 'tool'; content: string; tool_call_id: string }
+// From src/utils/toolSummary.ts
 
-export type ToolCall = {
-  id: string
-  name: string
-  arguments: string // JSON string
-}
+import type { ChatModel } from "../agents/runner.js";
 
-export type ToolSchema = {
-  type: 'function'
-  function: {
-    name: string
-    description: string
-    parameters: Record<string, unknown>
-  }
-}
+export type ToolSummaryConfig = {
+  /** Tools executed in this batch. */
+  tools: ToolInfo[];
+  /** The model to use for summarization (small/fast recommended). */
+  model: ChatModel;
+  /** Abort signal. */
+  signal?: AbortSignal;
+  /** Most recent assistant text for context. */
+  lastAssistantText?: string;
+};
 ```
-
-## Methods & Properties
-
-| Name | Type | Description |
-| :--- | :--- | :--- |
-| `model` | `readonly string` (optional) | An optional identifier for the specific model version (e.g., "gpt-4o"). This is used for observability and OpenTelemetry (OTel) tracing. |
-| `complete` | `Method` | The core execution method. It accepts an array of messages and optional tool schemas, returning a promise that resolves to a `ChatResult`. |
 
 ## Examples
 
-### Implementing a Custom Provider
-This conceptual example shows how one might wrap a provider to satisfy the `ChatModel` interface.
+The following example demonstrates how an object conforming to the `ChatModel` interface is passed to a utility function. A `smallModel` variable, which is assumed to be an instance of a `ChatModel`, is provided in the configuration for `generateToolUseSummary` [Source 1].
 
 ```typescript
-import { ChatModel, ChatMessage, ToolSchema, ChatResult } from 'yaaf';
+import { generateToolUseSummary } from './utils/toolSummary';
+import type { ChatModel } from './agents/runner';
 
-class MyCustomProvider implements ChatModel {
-  readonly model = 'my-llm-v1';
+// Assume 'smallModel' is an initialized object that conforms to the ChatModel interface.
+declare const smallModel: ChatModel;
 
-  async complete(params: {
-    messages: ChatMessage[];
-    tools?: ToolSchema[];
-  }): Promise<ChatResult> {
-    // Implementation logic to call the specific LLM API
-    // and map the response back to the ChatResult format.
-    const response = await fetch('https://api.myprovider.ai/v1/chat', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-    
-    return response.json();
-  }
+async function summarizeToolExecution() {
+  const summary = await generateToolUseSummary({
+    tools: [
+      { name: 'read_file', input: { path: 'src/auth.ts' }, output: '...' },
+      { name: 'edit_file', input: { path: 'src/auth.ts', changes: '...' }, output: 'OK' },
+    ],
+    model: smallModel, // Passing the ChatModel instance
+  });
+
+  console.log(summary);
+  // Expected output: "Fixed auth validation in auth.ts"
 }
 ```
 
-### Usage with AgentRunner
-The `ChatModel` is typically passed into an `AgentRunner` to drive the agent loop.
+## Sources
 
-```typescript
-const runner = new AgentRunner({
-  model: new MyCustomProvider(),
-  tools: [grepTool, readTool],
-  systemPrompt: 'You are a helpful coding assistant.',
-});
-
-const response = await runner.run('Find all TODO comments');
-```
-
-## See Also
-- `StreamingChatModel` — An extension of this interface for models supporting real-time delta updates.
-- `AgentRunner` — The execution loop that utilizes `ChatModel` to process agent tasks.
+[Source 1]: src/utils/toolSummary.ts

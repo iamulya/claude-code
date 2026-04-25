@@ -37,6 +37,7 @@ const KB_DIR    = path.join(AGENT_DIR, 'knowledge')
 const flags = {
   incremental: process.argv.includes('--incremental'),
   lintOnly: process.argv.includes('--lint-only'),
+  fix: process.argv.includes('--fix'),
   force: process.argv.includes('--force'),
   verbose: process.argv.includes('--verbose'),
 }
@@ -89,7 +90,34 @@ async function main() {
     console.log('Running linter...')
     const report = await compiler.lint()
     printLintReport(report)
-    process.exit(report.errors.length > 0 ? 1 : 0)
+    process.exit((report.summary?.errors ?? 0) > 0 ? 1 : 0)
+  }
+
+  // ── Fix only (lint → apply fixes → re-lint) ──────────────────────────────
+
+  if (flags.fix) {
+    console.log('Running linter...')
+    const report = await compiler.lint()
+    const fixableCount = report.summary?.autoFixable ?? 0
+    if (fixableCount === 0) {
+      console.log('  No auto-fixable issues found.')
+      printLintReport(report)
+      process.exit(0)
+    }
+
+    console.log(`  Found ${fixableCount} auto-fixable issue(s). Applying fixes...`)
+    const fixResult = await compiler.fix(report, false)
+    console.log(`  ✅ Applied ${fixResult.fixed} fix(es) across ${fixResult.filesModified} file(s).`)
+    if (fixResult.failed > 0) {
+      console.log(`  ⚠️  ${fixResult.failed} fix(es) failed to apply.`)
+    }
+    console.log('')
+
+    // Re-lint to see remaining issues
+    console.log('Re-running linter to verify...')
+    const postReport = await compiler.lint()
+    printLintReport(postReport)
+    process.exit((postReport.summary?.errors ?? 0) > 0 ? 1 : 0)
   }
 
   // ── Full or incremental compile ───────────────────────────────────────────
@@ -169,15 +197,28 @@ function formatProgress(event: any): string {
 
 function printLintReport(report: any) {
   if (!report) return
-  const errors = report.errors ?? []
-  const warnings = report.warnings ?? []
+  const issues: any[] = report.issues ?? []
+  const errors = issues.filter((i: any) => i.severity === 'error')
+  const warnings = issues.filter((i: any) => i.severity === 'warning')
+  const info = issues.filter((i: any) => i.severity === 'info')
 
-  if (errors.length === 0 && warnings.length === 0) {
+  if (issues.length === 0) {
     console.log('  ✅ Lint: no issues')
     return
   }
 
+  // Summary line
+  console.log(`  Lint: ${errors.length} error(s), ${warnings.length} warning(s), ${info.length} info`)
+
+  if (report.summary?.byCode) {
+    console.log('  By code:')
+    for (const [code, count] of Object.entries(report.summary.byCode)) {
+      console.log(`    ${code}: ${count}`)
+    }
+  }
+
   if (errors.length > 0) {
+    console.log('')
     console.log(`  ❌ ${errors.length} lint error(s):`)
     for (const e of errors.slice(0, 10)) {
       console.log(`    • [${e.docId ?? '?'}] ${e.message}`)
@@ -186,11 +227,17 @@ function printLintReport(report: any) {
   }
 
   if (warnings.length > 0) {
+    console.log('')
     console.log(`  ⚠️  ${warnings.length} lint warning(s):`)
     for (const w of warnings.slice(0, 5)) {
       console.log(`    • [${w.docId ?? '?'}] ${w.message}`)
     }
     if (warnings.length > 5) console.log(`    ... and ${warnings.length - 5} more`)
+  }
+
+  if (report.summary?.autoFixable > 0) {
+    console.log('')
+    console.log(`  🔧 ${report.summary.autoFixable} issue(s) are auto-fixable (run kb:compile to apply)`)
   }
 }
 

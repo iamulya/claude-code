@@ -1,49 +1,52 @@
 ---
-summary: A design pattern in YAAF that uses a two-step process (index scan + LLM selection) to manage large memory sets within finite context windows.
 title: Memory Relevance
 entity_type: concept
-stub: false
-compiled_at: 2026-04-16T14:29:55.148Z
-compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/memory/relevance.ts
-confidence: 0.9
----
-
----
-title: Memory Relevance
-entity_type: concept
-summary: A design pattern in YAAF that uses a two-step process (index scan + LLM selection) to manage large memory sets within finite context windows.
+summary: A mechanism in YAAF that uses a fast LLM to select the most relevant memories from a large store to include in the current context for a given query.
 related_subsystems:
-  - Memory System
+ - Memory Subsystem
+search_terms:
+ - how to select relevant memories
+ - agent memory management
+ - context window optimization
+ - LLM memory retrieval
+ - reducing context size
+ - fast memory selection
+ - MemoryRelevanceEngine
+ - RelevanceQueryFn
+ - keeping context lean
+ - dynamic memory injection
+ - memory store filtering
+ - what is memory relevance
+stub: false
+compiled_at: 2026-04-24T17:58:31.633Z
+compiled_from:
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/relevance.ts
+compiled_from_quality: unknown
+confidence: 0.85
+---
 
 ## What It Is
-Memory Relevance is a design pattern and architectural component in YAAF used to manage large volumes of stored information within the constraints of an LLM's context window. As an agent accumulates memories, it becomes impossible to include all historical data in every prompt without exceeding token limits or increasing latency and costs.
-
-The Memory Relevance engine solves this by acting as a filtering layer. It ensures that the agent remains "context-aware" of hundreds of potential memories while only consuming the token budget required for the most pertinent information.
+[Memory](./memory.md) Relevance is the process within YAAF for dynamically selecting the most pertinent memories from a large memory store in response to a specific user query [Source 1]. This mechanism addresses the challenge of providing an agent with access to a vast knowledge base (potentially hundreds of memories) while respecting the size, cost, and latency constraints of an [LLM](./llm.md)'s [Context Window](./context-window.md). By injecting only the most relevant information for the current task, it keeps the context lean and efficient [Source 1].
 
 ## How It Works in YAAF
-The relevance mechanism in YAAF follows a specific four-step lifecycle managed by the `MemoryRelevanceEngine` class:
+The Memory Relevance process is orchestrated by the `MemoryRelevanceEngine` class. The design follows a multi-step approach to identify and load relevant information [Source 1]:
 
-1.  **Index Loading**: The system always loads a primary index file, typically `MEMORY.md`, into the system prompt to provide a high-level map of available knowledge.
-2.  **Header Scanning**: The engine scans the headers of all available memory files. It specifically extracts the name and description from the frontmatter of each file (defined in the `MemoryHeader` type).
-3.  **LLM Selection**: The engine uses a fast, cost-effective model (such as Claude 3 Sonnet) to evaluate the user's current query against the scanned headers. The model is tasked with selecting a maximum of five relevant memories.
-4.  **Context Injection**: Only the selected memories are injected as attachments into the current conversation turn.
+1.  **Index Loading**: A central index file, `MEMORY.md`, is always loaded into the [System Prompt](./system-prompt.md) to provide a high-level overview of available memories.
+2.  **Header Scanning**: The engine scans the headers (specifically, the name and description from the [Frontmatter](./frontmatter.md)) of all available memory files. This avoids loading the full content of every memory.
+3.  **LLM-based Selection**: A fast, inexpensive LLM is invoked to analyze the user's query against the scanned memory headers. This model is tasked with selecting a small number of relevant memories (typically five or fewer).
+4.  **Context Injection**: The full content of only the selected memories is injected as attachments into the context for the current turn.
 
-This approach is designed to be performant and cost-effective. According to the source implementation, the selection step typically adds approximately 200ms of latency and costs between 1 and 2 cents per query, depending on the provider used.
+This selection step introduces a minor performance trade-off, adding approximately 200ms of latency and a cost of 1-2 cents per query, in exchange for significantly more efficient context utilization [Source 1].
 
-### Technical Components
-- **`MemoryRelevanceEngine`**: The primary class responsible for executing the selection logic.
-- **`RelevanceQueryFn`**: A function signature that allows developers to inject their own LLM adapter. This ensures the framework remains provider-agnostic, allowing the relevance check to be performed by any supported model.
-- **`RelevantMemory`**: A type representing the metadata of a selected memory, including its file path, filename, and last modification time (`mtimeMs`).
+To remain provider-agnostic, the framework does not implement the [LLM Call](./llm-call.md) directly. Instead, it defines a `RelevanceQueryFn` function signature. Developers inject their own LLM adapter that conforms to this signature [when](../apis/when.md) instantiating the `MemoryRelevanceEngine`, allowing them to use any model provider for the relevance check [Source 1].
 
 ## Configuration
-Developers configure the relevance engine by providing a concrete implementation of the `RelevanceQueryFn`. This implementation defines which model is used to perform the selection and how the request is formatted.
+A developer configures the Memory Relevance mechanism by instantiating the `MemoryRelevanceEngine` and providing a concrete implementation for the `RelevanceQueryFn`. This function encapsulates the logic for calling a specific LLM endpoint [Source 1].
+
+The following example demonstrates how to configure the engine using a hypothetical `callSonnet` function to perform the relevance check:
 
 ```typescript
-import { MemoryRelevanceEngine } from './memory/relevance.js';
-
 const engine = new MemoryRelevanceEngine(async ({ system, userMessage, maxTokens }) => {
-  // Example using a hypothetical provider adapter
   const response = await callSonnet({ 
     system, 
     messages: [{ role: 'user', content: userMessage }], 
@@ -52,7 +55,9 @@ const engine = new MemoryRelevanceEngine(async ({ system, userMessage, maxTokens
   return response.text;
 });
 
-// Finding relevant memories among a collection of headers
+const allHeaders = [/* ... array of MemoryHeader objects ... */];
+const signal = new AbortController().signal;
+
 const memories = await engine.findRelevant(
   'How do I configure the build system?',
   allHeaders,
@@ -61,4 +66,4 @@ const memories = await engine.findRelevant(
 ```
 
 ## Sources
-- `src/memory/relevance.ts`
+[Source 1]: src/memory/relevance.ts

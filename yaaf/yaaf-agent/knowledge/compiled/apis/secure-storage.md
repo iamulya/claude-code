@@ -1,32 +1,67 @@
 ---
 title: SecureStorage
 entity_type: api
-summary: An AES-256-GCM encrypted key-value store for sensitive data like API keys and database URLs.
+summary: An AES-256-GCM encrypted key-value store for sensitive data, ensuring zero plaintext on disk.
 export_name: SecureStorage
-source_file: src/security.ts
+source_file: src/secure-storage.ts
 category: class
+search_terms:
+ - encrypted key-value store
+ - store API keys securely
+ - AES-256-GCM encryption
+ - zero plaintext on disk
+ - YAAF_STORAGE_KEY
+ - PBKDF2 key derivation
+ - machine-derived key
+ - how to store secrets
+ - agent secret management
+ - sensitive data persistence
+ - Node.js crypto storage
+ - cross-platform secret storage
 stub: false
-compiled_at: 2026-04-16T14:11:07.245Z
+compiled_at: 2026-04-24T17:36:08.727Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/security.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/storage/secureStorage.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/security.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/storage/secureStorage.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`SecureStorage` is a utility class designed to persist sensitive agent data, such as API keys, tokens, and database credentials, encrypted at rest. It utilizes AES-256-GCM encryption via the native Node.js `crypto` module, ensuring zero plaintext is stored on disk. 
 
-Each stored value is individually encrypted with a unique 12-byte Initialization Vector (IV), meaning identical values will produce different ciphertexts. The system is cross-platform and does not require native addon dependencies.
+`SecureStorage` is a key-value store that provides AES-256-GCM encryption for sensitive agent data such as API keys, tokens, and other user secrets [Source 2]. Its primary design goal is to ensure that zero plaintext data is ever written to disk [Source 1].
+
+The implementation uses pure Node.js crypto modules, making it cross-platform without requiring native addon dependencies [Source 2]. Each value is individually encrypted with a unique, randomly generated 12-byte Initialization Vector (IV) for every write operation. This ensures that identical plaintext values produce different ciphertext, enhancing security [Source 1, Source 2].
+
+The encryption key can be derived in one of three ways, in order of precedence [Source 1, Source 2]:
+
+1.  **Environment Variable**: The `YAAF_STORAGE_KEY` environment variable, containing a 32-byte hex string. This is the recommended method for production environments.
+2.  **Password-based**: A `masterPassword` provided to the constructor, which uses PBKDF2 to derive the key. This is suitable for developer machines.
+3.  **Machine Key**: An automatically derived key based on the machine's hostname and the current user's username. This is a fallback for development purposes and is not recommended for production use.
+
+Encrypted files are stored with a `.enc` extension. Each file contains the 12-byte IV, a 16-byte authentication tag, and the ciphertext. If password-based [Key Derivation](../concepts/key-derivation.md) is used, a `.salt` file is also created in the storage directory [Source 1].
 
 ## Signature / Constructor
 
-### SecureStorageConfig
-The configuration object for initializing the storage.
+`SecureStorage` is instantiated with a configuration object that defines its namespace and key derivation strategy.
+
+```typescript
+import { SecureStorage } from 'yaaf';
+
+const store = new SecureStorage({
+  namespace: 'my-agent',
+  storageDir: './.secrets',
+});
+```
+
+### Configuration
+
+The constructor accepts a `SecureStorageConfig` object with the following properties [Source 2]:
 
 ```typescript
 export type SecureStorageConfig = {
   /**
-   * Namespace for this store. Determines the storage organization.
+   * Namespace for this store.
    */
   namespace: string;
 
@@ -37,78 +72,107 @@ export type SecureStorageConfig = {
   dir?: string;
 
   /**
-   * Master password used to derive the encryption key via PBKDF2.
-   * Overridden by the YAAF_STORAGE_KEY environment variable.
-   * If neither is provided, falls back to a machine-stable key.
+   * Master password used to derive the encryption key.
+   * Overridden by `YAAF_STORAGE_KEY` env var.
+   * If neither is provided, falls back to a machine-stable key (dev-only).
    */
   masterPassword?: string;
-}
-```
-
-### Constructor
-```typescript
-constructor(config: SecureStorageConfig)
+};
 ```
 
 ## Methods & Properties
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `set` | `set(key: string, value: string): Promise<void>` | Encrypts the provided string value and writes it to disk. |
-| `get` | `get(key: string): Promise<string \| undefined>` | Reads the encrypted file, decrypts the content, and returns the plaintext. |
-| `list` | `list(): Promise<string[]>` | Returns an array of all keys currently stored within the namespace. |
-| `delete` | `delete(key: string): Promise<void>` | Removes the encrypted file associated with the specified key. |
+The `SecureStorage` class provides standard asynchronous methods for a key-value store.
 
-## Key Derivation
-The encryption key used by `SecureStorage` is derived using one of three modes, prioritized in the following order:
+### `set(key: string, value: string): Promise<void>`
 
-1.  **Environment Variable**: If `YAAF_STORAGE_KEY` is set (expected as a hex string), it is used as the master key. This is the recommended approach for production environments.
-2.  **Password-based**: If a `masterPassword` is provided in the configuration, the key is derived using PBKDF2. A `.salt` file is created in the storage directory to facilitate this.
-3.  **Machine-stable Key**: If no environment variable or password is provided, the framework derives a key from the local hostname and username. This mode is intended for development only.
+Encrypts and stores a value associated with the given key [Source 1].
 
-## Storage Format
-Data is stored in the specified directory (defaulting to `~/.yaaf/secure/`) with the following structure:
-- Individual keys are stored as `<key>.enc` files.
-- Each `.enc` file contains a 12-byte IV, a 16-byte authentication tag, and the ciphertext.
-- A `.salt` file is present if password-based derivation is used.
+### `get(key: string): Promise<string | null>`
+
+Retrieves and decrypts the value for the given key. Returns `null` if the key does not exist [Source 1].
+
+### `list(): Promise<string[]>`
+
+Returns an array of all keys stored in the namespace [Source 1].
+
+### `delete(key: string): Promise<void>`
+
+Deletes the key-value pair from the store [Source 1].
 
 ## Examples
 
 ### Basic Usage
+
+The following example demonstrates creating a store and performing basic CRUD (Create, Read, Update, Delete) operations [Source 1].
+
 ```typescript
 import { SecureStorage } from 'yaaf';
 
 const store = new SecureStorage({
   namespace: 'my-agent',
-  dir: './.secrets',
+  storageDir: './.secrets',
 });
 
-// Storing sensitive data
+// Set sensitive data
 await store.set('openai_key', 'sk-...');
 await store.set('database_url', 'postgres://...');
 
-// Retrieving data
+// Get a specific key
 const key = await store.get('openai_key');
+console.log(key); // 'sk-...'
 
-// Management
-const allKeys = await store.list(); // ['openai_key', 'database_url']
+// List all keys
+const allKeys = await store.list();
+console.log(allKeys); // ['openai_key', 'database_url']
+
+// Delete a key
 await store.delete('openai_key');
 ```
 
-### Configuration Modes
-The source material indicates a discrepancy between documentation examples and the TypeScript interface regarding property names. The TypeScript interface uses `dir` and `masterPassword`.
+### Key Derivation Modes
+
+`SecureStorage` can be configured to derive its encryption key in several ways [Source 1].
+
+**1. Environment Variable (Recommended for Production)**
+
+Set the `YAAF_STORAGE_KEY` environment variable. This method takes precedence over all others.
+
+```bash
+# Generate a secure key
+export YAAF_STORAGE_KEY=$(openssl rand -hex 32)
+```
 
 ```typescript
-// 1. Environment variable mode (Recommended)
-// export YAAF_STORAGE_KEY=$(openssl rand -hex 32)
-const store = new SecureStorage({ namespace: 'prod-agent' });
-
-// 2. Password-based mode
+// No password or key needed in code
 const store = new SecureStorage({
-  namespace: 'dev-agent',
-  masterPassword: 'my-secure-passphrase',
+  namespace: 'my-agent',
 });
-
-// 3. Machine-derived mode (Default)
-const store = new SecureStorage({ namespace: 'local-test' });
 ```
+
+**2. Password-Based (for Development)**
+
+Provide a password directly to the constructor. This uses PBKDF2 for key derivation.
+
+```typescript
+const store = new SecureStorage({
+  namespace: 'my-agent',
+  masterPassword: 'my-super-secret-passphrase',
+});
+```
+
+**3. Machine-Derived Key (for Development)**
+
+If no environment variable or password is provided, a key is automatically derived from machine-specific information like the hostname and username.
+
+```typescript
+const store = new SecureStorage({
+  namespace: 'my-agent',
+  // No key or password provided
+});
+```
+
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/security.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/storage/secureStorage.ts

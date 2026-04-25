@@ -39,9 +39,12 @@ export function resolveWikilinks(
   markdown: string,
   registry: ConceptRegistry,
   currentDocId: string,
-): { resolved: string; resolvedCount: number; unresolvedCount: number } {
+): { resolved: string; resolvedCount: number; unresolvedCount: number; strippedCount: number; resolvedTargets: string[] } {
   let resolvedCount = 0;
   let unresolvedCount = 0;
+  let strippedCount = 0;
+  // A6-a: Track which docIds this article links to (for dependency graph)
+  const resolvedTargetSet = new Set<string>();
 
   // H4: split on fenced code blocks AND inline code spans so WIKILINK_RE never
   // matches inside either. Triple-backtick fences were protected before (Pass 14);
@@ -58,18 +61,30 @@ export function resolveWikilinks(
       const docId = resolveToDocId(trimmedTarget, registry);
 
       if (!docId) {
+        // Strip broken wikilinks to plain text instead of leaving [[BrokenTarget]].
+        // This converts LLM-hallucinated targets into readable text without pretending
+        // they're links. The linter won't flag these as BROKEN_WIKILINK anymore.
         unresolvedCount++;
-        return _match; // Leave unresolved wikilinks as-is
+        strippedCount++;
+        const display = displayText?.trim() || trimmedTarget;
+        return display;
       }
 
       resolvedCount++;
+      resolvedTargetSet.add(docId);
       const display = displayText?.trim() || trimmedTarget;
       const relativePath = computeRelativePath(currentDocId, docId);
       return `[${display}](${relativePath})`;
     });
   });
 
-  return { resolved: processedSegments.join(""), resolvedCount, unresolvedCount };
+  return {
+    resolved: processedSegments.join(""),
+    resolvedCount,
+    unresolvedCount,
+    strippedCount,
+    resolvedTargets: [...resolvedTargetSet],
+  };
 }
 
 /**
@@ -384,6 +399,16 @@ export type PostProcessOptions = {
 export type PostProcessResult = {
   wikilinks: { resolved: number; unresolved: number };
   segmentation: SegmentResult | null;
+  /**
+   * A6-a: Per-article wikilink dependency data for the differential manifest.
+   * Maps each article's docId to the docIds it links to.
+   */
+  wikilinkDeps: Record<string, string[]>;
+  /**
+   * A6-b: DocIds that still have unresolved [[wikilinks]] after postprocess.
+   * Used by differential engine to target wikilink refreshes on vocabulary expansion.
+   */
+  unresolvedDocIds: string[];
 };
 
 /**
@@ -404,6 +429,10 @@ export async function postProcessCompiledArticles(
   let totalResolved = 0;
   let totalUnresolved = 0;
 
+  // A6-a: Collect per-article wikilink dependencies
+  const wikilinkDeps: Record<string, string[]> = {};
+  const unresolvedDocIds: string[] = [];
+
   // B1: Resolve wikilinks in all compiled articles
   if (resolveLinks) {
     const mdFiles = await scanMarkdownFiles(compiledDir);
@@ -413,11 +442,21 @@ export async function postProcessCompiledArticles(
       const relPath = relative(compiledDir, filePath);
       const docId = relPath.replace(/\\/g, "/").replace(/\.md$/, "");
 
-      const { resolved, resolvedCount, unresolvedCount } = resolveWikilinks(raw, registry, docId);
+      const { resolved, resolvedCount, unresolvedCount, resolvedTargets } = resolveWikilinks(raw, registry, docId);
 
       if (resolvedCount > 0) {
         // S2: atomicWriteFile prevents half-rewritten compiled articles on crash.
         await atomicWriteFile(filePath, resolved);
+      }
+
+      // A6-a: Record which docIds this article links to
+      if (resolvedTargets.length > 0) {
+        wikilinkDeps[docId] = resolvedTargets;
+      }
+
+      // A6-b: Track articles with unresolved wikilinks
+      if (unresolvedCount > 0) {
+        unresolvedDocIds.push(docId);
       }
 
       totalResolved += resolvedCount;
@@ -434,6 +473,8 @@ export async function postProcessCompiledArticles(
   return {
     wikilinks: { resolved: totalResolved, unresolved: totalUnresolved },
     segmentation,
+    wikilinkDeps,
+    unresolvedDocIds,
   };
 }
 

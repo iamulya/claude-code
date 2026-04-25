@@ -172,6 +172,11 @@ export class KnowledgeSynthesizer {
       .map((articlePlan) =>
         semaphore.withPermit(async () => {
           const result = await this.synthesizeArticle(articlePlan, contentsByPath, options, emit);
+          // Finding 17: notify the compiler that this article completed so it can
+          // write a checkpoint. Fire-and-forget — checkpoint failures don't stall synthesis.
+          if (result.action === "created" || result.action === "updated") {
+            options.onArticleComplete?.(result.docId);
+          }
           return result;
         }),
       );
@@ -319,6 +324,25 @@ export class KnowledgeSynthesizer {
         this.ontology,
       );
 
+      // Backfill missing required fields from the extractor's suggested frontmatter.
+      // The LLM frequently omits fields like export_name, source_file, and category
+      // even when marked REQUIRED in the prompt. The extractor infers these from
+      // static analysis and they're almost always correct.
+      if (!validationResult.valid) {
+        for (const err of validationResult.errors) {
+          const fieldName = err.field.split(".").pop();
+          if (!fieldName) continue;
+          // Check if the plan's suggestedFrontmatter has this field
+          const suggested = articlePlan.suggestedFrontmatter[fieldName];
+          if (suggested !== undefined && suggested !== null && suggested !== "") {
+            validationResult.values[fieldName] = suggested;
+          } else if (fieldName === "summary") {
+            // For summary specifically, use the canonical title as a last resort
+            validationResult.values[fieldName] = articlePlan.canonicalTitle;
+          }
+        }
+      }
+
       // Build complete frontmatter (with compiler metadata)
       const compiledAt = new Date().toISOString();
       const completeFrontmatter = buildCompleteFrontmatter(
@@ -332,6 +356,9 @@ export class KnowledgeSynthesizer {
           confidence: articlePlan.confidence,
           isStub: false,
           compiledAt,
+          sourceTrust: articlePlan.sourceTrust, // C4/A1: propagate aggregate trust
+          // 1.1: pass TTL from ontology so expires_at is stamped at compile time
+          freshnessTtlDays: schema.freshness_ttl_days,
         },
       );
 
@@ -436,6 +463,7 @@ export class KnowledgeSynthesizer {
       knownLinkDocIds: parentDocIds,
       registry: this.registry,
       compiledAt,
+      ontology: this.ontology,
     });
 
     const outputPath = join(this.compiledDir, `${docId}.md`);

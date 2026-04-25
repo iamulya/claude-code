@@ -362,6 +362,12 @@ export class StreamingToolExecutor {
               role: m.role,
               content: "content" in m ? m.content : "",
             })),
+            // OS-level sandbox: automatically wrap exec so ALL shell commands
+            // from ALL tools go through kernel-enforced isolation.
+            // This is transparent — tools don't need to know about the sandbox.
+            exec: this.config.sandbox && this.toolContext.exec
+              ? this.config.sandbox.createSandboxedExec(this.toolContext.exec)
+              : this.toolContext.exec,
             // IAM: inject user context and resolved scope into tools
             extra: {
               ...this.toolContext.extra,

@@ -1,99 +1,92 @@
 ---
+summary: An executor that can run multiple concurrency-safe tools in parallel to improve agent efficiency.
+export_name: StreamingToolExecutor
+source_file: src/tool-executor.ts
+category: class
 title: StreamingToolExecutor
 entity_type: api
-summary: An executor responsible for managing the parallel execution of multiple concurrency-safe tools.
-export_name: StreamingToolExecutor
-source_file: src/agents/streamingExecutor.ts
-category: class
+search_terms:
+ - concurrent tool execution
+ - parallel tool calls
+ - how to run tools at the same time
+ - speed up agent tools
+ - StreamingToolExecutor configuration
+ - tool concurrency
+ - agent performance optimization
+ - isConcurrencySafe tools
+ - tool executor
+ - batch tool execution
+ - asynchronous tool calls
 stub: false
-compiled_at: 2026-04-16T14:12:04.282Z
+compiled_at: 2026-04-25T00:14:29.850Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/tools.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/streamingExecutor.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/tools.md
+compiled_from_quality: documentation
 confidence: 1
 ---
 
 ## Overview
-The `StreamingToolExecutor` is a specialized class designed to manage the lifecycle of tool calls generated during a streaming LLM interaction. It is responsible for executing tools as they arrive from the model's response while maintaining strict execution and ordering guarantees.
 
-The executor differentiates between tools based on their safety flags. Tools marked as `isConcurrencySafe` are executed in parallel, while non-concurrent tools are granted exclusive access, ensuring no other tools run simultaneously. Despite parallel execution, the `StreamingToolExecutor` ensures that results are yielded in the original order requested by the LLM. It also implements "sibling abort" logic, where an error in one tool call triggers the cancellation of other tools running in the same batch.
+The `StreamingToolExecutor` is a class responsible for executing multiple tool calls in parallel. It is designed to improve agent performance by running tools that are marked as concurrency-safe simultaneously, rather than sequentially [Source 1].
 
-## Signature / Constructor
+This executor is particularly useful in scenarios where an agent needs to perform several independent, long-running tasks, such as making multiple API calls for data gathering. The YAAF [AgentRunner](./agent-runner.md) automatically utilizes this executor when the tools provided to it are flagged with `isConcurrencySafe: () => true` [Source 1].
+
+## Constructor
+
+The `StreamingToolExecutor` is instantiated with a configuration object that specifies the available tools and the maximum level of concurrency.
 
 ```typescript
-export class StreamingToolExecutor {
-  constructor(options: {
-    tools: Tool[];
-    concurrency?: number;
-  })
+interface StreamingToolExecutorConfig {
+  /**
+   * An array of tool definitions available to the executor.
+   */
+  tools: Tool[];
+
+  /**
+   * The maximum number of tools to execute in parallel.
+   */
+  concurrency?: number;
 }
+
+constructor(config: StreamingToolExecutorConfig);
 ```
 
 ### Parameters
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tools` | `Tool[]` | An array of tool definitions available for execution. |
-| `concurrency` | `number` | The maximum number of concurrency-safe tools allowed to run in parallel. |
 
-### Associated Types
-**ToolExecutionResult**
-```typescript
-export type ToolExecutionResult = {
-  toolCallId: string;
-  name: string;
-  content: string;
-  error?: boolean;
-  durationMs: number;
-}
-```
-
-## Methods & Properties
-The `StreamingToolExecutor` provides internal mechanisms to:
-*   **Identify Tools**: Uses `findToolByName` to match LLM requests to registered tool definitions.
-*   **Manage Concurrency**: Orchestrates parallel execution for tools where `isConcurrencySafe` returns `true`.
-*   **Handle Progress**: Supports yielding incremental updates or progress messages from tools during their execution.
-*   **Enforce Ordering**: Buffers results to ensure they are returned to the agent in the sequence they were called, regardless of completion time.
+-   `config` (`StreamingToolExecutorConfig`): The configuration for the executor.
+    -   `tools` (`Tool[]`): An array of tool objects that the executor can run.
+    -   `concurrency` (`number`, optional): The maximum number of tools that can be run in parallel. Defaults to a reasonable number if not specified.
 
 ## Examples
 
-### Basic Initialization
-The executor is typically initialized with a set of tools and a concurrency limit. It is used automatically by the framework's agent runners when tools are configured as concurrency-safe.
+The following example demonstrates how to create an instance of `StreamingToolExecutor` with a set of tools and a specified concurrency level.
 
 ```typescript
-import { StreamingToolExecutor } from 'yaaf';
+import { StreamingToolExecutor, buildTool } from 'yaaf';
+
+// Assume searchTool, weatherTool, and calendarTool are defined
+// using buildTool and are marked as concurrency-safe.
+const searchTool = buildTool({ /* ... */ isConcurrencySafe: () => true });
+const weatherTool = buildTool({ /* ... */ isConcurrencySafe: () => true });
+const calendarTool = buildTool({ /* ... */ isConcurrencySafe: () => true });
 
 const executor = new StreamingToolExecutor({
   tools: [searchTool, weatherTool, calendarTool],
   concurrency: 3,
 });
+
+// This executor can now run up to 3 of these tools in parallel.
+// AgentRunner uses this automatically when tools are concurrency-safe.
 ```
-
-### Defining a Concurrency-Safe Tool
-For the `StreamingToolExecutor` to run tools in parallel, the tool definition must explicitly opt-in via the `isConcurrencySafe` flag.
-
-```typescript
-import { buildTool } from 'yaaf';
-
-const weatherTool = buildTool({
-  name: 'get_weather',
-  description: 'Get current weather for a location.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      location: { type: 'string' },
-    },
-    required: ['location'],
-  },
-  async call({ location }) {
-    const data = await fetchWeather(location);
-    return { data: JSON.stringify(data) };
-  },
-  // Allows StreamingToolExecutor to run this in parallel with other safe tools
-  isConcurrencySafe: () => true,
-});
-```
+[Source 1]
 
 ## See Also
-* `Tool` (interface)
-* `AgentRunner` (class)
-* `ToolLoopDetector` (class)
+
+-   [Tool Execution](../concepts/tool-execution.md): The core concept of how agents use tools.
+-   [Tools](../subsystems/tools.md): The subsystem for defining and managing agent capabilities.
+-   [AgentRunner](./agent-runner.md): The primary class for running agents, which uses `StreamingToolExecutor` internally.
+-   [buildTool](./build-tool.md): The factory function for creating tool definitions, including the `isConcurrencySafe` flag.
+
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/tools.md

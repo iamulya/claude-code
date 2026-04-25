@@ -346,8 +346,8 @@ let _yamlParse: ((s: string) => unknown) | null = null;
 export async function preloadYaml(): Promise<void> {
   if (_yamlParse) return;
   try {
-    // @ts-expect-error — optional peer dep, may not be installed
-    const yamlModule = (await import("yaml")) as { parse: (s: string) => unknown };
+    const yamlId = "yaml";
+    const yamlModule = (await import(/* @vite-ignore */ yamlId)) as { parse: (s: string) => unknown };
     _yamlParse = yamlModule.parse;
   } catch {
     // YAML not available; createFileResolver will throw with a clear message

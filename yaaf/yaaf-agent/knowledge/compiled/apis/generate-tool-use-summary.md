@@ -1,74 +1,95 @@
 ---
 title: generateToolUseSummary
-entity_type: api
-summary: Generates a human-readable one-line summary of completed tool executions using a chat model.
+summary: Generates a human-readable one-line summary of completed tool executions using a language model.
 export_name: generateToolUseSummary
 source_file: src/utils/toolSummary.ts
 category: function
+entity_type: api
+search_terms:
+ - summarize tool calls
+ - human-readable tool execution
+ - tool use summary
+ - generate labels for tool use
+ - tool batch description
+ - what tools were run
+ - tool execution history
+ - concise tool output
+ - toolUseSummaryGenerator
+ - how to label agent actions
+ - tool info summary
+ - agent step summary
 stub: false
-compiled_at: 2026-04-16T14:40:37.979Z
+compiled_at: 2026-04-24T17:08:48.876Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/toolSummary.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/toolSummary.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`generateToolUseSummary` is a utility function designed to produce concise, human-readable descriptions of actions performed by an agent during a tool-use phase. It processes a batch of executed tools and their results, using a provided chat model to synthesize a single-line summary (e.g., "Fixed NPE in UserService" or "Read config.json").
 
-This function is typically used to provide user-facing feedback or to create clean logs of agent activity without exposing the raw JSON input and output of every tool call. It is recommended to use a small, fast model for this task to minimize latency.
+The `generateToolUseSummary` function uses a language model to generate a concise, human-readable, one-line summary for a batch of executed [Tools](../subsystems/tools.md) [Source 1]. This is useful for creating labels that describe an agent's actions, such as "Fixed NPE in UserService" or "Read config.json" [Source 1].
 
-## Signature / Constructor
+It is recommended to use a small and fast language model for this summarization task to ensure efficiency [Source 1]. The function takes a configuration object containing the list of executed tools, the model to use, and optional context like an [Abort Signal](../concepts/abort-signal.md) or the last assistant message [Source 1].
 
-### Function Signature
+## Signature
+
+The function is an `async` function that accepts a `ToolSummaryConfig` object and returns a `Promise` that resolves to a summary `string` or `null` if the generation fails [Source 1].
+
 ```typescript
 export async function generateToolUseSummary(
-  config: ToolSummaryConfig,
-): Promise<string | null>
+  config: ToolSummaryConfig
+): Promise<string | null>;
 ```
 
-### Supporting Types
+### Configuration
 
-#### ToolSummaryConfig
-The configuration object for the summary generation.
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `tools` | `ToolInfo[]` | An array of tools executed in the current batch. |
-| `model` | `ChatModel` | The LLM provider used to generate the summary. |
-| `signal` | `AbortSignal` | (Optional) An abort signal to cancel the request. |
-| `lastAssistantText` | `string` | (Optional) The most recent text from the assistant to provide context for the summary. |
+The `config` object has the following type definition:
 
-#### ToolInfo
-Represents the state of an individual tool execution.
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | The name of the tool that was called. |
-| `input` | `unknown` | The arguments passed to the tool. |
-| `output` | `unknown` | The result returned by the tool. |
+```typescript
+export type ToolSummaryConfig = {
+  /** Tools executed in this batch. */
+  tools: ToolInfo[];
+  /** The model to use for summarization (small/fast recommended). */
+  model: ChatModel;
+  /** Abort signal. */
+  signal?: AbortSignal;
+  /** Most recent assistant text for context. */
+  lastAssistantText?: string;
+};
+```
+
+The `tools` property is an array of `ToolInfo` objects, defined as:
+
+```typescript
+export type ToolInfo = {
+  name: string;
+  input: unknown;
+  output: unknown;
+};
+```
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to generate a summary for a batch of file operations.
+The following example demonstrates how to generate a summary for a batch of two tool executions: reading a file and then editing it.
 
 ```typescript
 import { generateToolUseSummary } from 'yaaf';
+import { smallModel } from './my-models'; // Example model import
 
 const summary = await generateToolUseSummary({
   tools: [
-    { 
-      name: 'read_file', 
-      input: { path: 'src/auth.ts' }, 
-      output: 'export const validate = ...' 
-    },
-    { 
-      name: 'edit_file', 
-      input: { path: 'src/auth.ts', content: '...' }, 
-      output: 'OK' 
-    },
+    { name: 'read_file', input: { path: 'src/auth.ts' }, output: '...' },
+    { name: 'edit_file', input: { path: 'src/auth.ts', ... }, output: 'OK' },
   ],
-  model: smallModel, // A ChatModel instance
+  model: smallModel,
 });
 
-console.log(summary); 
-// Output: "Fixed auth validation in auth.ts"
+// Example output: "Fixed auth validation in auth.ts"
+console.log(summary);
 ```
+[Source 1]
+
+## Sources
+
+[Source 1]: src/utils/toolSummary.ts

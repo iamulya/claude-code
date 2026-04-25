@@ -18,6 +18,9 @@ import type {
   AuthorizationDecision,
   UserContext,
 } from "./types.js";
+import { Logger } from "../utils/logger.js";
+
+const logger = new Logger("iam");
 
 // ── Glob → RegExp helper ─────────────────────────────────────────────────────
 
@@ -282,7 +285,7 @@ export class AttributeStrategy implements AuthorizationStrategy {
         matches = await rule.condition(ctx.user, ctx.arguments);
       } catch (condErr) {
         const msg = condErr instanceof Error ? condErr.message : String(condErr);
-        console.warn(
+        logger.warn(
           `[yaaf/iam] ABAC rule "${rule.name}" condition threw: ${msg}. ` +
             "Failing closed — tool call denied.",
         );

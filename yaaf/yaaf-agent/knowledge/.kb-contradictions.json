@@ -1,0 +1,159 @@
+{
+  "pairs": [
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/agent-summarization-config",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "Defaults to `3` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/agent-thread",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This is set only when `done` is `true` [Source 1].",
+      "similarity": 0.5714285714285714,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/approval-manager-config",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "Defaults to `5` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/attribute-scope-strategy",
+      "claimA": "You would use `abac` to quickly define a set of authorization rules based on dynamic conditions, such as a user's department, their role attributes (e.g., `isContractor`), the time of day, or even the specific arguments being passed to a tool [Source 1].",
+      "claimB": "If the user is not an admin, scope data to their department.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/attribute-strategy-config",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This should be used with caution [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/attribute-strategy",
+      "claimA": "-   **`options`**: `object` (optional)\n    Configuration options for the underlying `AttributeStrategy`.",
+      "claimB": "The `AttributeStrategy` is instantiated with a configuration object that defines the rules and the default behavior [[when]] no rules match.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/attribute-strategy",
+      "claimA": "-   `AttributeStrategy`: The class that `abac` constructs.",
+      "claimB": "The `AttributeStrategy` is instantiated with a configuration object that defines the rules and the default behavior [[when]] no rules match.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/authorization-decision",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This decision blocks the tool call.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/authorization-strategy",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This method can be synchronous or asynchronous [Source 2].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/auto-detect-kb-clients",
+      "claimA": "-   **`options`**: `object` (optional)\n    Configuration options for the underlying `AttributeStrategy`.",
+      "claimB": "The `LLMClientOptions` type allows for manual configuration, bypassing environment variable detection:\n\n\n\n\n\nThe function returns an object containing `llm` and `vision` functions, or `null` if no API key can be found.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/auto-extractor-config",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "- Defaults to `3` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/auto-fix-result",
+      "claimA": "The `abac` function takes an array of `AttributeRule` objects and an optional configuration object [Source 1].",
+      "claimB": "`AutoFixResult` is a TypeScript object type with the following structure [Source 2]:\n\n\n\nThe `fixed` property contains an array of `FixedIssue` objects, which have the following shape [Source 2]:\n\n\n\nThe `skipped` property contains the original `LintIssue` object and a string explaining why the fix was not applied [Source 2].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/clear-deprecation-cache",
+      "claimA": "The `abac` function takes an array of `AttributeRule` objects and an optional configuration object [Source 1].",
+      "claimB": "The function takes no arguments and returns nothing.",
+      "similarity": 0.5714285714285714,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/compaction-prompt-config",
+      "claimA": "-   **`options`**: `object` (optional)\n    Configuration options for the underlying `AttributeStrategy`.",
+      "claimB": "The `CompactionPromptConfig` type is defined as follows [Source 1]:\n\n\n\n\n\n\n\nTo generate a standard prompt for summarizing an entire conversation, the `buildCompactionPrompt` function can be called with an empty configuration object or no arguments.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/conditional",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This function can be synchronous or asynchronous [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/date-section",
+      "claimA": "The `abac` function takes an array of `AttributeRule` objects and an optional configuration object [Source 1].",
+      "claimB": "The function takes no arguments and returns a configuration object representing a prompt section that can be consumed by a `SystemPromptBuilder`.",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/deduplicate-plans",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "Defaults to `0.7` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abac",
+      "articleB": "apis/doctor-system-prompt",
+      "claimA": "This can be used to set properties like `defaultAction` when no rules match a given tool call [Source 1].",
+      "claimB": "This is provided by `DOCTOR_SYSTEM_PROMPT` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    },
+    {
+      "articleA": "apis/abort-error",
+      "articleB": "apis/agent-summarization-config",
+      "claimA": "The specific constructor signature for `AbortError` is not detailed in the provided source materials.",
+      "claimB": "Defaults to `3` [Source 1].",
+      "similarity": 0.5,
+      "type": "negation"
+    }
+  ],
+  "articlesScanned": 200,
+  "claimsScanned": 3003,
+  "truncated": true
+}

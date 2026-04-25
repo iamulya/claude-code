@@ -1,50 +1,55 @@
 ---
-summary: Removes old, large, or redundant tool results from conversation history based on configurable age and size thresholds.
+title: "`snipHistory`"
+entity_type: api
+summary: Snips old, large tool results from conversation history to reduce context size.
 export_name: snipHistory
 source_file: src/context/historySnip.ts
 category: function
-title: snipHistory
-entity_type: api
+search_terms:
+ - reduce context size
+ - history compaction
+ - pre-compaction optimization
+ - remove old tool results
+ - clean conversation history
+ - token saving
+ - context window management
+ - cheap history optimization
+ - microCompact
+ - prune agent memory
+ - how to snip history
+ - large tool output removal
 stub: false
-compiled_at: 2026-04-16T14:17:15.311Z
+compiled_at: 2026-04-24T17:38:40.499Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/historySnip.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/historySnip.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`snipHistory` is a utility function designed for cheap, pre-compaction optimization of conversation history. It identifies and removes or replaces low-value content—specifically old, large, or redundant tool results—to reduce context size before more expensive LLM-based compaction processes occur. 
+`snipHistory` is a pre-compaction optimization function that removes known low-value content from a conversation history before a more expensive, [LLM](../concepts/llm.md)-based compaction process runs [Source 1]. Its purpose is to make the main compaction step cheaper and faster by removing obvious noise first [Source 1].
 
-The function performs an $O(n)$ pass without requiring LLM calls, making it a high-performance method for managing token limits. It targets tool results that are:
-*   Beyond a specific age (turn count).
-*   Larger than a defined token threshold.
-*   Duplicate outputs (e.g., repeated file reads).
-*   Empty or no-op results.
+This function performs a cheap, O(n) pass over the message history without any LLM calls. It identifies and replaces specific [tool results](../concepts/tool-results.md) with a placeholder string. The criteria for snipping a tool result are [Source 1]:
+1. It is old (beyond `maxToolResultAge` turns from the end of the history).
+2. It is large (over `minSnipTokens` estimated tokens).
+3. Its tool name is not in the `exemptTools` list.
+4. It is not one of the most recent tool results (as defined by `keepRecent`).
 
-## Signature / Constructor
+This process can dramatically reduce the context size sent to the main compaction agent [Source 1]. Other content that may be snipped includes duplicate file reads and empty or no-op tool results [Source 1].
+
+## Signature
+The function takes an array of messages and an optional configuration object, and returns an object containing the snipped messages and statistics about the operation [Source 1].
 
 ```typescript
 export function snipHistory(
-  messages: MessageLike[],
+  messages: MessageLike[], 
   config?: SnipConfig
 ): SnipResult;
 ```
 
-### Supporting Types
+### `MessageLike` Type
+A simplified representation of a message in the conversation history.
 
-#### SnipConfig
-The configuration object controls the aggressiveness and criteria of the snipping process.
-
-| Property | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `maxOldToolResults` | `number` | Max number of old tool results to keep. | `15` |
-| `maxToolResultAge` | `number` | Tool results older than this many turns get snipped. | `20` |
-| `placeholderText` | `string` | Text to replace snipped content with. | `"[Old tool result cleared]"` |
-| `minSnipTokens` | `number` | Minimum token length for a result to be eligible for snipping. | `100` |
-| `keepRecent` | `number` | Number of most recent tool results to leave untouched. | `5` |
-| `exemptTools` | `string[]` | List of tool names that should never be snipped. | `[]` |
-
-#### MessageLike
 ```typescript
 export type MessageLike = {
   role: string;
@@ -54,38 +59,48 @@ export type MessageLike = {
 };
 ```
 
-#### SnipResult
+### `SnipConfig` Type
+Configuration options for the snipping process.
+
+```typescript
+export type SnipConfig = {
+  /** Max number of old tool results to keep. Default: 15. */
+  maxOldToolResults?: number;
+  /** Tool results older than this many turns get snipped. Default: 20. */
+  maxToolResultAge?: number;
+  /** Replace snipped content with this placeholder. Default: "[Old tool result cleared]". */
+  placeholderText?: string;
+  /** Minimum token length of a tool result to be eligible for snipping. Default: 100. */
+  minSnipTokens?: number;
+  /** Keep the most recent N tool results untouched. Default: 5. */
+  keepRecent?: number;
+  /** Tool names whose results are never snipped. */
+  exemptTools?: string[];
+};
+```
+
+### `SnipResult` Type
+The return value of the `snipHistory` function.
+
 ```typescript
 export type SnipResult = {
+  /** Messages with old content snipped. */
   snipped: MessageLike[];
+  /** Estimated tokens freed by snipping. */
   tokensFreed: number;
+  /** Number of tool results snipped. */
   itemsRemoved: number;
 };
 ```
 
-## Methods & Properties
-
-### deduplicateToolResults
-A secondary utility exported from the same module that removes consecutive identical tool results.
-
-```typescript
-export function deduplicateToolResults(
-  messages: MessageLike[],
-  placeholder = '[Duplicate result — see below]',
-): SnipResult;
-```
-When a tool is called multiple times with the same output (such as repeated file system reads), this function keeps only the last occurrence and replaces earlier instances with the placeholder.
-
 ## Examples
-
-### Basic Snipping
-This example demonstrates how to use `snipHistory` to clean up a message history before processing.
+The following example demonstrates how to use `snipHistory` to clean a message list.
 
 ```typescript
-import { snipHistory } from './src/context/historySnip';
+import { snipHistory, MessageLike } from 'yaaf';
 
-const messages = [
-  // ... existing conversation messages
+const messages: MessageLike[] = [
+  // ... a long history of messages and tool calls
 ];
 
 const result = snipHistory(messages, { 
@@ -93,19 +108,12 @@ const result = snipHistory(messages, {
   maxToolResultAge: 20 
 });
 
-console.log(`Snipped ${result.itemsRemoved} items.`);
-console.log(`Estimated tokens saved: ${result.tokensFreed}`);
+// result.snipped contains the cleaned messages
+console.log(`Snipped ${result.itemsRemoved} items, freeing ~${result.tokensFreed} tokens.`);
 
-// Use the cleaned messages for the next LLM call
-const cleanedMessages = result.snipped;
+// result.tokensFreed shows the estimated tokens saved
+// result.itemsRemoved is the count of removed items
 ```
 
-### Deduplication
-Removing redundant tool outputs to save context space.
-
-```typescript
-import { deduplicateToolResults } from './src/context/historySnip';
-
-const result = deduplicateToolResults(messages);
-// result.snipped contains the history with duplicates replaced by placeholders
-```
+## Sources
+[Source 1]: src/context/historySnip.ts

@@ -64,8 +64,8 @@ import type { AccessPolicy } from "./iam/types.js";
 import { securityHooks, type SecurityHooksConfig } from "./security/index.js";
 import type { Sandbox } from "./sandbox.js";
 import { Session, type SessionLike } from "./session.js";
-import type { Skill } from "./skills.js";
-import { buildSkillSection } from "./skills.js";
+import type { Skill } from "./skills/index.js";
+import { buildSkillSection } from "./skills/index.js";
 import type { SystemPromptBuilder } from "./prompt/systemPrompt.js";
 import { resolveModel, type ModelProvider } from "./models/resolver.js";
 import { resolveModelSpecs } from "./models/specs.js";
@@ -437,6 +437,33 @@ export type AgentConfig = {
    * Default: false (opt-in to avoid breaking existing tool result parsing).
    */
   toolResultBoundaries?: boolean;
+
+  /**
+   * Sprint 5: Enable structured NDJSON logging via Pino.
+   *
+   * When enabled, all Logger instances output machine-parsable NDJSON
+   * instead of human-readable console text. Each log line carries:
+   * `level`, `time`, `pid`, `hostname`, `component` (namespace), `msg`,
+   * plus any structured data fields.
+   *
+   * - `true` — enable with default settings (current log level)
+   * - `{ prettyPrint: true }` — enable with colorized dev-friendly output
+   *   (requires `pino-pretty` to be installed)
+   * - `false` / omitted — disabled (default, console output)
+   *
+   * Requires `pino` to be installed. If not available, silently falls back
+   * to console output.
+   *
+   * @example
+   * ```ts
+   * const agent = await Agent.create({
+   *   model: 'gemini-2.5-pro',
+   *   structuredLogging: true,
+   * });
+   * // All logs now output NDJSON
+   * ```
+   */
+  structuredLogging?: boolean | { prettyPrint?: boolean };
 };
 
 // resolveProvider moved to src/models/resolver.ts — use resolveModel(config) directly.
@@ -931,6 +958,18 @@ export class Agent {
    * ```
    */
   static async create(config: AgentConfig): Promise<Agent> {
+    // Sprint 5: Enable structured logging before anything else so all
+    // Logger instances created during construction use the Pino backend.
+    const structuredLogging =
+      config.structuredLogging ??
+      (process.env.YAAF_STRUCTURED_LOGGING === "1" || process.env.YAAF_STRUCTURED_LOGGING === "true");
+    if (structuredLogging) {
+      const opts = typeof structuredLogging === "object" ? structuredLogging : {};
+      await Logger.enableStructuredLogging({
+        prettyPrint: opts.prettyPrint,
+      });
+    }
+
     // Initialize plugins before building agent
     for (const plugin of config.plugins ?? []) {
       await plugin.initialize?.();
@@ -994,7 +1033,7 @@ export class Agent {
     //
     // Import lazily (same pattern as rest of agent.ts) to avoid circular deps.
     const { Logger } = await import("./utils/logger.js");
-    if ((Logger as { pluginHost?: unknown }).pluginHost === this._pluginHost) {
+    if ((Logger as unknown as { pluginHost?: unknown }).pluginHost === this._pluginHost) {
       Logger.setPluginHost(undefined);
     }
 
@@ -1455,6 +1494,68 @@ export class Agent {
   off<K extends keyof RunnerEvents>(event: K, handler: RunnerEventHandler<K>): this {
     this.runner.off(event, handler);
     return this;
+  }
+
+  // ── Interrupt & Steering (Gaps #2 & #3) ──────────────────────────────────
+
+  /**
+   * Gracefully interrupt the running agent loop.
+   *
+   * Unlike aborting via `AbortSignal` (which throws), `interrupt()` stops
+   * the loop after the current iteration completes, persists all messages
+   * committed so far to the session, and returns a structured interrupt
+   * message instead of throwing.
+   *
+   * The agent can be resumed with another `run()` call — session state
+   * is fully preserved.
+   *
+   * @param reason Optional human-readable reason for the interrupt.
+   *
+   * @example
+   * ```ts
+   * const promise = agent.run('Refactor the entire codebase');
+   * setTimeout(() => agent.interrupt('Time budget exceeded'), 30_000);
+   * const result = await promise;
+   * // result === '[Agent interrupted: Time budget exceeded]'
+   * // Session has partial work saved — resume with agent.run()
+   * ```
+   */
+  interrupt(reason?: string): void {
+    this.runner.interrupt(reason);
+  }
+
+  /** Whether the agent is currently in an interrupted state */
+  get isInterrupted(): boolean {
+    return this.runner.isInterrupted;
+  }
+
+  /**
+   * Inject a user message into the running agent loop.
+   *
+   * The message is queued and drained between iterations (after tool
+   * execution, before the next LLM call). Multiple steers can be
+   * queued — they are injected in FIFO order.
+   *
+   * If no run is active, the message is queued and injected at the
+   * start of the next `run()` call.
+   *
+   * **Security:** Steering messages are always injected as `user` role
+   * messages, never `system`. This prevents privilege escalation via
+   * steering injection.
+   *
+   * @param message The user message to inject into the conversation.
+   *
+   * @example
+   * ```ts
+   * const promise = agent.run('Build the payment module');
+   * setTimeout(() => {
+   *   agent.steer('Actually, also add webhook support');
+   * }, 5000);
+   * const result = await promise;
+   * ```
+   */
+  steer(message: string): void {
+    this.runner.steer(message);
   }
 
   /** Reset the conversation history */

@@ -1,83 +1,91 @@
 ---
-export_name: executeInSpan
-source_file: src/instrumentation.ts
-category: function
 title: executeInSpan
 entity_type: api
-summary: A helper function to wrap arbitrary asynchronous work in a named OpenTelemetry span with automatic context propagation and error handling.
+summary: Wraps an asynchronous function in a new OpenTelemetry span, parented to the current agent turn.
+export_name: executeInSpan
+source_file: src/telemetry/tracing.ts
+category: function
+search_terms:
+ - custom OpenTelemetry span
+ - add trace to agent
+ - instrument custom code
+ - wrap function in span
+ - YAAF observability
+ - manual instrumentation
+ - how to trace a function
+ - create child span
+ - telemetry helper
+ - opentelemetry async function
+ - record exceptions in traces
+ - add attributes to span
 stub: false
-compiled_at: 2026-04-16T14:11:44.315Z
+compiled_at: 2026-04-24T17:05:36.796Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/telemetry.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/telemetry/tracing.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/telemetry.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/tracing.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`executeInSpan` is a utility function used for custom instrumentation within the YAAF framework. It allows developers to wrap arbitrary asynchronous operations in an OpenTelemetry span. 
 
-The function automatically handles the span lifecycle, including:
-- Creating and starting the span with the provided name.
-- Automatically parenting the span to the current execution context (such as an active agent run or tool call) using `AsyncLocalStorage`.
-- Recording exceptions if the provided function throws an error.
-- Ensuring the span is closed (ended) once the function completes, regardless of whether it succeeded or failed.
+The `executeIn[[[[[[[[Span]]]]]]]]` function is a utility for custom instrumentation within the YAAF framework [Source 1, Source 2]. It wraps an asynchronous function call in a new [OpenTelemetry](../concepts/open-telemetry.md) Span, providing a simple way to [Trace](../concepts/trace.md) arbitrary blocks of code.
 
-This function is a "zero-overhead" utility; if tracing is not enabled via environment variables or if `initYAAFTelemetry` has not been called, the function executes the provided callback without creating active spans.
+This function is designed to integrate seamlessly with YAAF's automatic tracing. [when](./when.md) called during an agent's execution, the new span is automatically parented to the currently active span (e.g., `yaaf.agent.run` or `yaaf.tool.call`) through [Context Propagation](../concepts/context-propagation.md) via `AsyncLocalStorage` [Source 1, Source 2]. This eliminates the need for manual parent span management.
 
-## Signature / Constructor
+Key features include:
+- **Automatic Lifecycle Management**: The span is started before the provided function executes and is automatically ended upon its completion, whether it resolves successfully or throws an error [Source 2].
+- **Exception Recording**: If the wrapped function throws an exception, the error is automatically recorded on the span [Source 2].
+- **Contextual Attributes**: The function to be executed receives the newly created `Span` object as an argument, allowing for the addition of custom attributes for more detailed [Observability](../concepts/observability.md) [Source 1, Source 2].
+- **Conditional Execution**: The entire operation is a no-op if YAAF tracing is not enabled, ensuring zero performance overhead in environments where tracing is turned off [Source 2].
+
+## Signature
 
 ```typescript
-async function executeInSpan<T>(
+export async function executeInSpan<T>(
   spanName: string,
   fn: (span: Span) => Promise<T>,
-  attrs?: Attributes
+  attrs?: Attributes,
 ): Promise<T>
 ```
 
-### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `spanName` | `string` | The name of the span to be created (e.g., `yaaf.my_custom_op`). |
-| `fn` | `(span: Span) => Promise<T>` | An asynchronous callback containing the work to be instrumented. The active `Span` is passed as an argument for manual attribute tagging. |
-| `attrs` | `Attributes` | (Optional) A collection of OpenTelemetry attributes to attach to the span upon creation. |
+**Parameters:**
+
+- `spanName` (`string`): The name for the new span (e.g., `'my_service.fetch'`).
+- `fn` (`(span: Span) => Promise<T>`): An asynchronous function to be executed within the span. It receives the newly created `Span` instance as its sole argument.
+- `attrs` (`Attributes`, optional): A key-value object of initial attributes to set on the span at creation time.
+
+**Returns:**
+
+- `Promise<T>`: A promise that resolves with the return value of the provided function `fn`.
 
 ## Examples
 
-### Basic Usage
-Wrapping a network request to ensure it appears in the trace hierarchy under the current agent run.
+The most common use case is to instrument calls to external services or significant computational tasks within a tool's implementation.
 
 ```typescript
 import { executeInSpan } from 'yaaf';
 
-const data = await executeInSpan('my_service.fetch_data', async (span) => {
-  const url = 'https://api.example.com/data';
+// Assume 'url' is defined elsewhere
+declare const url: string;
+
+// Wrap a fetch call in a named span to trace its performance and metadata.
+const data = await executeInSpan('my_service.fetch', async (span) => {
+  // The 'span' object can be used to add custom attributes for observability.
   span.setAttribute('http.url', url);
   
   const response = await fetch(url);
-  const result = await response.json();
   
-  span.setAttribute('data.count', result.length);
-  return result;
+  if (!response.ok) {
+    // The function automatically records exceptions on the span.
+    throw new Error(`API request failed with status ${response.status}`);
+  }
+  
+  return response.json();
 });
 ```
 
-### Error Handling
-The function automatically captures errors thrown within the callback.
+## Sources
 
-```typescript
-import { executeInSpan } from 'yaaf';
-
-try {
-  await executeInSpan('critical_operation', async (span) => {
-    throw new Error('Operation failed');
-  });
-} catch (e) {
-  // The span has already recorded the exception and ended by this point
-  console.error(e);
-}
-```
-
-## See Also
-- `initYAAFTelemetry`
-- `getCurrentRunSpan`
-- `getCurrentToolSpan`
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/telemetry.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/telemetry/tracing.ts

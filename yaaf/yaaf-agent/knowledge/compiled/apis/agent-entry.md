@@ -1,107 +1,152 @@
 ---
-summary: Configuration interface for registering an agent within the Delegate Architecture.
+summary: Defines the configuration structure for registering an agent with the Agent Routing Subsystem.
 export_name: AgentEntry
 source_file: src/agents/delegate.ts
 category: type
 title: AgentEntry
 entity_type: api
+search_terms:
+ - agent registration
+ - configure agent router
+ - agent routing rules
+ - session scope for agents
+ - delegate agent configuration
+ - how to add an agent
+ - agent skills
+ - agent metadata
+ - routing priority
+ - multi-agent setup
+ - AgentRouter register method
+ - define agent behavior
 stub: false
-compiled_at: 2026-04-16T14:13:28.198Z
+compiled_at: 2026-04-24T16:47:14.403Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/delegate.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/delegate.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`AgentEntry` is the primary configuration object used to register agents within the Delegate Architecture. It defines how an agent is identified, how it processes input, which messages it should respond to (routing), and how its session state is isolated from other interactions.
 
-This type is used by the `AgentRouter` to manage a fleet of specialized agents, each potentially having its own personality, skill set, and availability status.
+The `AgentEntry` type defines the configuration object used to register a named agent within YAAF's delegate architecture [Source 1]. This architecture manages multiple agents, each with its own distinct personality, [Skills](../concepts/skills.md), and session scope. An `AgentEntry` object encapsulates all the necessary information for an `AgentRouter` to identify, route messages to, and manage the lifecycle of an agent.
 
-## Signature / Constructor
+This configuration includes a unique identifier, the agent's core logic, routing rules, [Session Isolation](../concepts/session-isolation.md) strategy, and other metadata. It is the primary mechanism for adding new capabilities to a multi-agent system [Source 1].
+
+## Signature
+
+`AgentEntry` is a TypeScript type alias for an object. Its structure and the related types it uses are defined as follows [Source 1]:
 
 ```typescript
 export type AgentEntry = {
+  /** Unique agent identifier */
   id: string;
+  /** The agent runner instance */
   agent: { run(input: string, signal?: AbortSignal): Promise<string> };
+  /** Human-readable display name */
   displayName?: string;
-  skills?: string[];
+  /** Allowed Skill names (empty = all, undefined = inherit defaults) */
+  Skills?: string[];
+  /** Routing rules — checked in order, first match wins */
   routes?: RoutingRule[];
+  /**
+   * Session isolation scope.
+   * - 'shared': all messages share one session
+   * - 'per-sender': isolated by sender ID
+   * - 'per-Channel': isolated by Channel
+   * - 'per-[[Channel]]-sender': isolated by [[Channel]] + sender (default)
+   */
   sessionScope?: SessionScope;
+  /** Whether this agent is currently available */
   active?: boolean;
+  /** Agent metadata (for UI/debugging) */
   meta?: Record<string, unknown>;
 };
-```
 
-## Methods & Properties
+export type SessionScope = "shared" | "per-sender" | "per-[[Channel]]" | "per-[[Channel]]-sender";
+
+export type RoutingRule = {
+  /** Regex pattern to match against message text */
+  match?: RegExp;
+  /** Match messages from specific channels */
+  channels?: string[];
+  /** Match messages from specific senders */
+  senders?: string[];
+  /**
+   * Routing priority (higher = checked first).
+   * Default: 0. Use to override when multiple agents match.
+   */
+  priority?: number;
+};
+```
 
 ### Properties
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `string` | **Required.** A unique identifier for the agent within the registry. |
-| `agent` | `object` | **Required.** The agent runner instance. It must provide a `run` method that accepts a string and returns a `Promise<string>`. |
-| `displayName` | `string` | *Optional.* A human-readable name for the agent, often used in UI components. |
-| `skills` | `string[]` | *Optional.* A list of allowed skill names. An empty array typically implies all skills, while `undefined` may inherit system defaults. |
-| `routes` | `RoutingRule[]` | *Optional.* An array of rules used to determine if this agent should handle an incoming message. Rules are checked in order. |
-| `sessionScope` | `SessionScope` | *Optional.* Defines the isolation level for the agent's session. Defaults to `per-channel-sender`. |
-| `active` | `boolean` | *Optional.* Indicates whether the agent is currently available for routing. |
-| `meta` | `Record<string, unknown>` | *Optional.* Arbitrary metadata used for debugging or UI display. |
-
-### Supporting Types
-
-#### SessionScope
-Determines how the framework isolates conversation history and state:
-- `shared`: All messages across the system share a single session.
-- `per-sender`: Isolation is based on the unique ID of the sender.
-- `per-channel`: Isolation is based on the communication channel.
-- `per-channel-sender`: Isolation is based on the combination of channel and sender (default).
-
-#### RoutingRule
-Defines the criteria for matching an inbound message to an agent:
-- `match`: A `RegExp` pattern to test against the message text.
-- `channels`: An array of specific channel IDs to match.
-- `senders`: An array of specific sender IDs to match.
-- `priority`: A numeric value (default `0`) used to resolve conflicts when multiple agents match a message. Higher values are checked first.
+*   **`id`**: `string` (required) - A unique identifier for the agent.
+*   **`agent`**: `{ run(input: string, signal?: AbortSignal): Promise<string> }` (required) - The agent runner instance, which is an object containing the core `run` method that executes the agent's logic.
+*   **`displayName`**: `string` (optional) - A human-readable name for the agent, often used in user interfaces.
+*   **`[[Skill]]s`**: `string[]` (optional) - A list of [Skill](./skill.md) names this agent possesses. This can be used for capability-based routing. An empty array implies the agent has all skills, while `undefined` means it inherits default skills.
+*   **`routes`**: `RoutingRule[]` (optional) - An array of routing rules. The router checks these in order, and the first rule that matches an incoming message will cause this agent to be selected.
+*   **`sessionScope`**: `SessionScope` (optional) - Defines the session isolation strategy. Defaults to `'per-channel-sender'`. The possible values are:
+    *   `'shared'`: A single session is shared for all interactions with this agent.
+    *   `'per-sender'`: Each unique sender gets their own isolated session.
+    *   `'per-channel'`: Each channel has its own isolated session.
+    *   `'per-channel-sender'`: A session is unique to a specific sender within a specific channel.
+*   **`active`**: `boolean` (optional) - A flag to enable or disable the agent. If `false`, the agent will not be considered for routing.
+*   **`meta`**: `Record<string, unknown>` (optional) - An object for storing arbitrary metadata, useful for UI rendering or debugging purposes.
 
 ## Examples
 
-### Basic Registration
-This example demonstrates registering two specialized agents with specific routing rules.
+The following example demonstrates how to define two `AgentEntry` objects, one for a "writer" agent and one for a "coder" agent, and register them with an `AgentRouter`.
 
 ```typescript
-import { AgentRouter, AgentEntry } from 'yaaf';
+import { AgentEntry } from 'yaaf';
 
-const router = new AgentRouter();
+// A mock agent runner for demonstration
+const writerRunner = {
+  async run(input: string): Promise<string> {
+    return `Writing about: ${input}`;
+  },
+};
 
-const writerEntry: AgentEntry = {
+const coderRunner = {
+  async run(input: string): Promise<string> {
+    return `// Coding solution for: ${input}`;
+  },
+};
+
+// Define the writer agent configuration
+const writerAgentEntry: AgentEntry = {
   id: 'writer',
+  displayName: 'Creative Writer',
   agent: writerRunner,
   skills: ['grammar', 'style'],
   routes: [{ match: /write|essay|article/i }],
-  sessionScope: 'per-sender'
+  sessionScope: 'per-sender',
+  active: true,
 };
 
-const coderEntry: AgentEntry = {
+// Define the coder agent configuration
+const coderAgentEntry: AgentEntry = {
   id: 'coder',
+  displayName: 'Code Assistant',
   agent: coderRunner,
   skills: ['code', 'test'],
   routes: [{ match: /code|bug|function/i }],
-  sessionScope: 'per-channel'
+  sessionScope: 'per-channel-sender',
 };
 
-router.register(writerEntry);
-router.register(coderEntry);
+/*
+// These entries would then be used with an AgentRouter instance:
+const router = new AgentRouter();
+router.register(writerAgentEntry);
+router.register(coderAgentEntry);
+*/
 ```
 
-### Routing and Execution
-Once registered, the router uses the `AgentEntry` configuration to direct traffic.
+## See Also
 
-```typescript
-// The router selects the agent based on the RoutingRules in the AgentEntry
-const agent = router.route(inboundMessage);
+*   **AgentRouter**: The class responsible for managing and routing messages to agents registered using `AgentEntry` configurations.
 
-if (agent) {
-  // Executes the 'run' method defined in the AgentEntry
-  const response = await agent.run(inboundMessage.text);
-}
-```
+## Sources
+
+[Source 1] `src/agents/delegate.ts`

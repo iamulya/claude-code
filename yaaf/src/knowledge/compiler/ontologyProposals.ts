@@ -20,6 +20,7 @@ import { join } from "path";
 import type { KBOntology, VocabularyEntry } from "../ontology/types.js";
 import type { ConceptRegistry } from "../ontology/index.js";
 import { atomicWriteFile } from "./atomicWrite.js";
+import { ProposalFileSchema } from "./schemas.js";
 
 // ── Local proposal type (separate from KBOntologyProposal in plugin/types.ts) ─────
 //
@@ -171,11 +172,20 @@ export async function generateOntologyProposals(
       // Fix H-3: O(1) lookup via pre-built reverse index
       const related = reverseIndex.get(term);
 
+      // ADR-012/Fix-4: Cap add_vocabulary confidence at 0.75 (below the 0.8
+      // auto-evolve threshold). This means vocabulary proposals ALWAYS require
+      // human review and can never be auto-applied. Without this cap, an adversary
+      // who writes 4+ source files mentioning a fake term gets auto-applied
+      // vocabulary entries (the "Vocabulary Worm" attack), which then influence
+      // future TF-IDF query expansion and search ranking.
+      //
+      // The confidence formula rewards frequency but the cap ensures that even
+      // N=100 mentions cannot bypass human review for vocabulary changes.
       proposals.push({
         kind: "add_vocabulary",
         term,
         reason: `Term "${term}" appears ${count} times in the registry but is not in vocabulary`,
-        confidence: Math.min(0.8, 0.3 + count * 0.15),
+        confidence: Math.min(0.75, 0.3 + count * 0.15),
         details: {
           suggestedEntry: {
             aliases: [],
@@ -328,8 +338,18 @@ function applyProposal(ontology: KBOntology, proposal: OntologyProposal): boolea
 export async function loadProposals(kbDir: string): Promise<OntologyProposal[]> {
   try {
     const raw = await readFile(join(kbDir, PROPOSALS_FILENAME), "utf-8");
-    const parsed = JSON.parse(raw) as { proposals?: OntologyProposal[] };
-    return (parsed.proposals ?? []).filter(isValidProposal);
+    // Sprint 1b: Replace manual isValidProposal() with Zod schema validation
+    const result = ProposalFileSchema.safeParse(JSON.parse(raw));
+    if (!result.success) return [];
+
+    // Additional filtering: kind-specific field requirements
+    return result.data.proposals.filter((p) => {
+      if (p.kind === "add_vocabulary" && (!p.term || p.term.trim() === "")) return false;
+      if (p.kind === "add_relationship") {
+        if (!p.from || p.from.trim() === "" || !p.to || p.to.trim() === "") return false;
+      }
+      return true;
+    }) as OntologyProposal[];
   } catch {
     return [];
   }
@@ -337,8 +357,8 @@ export async function loadProposals(kbDir: string): Promise<OntologyProposal[]> 
 
 /**
  * P1-8: Runtime schema guard for proposals loaded from disk.
- * Rejects proposals with out-of-range confidence, unknown kinds, or missing
- * required fields to prevent injection or mutation from tampered JSON.
+ * @deprecated Replaced by ProposalFileSchema Zod validation in loadProposals().
+ * Kept for backward compatibility with external consumers.
  */
 function isValidProposal(p: unknown): p is OntologyProposal {
   if (!p || typeof p !== "object") return false;
@@ -356,15 +376,10 @@ function isValidProposal(p: unknown): p is OntologyProposal {
   if (typeof conf !== "number" || conf < 0 || conf > 1) return false;
   if (typeof obj["reason"] !== "string") return false;
 
-  // I1: kind-specific field validation
-  // applyProposal accesses proposal.term.toLowerCase() for add_vocabulary —
-  // a missing/non-string term causes a TypeError at apply time.
   if (obj["kind"] === "add_vocabulary") {
     if (typeof obj["term"] !== "string" || obj["term"].trim() === "") return false;
   }
   if (obj["kind"] === "add_relationship") {
-    // C1: also reject empty strings — applyProposal would create relationship name "_to_"
-    // with empty from/to fields, corrupting the ontology's relationshipTypes array.
     if (typeof obj["from"] !== "string" || obj["from"].trim() === "") return false;
     if (typeof obj["to"] !== "string" || obj["to"].trim() === "") return false;
   }

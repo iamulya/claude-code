@@ -27,6 +27,10 @@ export type {
 export { TfIdfSearchPlugin } from "./tfidfSearch.js";
 export type { TfIdfSearchPluginOptions } from "./tfidfSearch.js";
 
+// ── Relationship graph ──────────────────────────────────────────────────────
+
+export { WikilinkGraphPlugin } from "./wikilinkGraph.js";
+
 export {
   HybridTokenizer,
   EnglishTokenizer,

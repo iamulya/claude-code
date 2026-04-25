@@ -1,128 +1,174 @@
 ---
 title: Guardrails
 entity_type: api
-summary: A class for enforcing usage-based budget limits and cost policies to prevent runaway agent loops.
+summary: A class that provides usage-based budget limits and cost policies to prevent runaway agent resource consumption.
 export_name: Guardrails
 source_file: src/utils/guardrails.ts
 category: class
+search_terms:
+ - agent cost control
+ - prevent runaway LLM calls
+ - set budget for agent
+ - limit agent spending
+ - token usage limits
+ - max turns per run
+ - resource consumption policy
+ - stop agent loop
+ - usage-based limits
+ - LLM cost management
+ - BudgetExceededError
+ - session cost cap
+ - turn limit
+ - token cap
 stub: false
-compiled_at: 2026-04-16T14:39:30.942Z
+compiled_at: 2026-04-24T17:10:55.758Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/guardrails.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/guardrails.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-The `Guardrails` class provides usage-based budget limits and cost policies for LLM agents. It is designed to prevent runaway agent loops from consuming unbounded resources by monitoring costs, token usage, and turn counts.
 
-The class implements three tiers of protection:
-1.  **Warning**: Emitted when resource usage approaches configured limits (typically 80%).
-2.  **Error**: An escalated warning state (typically 95%) indicating that the UI should prompt the user.
-3.  **Blocked**: A hard stop where the agent is prevented from proceeding because a budget has been exceeded.
+The `Guardrails` class provides usage-based budget limits and cost policies to prevent runaway agent loops from consuming unbounded resources [Source 2]. It is designed to be used with a `CostTracker` to monitor an agent's consumption of resources like cost, tokens, and turns [Source 2].
 
-## Signature / Constructor
+`Guardrails` implements three tiers of protection [Source 2]:
+1.  **Warning**: Emits an event [when](./when.md) resource usage approaches a configured limit (e.g., 80% of budget).
+2.  **Error**: An escalated warning when usage gets closer to the limit (e.g., 95% of budget).
+3.  **Blocked**: A hard stop that prevents the agent from proceeding once a limit has been exceeded.
 
-### Constructor
+The YAAF Doctor subsystem can listen for `guardrail:warning` and `guardrail:blocked` events to provide runtime diagnostics about budget issues [Source 1].
+
+## Constructor
+
+The `Guardrails` class is instantiated with a configuration object that defines the various budget limits and warning thresholds.
+
 ```typescript
-constructor(config: GuardrailConfig)
-```
+import type { CostTracker } from "./costTracker.js";
 
-### GuardrailConfig
-```typescript
-export type GuardrailConfig = {
-  /** Maximum USD cost per session. Default: Infinity (no limit). */
-  maxCostUSD?: number
-  /** Maximum total tokens (input+output) per session. Default: Infinity. */
-  maxTokensPerSession?: number
-  /** Maximum turns (model calls) per single run(). Default: Infinity. */
-  maxTurnsPerRun?: number
-  /** Maximum input tokens for a single model call. Default: Infinity. */
-  maxInputTokensPerCall?: number
-  /** Percentage of budget at which to emit 'warning'. Default: 80. */
-  warningPct?: number
-  /** Percentage of budget at which to emit 'error'. Default: 95. */
-  errorPct?: number
+export class Guardrails {
+  constructor(config: GuardrailConfig);
+  // ... methods
 }
 ```
 
+### `GuardrailConfig`
+
+The constructor accepts a `GuardrailConfig` object with the following properties [Source 2]:
+
+| Property                | Type     | Description                                                              |
+| ----------------------- | -------- | ------------------------------------------------------------------------ |
+| `maxCostUSD`            | `number` | Maximum USD cost per session. Default: `Infinity` (no limit).            |
+| `maxTokensPerSession`   | `number` | Maximum total tokens (input + output) per session. Default: `Infinity`.  |
+| `maxTurnsPerRun`        | `number` | Maximum turns (model calls) per single `run()`. Default: `Infinity`.     |
+| `maxInputTokensPerCall` | `number` | Maximum input tokens for a single model call. Default: `Infinity`.       |
+| `warningPct`            | `number` | Percentage of budget at which to emit a `'warning'` event. Default: `80`.  |
+| `errorPct`              | `number` | Percentage of budget at which to emit an `'error'` event. Default: `95`.   |
+
 ## Methods & Properties
 
-### check()
-Evaluates the current state of a `CostTracker` against the configured guardrails.
+### `check()`
+
+Checks the current usage from a `CostTracker` against the configured limits and returns the current status. This method is typically called before each model call to ensure the agent is still within its budget.
+
+**Signature**
 ```typescript
-check(tracker: CostTracker): GuardrailCheckResult
+check(tracker: CostTracker): GuardrailCheckResult;
 ```
-**Returns**: A `GuardrailCheckResult` containing the current status (`ok`, `warning`, `error`, or `blocked`), a boolean `blocked` flag, and specific details for each monitored resource.
 
-### Supporting Types
-The following types are used to represent the state of the guardrails:
+**Return Value**
+Returns a `GuardrailCheckResult` object with the overall status [Source 2]:
 
-*   **GuardrailResource**: `'cost' | 'tokens' | 'turns' | 'input_tokens'`
-*   **GuardrailStatus**: `'ok' | 'warning' | 'error' | 'blocked'`
-*   **GuardrailCheckResult**:
-    ```typescript
-    {
-      status: GuardrailStatus
-      blocked: boolean
-      reason?: string
-      details: GuardrailDetail[]
-    }
-    ```
-*   **GuardrailDetail**:
-    ```typescript
-    {
-      resource: GuardrailResource
-      status: GuardrailStatus
-      current: number
-      limit: number
-      pctUsed: number
-    }
-    ```
+```typescript
+export type GuardrailCheckResult = {
+  status: "ok" | "warning" | "error" | "blocked";
+  blocked: boolean;
+  reason?: string;
+  details: GuardrailDetail[];
+};
+
+export type GuardrailDetail = {
+  resource: "cost" | "tokens" | "turns" | "input_tokens";
+  status: "ok" | "warning" | "error" | "blocked";
+  current: number;
+  limit: number;
+  pctUsed: number;
+};
+```
+
+If `blocked` is `true`, the `reason` field will contain a human-readable string explaining which limit was exceeded. The `details` array provides a breakdown of the status for each monitored resource [Source 2].
 
 ## Events
-The `Guardrails` class emits events when usage thresholds are crossed.
 
-| Event | Payload Type | Description |
-| :--- | :--- | :--- |
-| `warning` | `GuardrailEvent` | Emitted when a resource exceeds the `warningPct`. |
-| `blocked` | `GuardrailEvent` | Emitted when a resource budget is fully exceeded. |
+`Guardrails` instances are event emitters that fire events as budget thresholds are crossed.
 
-### GuardrailEvent
+### `warning`
+
+Emitted when a resource's usage exceeds the `warningPct` threshold.
+
+**Payload** [Source 2]:
 ```typescript
-export type GuardrailEvent = {
-  type: 'warning' | 'blocked';
-  resource: GuardrailResource;
+{
+  type: "warning";
+  resource: "cost" | "tokens" | "turns" | "input_tokens";
   current: number;
   limit: number;
   pctUsed: number;
 }
 ```
 
+### `error`
+
+Emitted when a resource's usage exceeds the `errorPct` threshold. The payload is the same as the `warning` event.
+
+### `blocked`
+
+Emitted when a resource's usage exceeds its hard limit (100%).
+
+**Payload** (inferred from example) [Source 2]:
+```typescript
+{
+  resource: "cost" | "tokens" | "turns" | "input_tokens";
+  // ... other properties may be included
+}
+```
+
 ## Examples
 
-### Basic Usage
+The following example demonstrates how to instantiate `Guardrails`, listen for events, and use the `check()` method to enforce a budget. If the budget is exceeded, a `BudgetExceededError` is thrown to stop the agent's execution [Source 2].
+
 ```typescript
+import { Guardrails, BudgetExceededError } from 'yaaf';
+import { myCostTracker as tracker } from './cost-tracker';
+
+// Instantiate with a $5 session cost limit and 50-turn max.
 const guardrails = new Guardrails({
-  maxCostUSD: 5.00,          // $5 per session
-  maxTokensPerSession: 500_000,
+  maxCostUSD: 5.00,
   maxTurnsPerRun: 50,
-  warningPct: 80,            // Warn at 80% usage
+  warningPct: 80, // Warn at 80% usage
 });
 
-guardrails.on('warning', ({ resource, usage, limit }) => {
-  console.warn(`Approaching ${resource} limit: ${usage}/${limit}`);
+// Listen for warning events
+guardrails.on('warning', ({ resource, current, limit }) => {
+  console.warn(`Approaching ${resource} limit: ${current}/${limit}`);
 });
 
+// Listen for blocked events
 guardrails.on('blocked', ({ resource }) => {
   console.error(`${resource} budget exceeded — agent stopped`);
 });
 
-// Check before each model call
-const check = guardrails.check(tracker);
-if (check.blocked) {
-  throw new BudgetExceededError(check.reason);
+// In the agent's execution loop, before each model call:
+function agentTurn() {
+  const check = guardrails.check(tracker);
+  if (check.blocked) {
+    throw new BudgetExceededError(check.reason);
+  }
+  // ... proceed with model call
 }
 ```
 
-## See Also
-* `BudgetExceededError` — The error thrown when a guardrail hard limit is reached.
+## Sources
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/doctor.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/utils/guardrails.ts

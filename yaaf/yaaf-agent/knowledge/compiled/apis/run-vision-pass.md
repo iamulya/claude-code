@@ -1,116 +1,147 @@
 ---
-summary: The primary function for executing the vision pass over compiled articles to generate image descriptions.
 export_name: runVisionPass
 source_file: src/knowledge/compiler/vision.ts
 category: function
+summary: Asynchronously runs the vision pass over all compiled articles in a specified directory, generating alt-text for images using a vision-capable LLM.
 title: runVisionPass
 entity_type: api
+search_terms:
+ - generate image alt text
+ - vision model for documentation
+ - image description generation
+ - how to add alt text to markdown images
+ - knowledge base image processing
+ - C3 vision pass
+ - make images accessible to LLMs
+ - auto-caption images
+ - VisionPassOptions
+ - VisionPassResult
+ - VisionCallFn
+ - process images in compiled articles
 stub: false
-compiled_at: 2026-04-16T14:27:45.839Z
+compiled_at: 2026-04-24T17:34:30.264Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/vision.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/vision.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-The `runVisionPass` function executes the "C3 — Vision Pass" stage of the knowledge base compilation process. It is designed to auto-generate alt-text and captions for images referenced in compiled articles that lack meaningful descriptions.
 
-The function operates by:
-1. Parsing `![alt](path)` patterns from compiled Markdown article bodies.
-2. Identifying images where alt-text is missing or generic.
-3. Reading the identified images from the local file system.
-4. Utilizing a vision-capable LLM to generate a descriptive text for the image.
-5. Rewriting the image reference in the article with the newly generated alt-text.
+The `runVisionPass` function is a compile-time utility that automatically generates descriptive alt-text for images referenced in compiled knowledge base articles [Source 1]. This process, known as the "C3 — [Vision Pass](../subsystems/vision-pass.md)," enhances the accessibility of visual content for agents that rely on text-only models [Source 1].
 
-This process ensures that agents using text-only models can interpret the content of diagrams, figures, and other visual assets through rich text descriptions.
+The function operates by scanning the content of articles in a specified directory for Markdown image syntax (`![alt](path)`). For each image found, it checks if the existing alt-text is missing or generic. If so, it reads the image file from disk, sends it to a provided vision-capable [LLM](../concepts/llm.md), and uses the LLM's response to rewrite the image reference with a rich, descriptive alt-text [Source 1].
 
-## Signature / Constructor
+This is primarily used after the synthesis step of the knowledge base compilation process to ensure that diagrams, figures, and other visual information can be understood by language models that cannot process images directly [Source 1].
+
+## Signature
+
+The function is asynchronous and returns a promise that resolves to a `VisionPassResult` object detailing the outcome of the operation [Source 1].
 
 ```typescript
 export async function runVisionPass(
   visionFn: VisionCallFn,
   compiledDir: string,
-  options: VisionPassOptions = {}
-): Promise<VisionPassResult>
+  options?: VisionPassOptions
+): Promise<VisionPassResult>;
 ```
 
 ### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `visionFn` | `VisionCallFn` | The LLM client function used to perform vision-to-text inference. |
-| `compiledDir` | `string` | The directory path containing the compiled articles to be processed. |
-| `options` | `VisionPassOptions` | Configuration settings for the vision pass execution. |
 
-### Configuration Types
+-   **`visionFn: VisionCallFn`**: A function that handles the call to a vision-capable LLM. The framework provides clients for this purpose [Source 1].
+-   **`compiledDir: string`**: The path to the directory containing the compiled articles to be processed [Source 1].
+-   **`options?: VisionPassOptions`**: An optional configuration object to customize the pass [Source 1].
 
-#### VisionPassOptions
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `maxImages` | `number` | Maximum number of images to process in a single run. Defaults to `50`. |
-| `minImageBytes` | `number` | Minimum file size in bytes required to process an image. Smaller images (e.g., tiny icons) are skipped. Defaults to `1024`. |
-| `dryRun` | `boolean` | If `true`, the function identifies and processes images but does not write changes back to the files. Defaults to `false`. |
-| `onProgress` | `(event: VisionProgressEvent) => void` | Optional callback function to track the progress of the vision pass. |
+### Configuration (`VisionPassOptions`)
 
-## Methods & Properties
+The `options` object allows for fine-tuning the vision pass [Source 1]:
 
-### VisionPassResult
-The function returns a promise that resolves to a `VisionPassResult` object containing the following properties:
+```typescript
+export type VisionPassOptions = {
+  /** Max images to process per run. Default: 50 */
+  maxImages?: number;
+  /** Skip images smaller than this (bytes). Default: 1024 (skip tiny icons) */
+  minImageBytes?: number;
+  /** Only process, don't write changes. Default: false */
+  dryRun?: boolean;
+  /** Progress callback */
+  onProgress?: (event: VisionProgressEvent) => void;
+};
+```
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `described` | `number` | The number of images that successfully received new alt-text. |
-| `skipped` | `number` | The number of images skipped (e.g., already had descriptions or were too small). |
-| `failed` | `number` | The number of images that failed to process due to errors. |
-| `llmCalls` | `number` | The total number of calls made to the vision LLM. |
-| `details` | `VisionDetail[]` | An array of detailed results for every image encountered. |
-| `durationMs` | `number` | The total elapsed time of the operation in milliseconds. |
+### Return Value (`VisionPassResult`)
 
-### VisionDetail
-Each entry in the `details` array contains:
-*   `docId`: The ID of the article document containing the image.
-*   `imagePath`: The path or reference to the image file.
-*   `action`: The outcome for this image (`'described'`, `'skipped'`, or `'failed'`).
-*   `altText`: The generated description (if successful).
-*   `message`: A reason for skipping or a description of the failure (if applicable).
+The function returns a `VisionPassResult` object summarizing the run [Source 1]:
+
+```typescript
+export type VisionPassResult = {
+  /** Images that got new alt-text */
+  described: number;
+  /** Images skipped (already have good alt-text, too small, etc.) */
+  skipped: number;
+  /** Images that failed (unreadable, LLM error) */
+  failed: number;
+  /** Number of vision LLM calls made */
+  llmCalls: number;
+  /** Per-image details */
+  details: VisionDetail[];
+  /** Total elapsed time (ms) */
+  durationMs: number;
+};
+```
+
+The `details` array contains `VisionDetail` objects for each processed image [Source 1]:
+
+```typescript
+export type VisionDetail = {
+  /** Article docId containing the image */
+  docId: string;
+  /** Image path/reference */
+  imagePath: string;
+  /** Action taken */
+  action: "described" | "skipped" | "failed";
+  /** Alt-text (if described) */
+  altText?: string;
+  /** Reason for skip/failure */
+  message?: string;
+};
+```
 
 ## Events
-The `onProgress` callback receives `VisionProgressEvent` objects:
 
-| Event Type | Payload | Description |
-| :--- | :--- | :--- |
-| `vision:start` | `{ totalImages: number }` | Emitted when the vision pass begins, indicating the total number of images found. |
+Progress can be monitored by providing an `onProgress` callback in the `options` object. This callback receives `VisionProgressEvent` objects [Source 1].
+
+-   **`vision:start`**: Fired once at the beginning of the process.
+    -   **Payload**: `{ type: "vision:start"; totalImages: number }`
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to initialize a vision client and run the pass over a directory of compiled articles.
+The following example demonstrates how to run the vision pass on a directory of compiled articles and log the results [Source 1].
 
 ```typescript
+// Assumes `makeKBVisionClient` is a helper to create a vision function
+// and `compiledDir` is the path to your compiled articles.
 import { runVisionPass } from 'yaaf';
-import { makeKBVisionClient } from './llm-provider';
+import { makeKBVisionClient } from './llmClient.js'; // Example import
 
+const compiledDir = './kb/compiled';
 const vision = makeKBVisionClient();
-const compiledDir = './dist/knowledge';
 
-const result = await runVisionPass(vision, compiledDir, {
-  maxImages: 20,
-  minImageBytes: 2048
-});
+async function processImages() {
+  const result = await runVisionPass(vision, compiledDir, {
+    maxImages: 100,
+    dryRun: false,
+  });
 
-console.log(`Described ${result.described} images in ${result.durationMs}ms`);
+  console.log(`Vision pass complete in ${result.durationMs}ms.`);
+  console.log(`- Described: ${result.described}`);
+  console.log(`- Skipped:   ${result.skipped}`);
+  console.log(`- Failed:    ${result.failed}`);
+}
+
+processImages();
 ```
 
-### Dry Run
-Performing a dry run to see which images would be processed without modifying the source files.
+## Sources
 
-```typescript
-const result = await runVisionPass(vision, compiledDir, {
-  dryRun: true
-});
-
-result.details.forEach(detail => {
-  if (detail.action === 'described') {
-    console.log(`Would describe: ${detail.imagePath}`);
-  }
-});
-```
+[Source 1]: src/knowledge/compiler/vision.ts

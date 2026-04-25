@@ -46,39 +46,9 @@ import {
   HybridTokenizer,
   type TokenizerStrategy,
 } from "./tokenizers.js";
+import { pAllSettled } from "../utils/concurrency.js";
 
-// ── Bounded concurrency helper ────────────────────────────────────────────────
-
-/** Run tasks with at most `limit` in-flight simultaneously. */
-function pAllSettled<T>(
-  tasks: Array<() => Promise<T>>,
-  limit: number,
-): Promise<Array<PromiseSettledResult<T>>> {
-  const concurrency = Math.max(1, limit);
-  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
-  let next = 0;
-  let active = 0;
-  return new Promise((resolve) => {
-    if (tasks.length === 0) { resolve(results); return; }
-    const launch = () => {
-      while (active < concurrency && next < tasks.length) {
-        const i = next++;
-        active++;
-        tasks[i]!()
-          .then(
-            (v) => { results[i] = { status: "fulfilled", value: v }; },
-            (e) => { results[i] = { status: "rejected", reason: e }; },
-          )
-          .finally(() => {
-            active--;
-            launch();
-            if (active === 0 && next === tasks.length) resolve(results);
-          });
-      }
-    };
-    launch();
-  });
-}
+// M9: pAllSettled extracted to ../utils/concurrency.ts (shared across 4 files).
 
 /** Maximum concurrent embedding API calls during docEmbeddings build. */
 const EMBED_CONCURRENCY = 8;
@@ -127,6 +97,23 @@ type DocMeta = {
    * Total retained: ~900 chars (vs 500 before). Still well within A1's memory model.
    */
   snippets: [string, string, string];
+  /**
+   * H17: Compact body representation (up to 2KB) for keyword-anchored excerpt
+   * extraction. When a query term isn't found in the 3 fixed snippet windows,
+   * this is searched as a fallback, covering up to ~91% more of the article.
+   */
+  compactBody: string;
+  /**
+   * W-1 fix: Raw frontmatter from the compiled article.
+   *
+   * Previously missing from DocMeta, which caused `meta.frontmatter` (used in
+   * search result construction) to always be `undefined`. This silently broke
+   * staleness annotations for all search results — `stalenessNote()` in tools.ts
+   * never found an `expires_at` key because it received `undefined ?? {}`.
+   *
+   * Also provides access to `search_terms` (ADR-004) for future per-result use.
+   */
+  frontmatter: Record<string, unknown>;
 };
 
 // ── TfIdfSearchPlugin ────────────────────────────────────────────────────────
@@ -188,6 +175,21 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
   private vocabTokenIndex?: Map<string, Set<string>>;
 
   constructor(options?: TfIdfSearchPluginOptions) {
+    // H8-REVERT: Stemming is OFF by default. This is intentional, not a bug.
+    //
+    // DECISION RECORD (why stemming is opt-in):
+    // 1. L1 grounding and TF-IDF search are INDEPENDENT systems — they don't
+    //    cross-query. L1 stems via its own `stemTokens()`. No mismatch exists.
+    // 2. Our simplified Porter stemmer has dangerous overstemming collisions:
+    //    organization/organic/organize → "organ", transformer → "transform",
+    //    analysis/analyses → different stems. These cause false matches in
+    //    domain-specific KBs.
+    // 3. The vocabulary expansion system (aliases) is the correct tool for
+    //    morphological matching — it's explicit, domain-aware, and auditable.
+    // 4. CJK/multilingual KBs get zero benefit from an English-only stemmer.
+    //
+    // To enable stemming for English-only KBs:
+    //   new TfIdfSearchPlugin({ tokenizer: new HybridTokenizer({ useStemming: true }) })
     this.tokenizer = options?.tokenizer ?? new HybridTokenizer();
     this.vocabulary = options?.vocabulary;
     this.embedFn = options?.embedFn;
@@ -236,6 +238,30 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
         }
       }
 
+      // ADR-004: Search terms tokens (weight 2×) — LLM-generated semantic bridges.
+      //
+      // The synthesis LLM generates 8-15 natural-language phrases per article that
+      // bridge vocabulary gaps between user queries and article content. Examples:
+      //   Article: "FlashAttention"  →  search_terms: ["making transformers faster",
+      //     "efficient attention", "GPU memory optimization", "IO-aware attention"]
+      //
+      // Same weight as aliases (2×) because they serve an analogous purpose:
+      // alternative ways to discover this article. The weight hierarchy is:
+      //   title (3×) > aliases = search_terms (2×) > body (1×)
+      //
+      // Backward-compatible: if search_terms is absent or not an array, the loop
+      // executes zero iterations — existing KBs work identically.
+      const searchTerms = Array.isArray(doc.frontmatter?.search_terms)
+        ? (doc.frontmatter.search_terms as string[])
+        : [];
+      for (const term of searchTerms) {
+        if (typeof term !== "string") continue; // defensive: skip non-string entries
+        const termTokens = this.tokenizer.tokenize(term);
+        for (const token of termTokens) {
+          tf.set(token, (tf.get(token) ?? 0) + 2);
+        }
+      }
+
       // Body tokens (weight 1×)
       const bodyTokens = this.tokenizer.tokenize(doc.body);
       for (const token of bodyTokens) {
@@ -257,6 +283,12 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
         entityType: doc.entityType,
         isStub: doc.isStub,
         snippets: [intro, middle, conclusion],
+        // H17: Store compact body (2KB) for keyword-anchored excerpt fallback.
+        // Costs ~2KB/doc × 1000 docs = ~2MB total — acceptable.
+        compactBody: doc.body.slice(0, 2048),
+        // W-1 fix: store frontmatter for staleness checks (expires_at) and
+        // future per-result access to search_terms.
+        frontmatter: doc.frontmatter,
       });
       // docBodies NOT stored — would defeat A1 lazy load memory savings
     }
@@ -378,9 +410,10 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
     const entityTypeFilter = options?.entityType;
 
     // 1. Tokenize and expand query
-    let queryTerms = this.tokenizer.tokenize(query);
-    if (queryTerms.length === 0) return [];
+    const originalTerms = new Set(this.tokenizer.tokenize(query));
+    if (originalTerms.size === 0) return [];
 
+    let queryTerms = [...originalTerms];
     if (this.vocabulary) {
       queryTerms = this.expandQuery(query);
     }
@@ -389,12 +422,17 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
     const scores = new Map<string, number>();
 
     // Build query vector: TF-IDF for each query term
+    // H16: Expanded terms get 0.5× the IDF weight of original query terms.
+    // This prevents alias expansion from dominating the score — the user's
+    // actual query words are weighted higher than vocabulary expansions.
+    const EXPANSION_DECAY = 0.5;
     const queryTfIdf = new Map<string, number>();
     let queryNormSquared = 0;
     for (const term of queryTerms) {
       const idfValue = this.idf.get(term);
       if (idfValue === undefined) continue; // Term not in corpus
-      const tfidf = idfValue; // Query TF = 1 (each term appears once)
+      const decay = originalTerms.has(term) ? 1.0 : EXPANSION_DECAY;
+      const tfidf = idfValue * decay;
       queryTfIdf.set(term, tfidf);
       queryNormSquared += tfidf * tfidf;
     }
@@ -443,7 +481,9 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
         entityType: meta.entityType,
         isStub: meta.isStub,
         score: Math.min(score, 1), // Clamp to [0, 1]
-        excerpt: this.extractExcerpt(meta.snippets, queryTerms),
+        excerpt: this.extractExcerpt(meta, queryTerms),
+        // 1.1: pass frontmatter so tools.ts can check expires_at without extra I/O
+        frontmatter: meta.frontmatter,
       };
     });
   }
@@ -482,20 +522,35 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
    */
   private async buildDocEmbeddings(): Promise<void> {
     if (!this.embedFn || this.docEmbeddings) return;
-    this.docEmbeddings = new Map();
+    // G-1: Capture the Map reference BEFORE launching async tasks.
+    // If clear() fires during the pAllSettled build (e.g. on a concurrent KB reload),
+    // it sets this.docEmbeddings = undefined. Tasks that then reference
+    // `this.docEmbeddings!.set(...)` via the field would get a TypeError.
+    // By writing into a captured local `map`, tasks always have a valid reference.
+    // After the build we only publish the map if it wasn't superseded by a reload.
+    const map = new Map<string, number[]>();
+    this.docEmbeddings = map;
     const entries = [...this.docMeta.entries()];
     await pAllSettled(
       entries.map(([docId, meta]) => async () => {
         try {
           const text = meta.title + " " + meta.snippets.join(" ");
           const emb = await this.embedFn!(text);
-          this.docEmbeddings!.set(docId, emb);
+          map.set(docId, emb);  // write into captured reference, not this.docEmbeddings!
         } catch {
           // Skip documents that fail to embed
         }
       }),
       EMBED_CONCURRENCY,
     );
+    // G-1: Only publish if a reload hasn't superseded this build.
+    // If clear() ran mid-build, this.docEmbeddings was set to undefined;
+    // reassigning it to the stale map would leave the store with pre-reload embeddings.
+    if (this.docEmbeddings === undefined) {
+      // A reload cleared us mid-build — discard the stale results.
+      return;
+    }
+    // this.docEmbeddings was set to `map` above and is still `map` (no reload) — nothing to do.
   }
 
   /**
@@ -553,13 +608,14 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
   }
 
   /**
-   * P2-3: Extract a ~200 character excerpt from the best matching snippet window.
-   * Searches all three windows (intro/middle/conclusion) for the best match,
-   * so matches in the article body or conclusion are no longer invisible.
+   * P2-3 + H17: Extract a ~200 character excerpt from the best matching snippet window.
+   * Searches all three fixed windows (intro/middle/conclusion) first, then falls
+   * back to keyword-anchored search in the compact body. This makes matches in
+   * ~91% more of the article body visible to excerpt extraction.
    */
-  private extractExcerpt(snippets: [string, string, string], terms: string[]): string {
+  private extractExcerpt(meta: DocMeta, terms: string[]): string {
     // Search each snippet window for the best match
-    for (const snippet of snippets) {
+    for (const snippet of meta.snippets) {
       if (!snippet) continue;
       const bodyLower = snippet.toLowerCase();
       for (const term of terms) {
@@ -574,8 +630,26 @@ export class TfIdfSearchPlugin implements KBSearchAdapter {
         }
       }
     }
-    // No match found in any window — return start of intro
-    return snippets[0].slice(0, 200).trim();
+
+    // H17: Keyword-anchored search in compact body — covers matches outside
+    // the 3 fixed snippet windows
+    if (meta.compactBody) {
+      const bodyLower = meta.compactBody.toLowerCase();
+      for (const term of terms) {
+        const pos = bodyLower.indexOf(term);
+        if (pos >= 0) {
+          const start = Math.max(0, pos - 100);
+          const end = Math.min(meta.compactBody.length, pos + 200);
+          let excerpt = meta.compactBody.slice(start, end).trim();
+          if (start > 0) excerpt = "…" + excerpt;
+          if (end < meta.compactBody.length) excerpt += "…";
+          return excerpt;
+        }
+      }
+    }
+
+    // No match found — return start of intro
+    return meta.snippets[0].slice(0, 200).trim();
   }
 }
 

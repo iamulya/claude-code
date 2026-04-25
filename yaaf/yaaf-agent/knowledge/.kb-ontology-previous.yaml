@@ -1,0 +1,6716 @@
+# YAAF Knowledge Base Ontology
+# Domain model for: YAAF (Yet Another Agent Framework) — a TypeScript-first, provider-agnostic, production-grade agent framework for building LLM-powered agents. Covers architecture, API surfaces, configuration, plugins, security, runtimes, and advanced patterns.
+# Reviewed and committed by: [your name]
+# Last updated: 2026-04-25
+
+domain: "YAAF (Yet Another Agent Framework) — a TypeScript-first, provider-agnostic, production-grade agent framework for building LLM-powered agents. Covers architecture, API surfaces, configuration, plugins, security, runtimes, and advanced patterns."
+
+# ── Entity Types ──────────────────────────────────────────────────────────
+entity_types:
+ concept:
+  description: "A core abstraction, pattern, or design principle in YAAF. Concepts are framework-level ideas that cut across multiple subsystems (e.g. context window, token budget, plugin capability). Not a specific class or API."
+  linkable_to:
+   - concept
+   - guide
+   - api
+   - subsystem
+  frontmatter:
+   fields:
+    title:
+     description: "Article title — the concept name"
+     type: string
+     required: true
+    entity_type:
+     description: "Entity type identifier"
+     type: enum
+     required: true
+     enum:
+      - concept
+      - api
+      - subsystem
+      - guide
+      - plugin
+    summary:
+     description: "One-sentence description of the concept"
+     type: string
+     required: true
+     missing_severity: warning
+    related_subsystems:
+     description: "Which YAAF subsystems this concept is central to"
+     type: string[]
+     required: false
+    see_also:
+     description: "Related concepts, guides, or API articles"
+     type: entity_ref[]
+     required: false
+     target_entity_type: concept
+  article_structure:
+   - heading: "What It Is"
+     description: "Define the concept clearly. What problem does it solve? Why does YAAF need it?"
+     required: true
+   - heading: "How It Works in YAAF"
+     description: "Explain the mechanism. Reference the actual implementation classes and methods."
+     required: true
+   - heading: "Configuration"
+     description: "Show how a developer configures or overrides this concept. Use code examples."
+     required: false
+   - heading: "See Also"
+     description: "Link to related concepts, guides, and API articles using wikilinks."
+     required: false
+
+ api:
+  description: "A specific exported class, function, hook, type, or factory in the YAAF public API surface (src/index.ts). The definitive reference for a concrete API entity."
+  linkable_to:
+   - api
+   - concept
+   - guide
+   - subsystem
+   - plugin
+  frontmatter:
+   fields:
+    title:
+     description: "Article title — the export name"
+     type: string
+     required: true
+    entity_type:
+     description: "Entity type identifier"
+     type: enum
+     required: true
+     enum:
+      - concept
+      - api
+      - subsystem
+      - guide
+      - plugin
+    summary:
+     description: "One-sentence description of what this API entity does"
+     type: string
+     required: true
+     missing_severity: warning
+    export_name:
+     description: "The exact name as exported from the yaaf package"
+     type: string
+     required: true
+     missing_severity: warning
+    source_file:
+     description: "Relative path to the source file, e.g. src/agent.ts"
+     type: string
+     required: true
+     missing_severity: warning
+    category:
+     description: "Kind of TypeScript entity"
+     type: enum
+     required: true
+     missing_severity: warning
+     enum:
+      - class
+      - function
+      - type
+      - interface
+      - constant
+      - const
+      - enum
+    deprecated:
+     description: "Whether this API is deprecated"
+     type: boolean
+     required: false
+  article_structure:
+   - heading: "Overview"
+     description: "What this API entity does. When and why you would use it."
+     required: true
+   - heading: "Signature / Constructor"
+     description: "Show the TypeScript signature, constructor parameters, and config types."
+     required: true
+   - heading: "Methods & Properties"
+     description: "Document all public methods and properties with signatures and descriptions."
+     required: false
+   - heading: "Events"
+     description: "If the entity emits events, list them with their payload types."
+     required: false
+   - heading: "Examples"
+     description: "Minimal, realistic code examples showing the most common usage patterns."
+     required: true
+   - heading: "See Also"
+     description: "Link to related API articles, guides, and concepts."
+     required: false
+
+ subsystem:
+  description: "A logical subsystem of the YAAF framework — a cohesive cluster of source files that serves a unified architectural purpose (e.g. Memory System, Context Management, Plugin Host)."
+  linkable_to:
+   - api
+   - concept
+   - guide
+   - subsystem
+   - plugin
+  frontmatter:
+   fields:
+    title:
+     description: "Article title — the subsystem name"
+     type: string
+     required: true
+    entity_type:
+     description: "Entity type identifier"
+     type: enum
+     required: true
+     enum:
+      - concept
+      - api
+      - subsystem
+      - guide
+      - plugin
+    summary:
+     description: "One-sentence description of what this subsystem provides"
+     type: string
+     required: true
+     missing_severity: warning
+    primary_files:
+     description: "Key source files in this subsystem (relative paths)"
+     type: string[]
+     required: true
+     missing_severity: warning
+    exports:
+     description: "Key classes/functions exported by this subsystem"
+     type: string[]
+     required: false
+  article_structure:
+   - heading: "Purpose"
+     description: "What problem does this subsystem solve? What are its boundaries?"
+     required: true
+   - heading: "Architecture"
+     description: "How is it structured internally? Key classes and their roles."
+     required: true
+   - heading: "Integration Points"
+     description: "How do other subsystems interact with this one?"
+     required: false
+   - heading: "Key APIs"
+     description: "The most important public APIs in this subsystem. Link to api/ articles."
+     required: true
+   - heading: "Configuration"
+     description: "How developers configure this subsystem via AgentConfig or plugin registration."
+     required: false
+   - heading: "Extension Points"
+     description: "How developers extend or override behaviour (plugins, strategies, hooks)."
+     required: false
+
+ guide:
+  description: "A task-oriented how-to article that walks a developer through accomplishing a specific goal with YAAF. Written in the imperative (How to build X, Setting up Y)."
+  linkable_to:
+   - api
+   - concept
+   - subsystem
+   - guide
+   - plugin
+  frontmatter:
+   fields:
+    title:
+     description: "Article title — the guide topic"
+     type: string
+     required: true
+    entity_type:
+     description: "Entity type identifier"
+     type: enum
+     required: true
+     enum:
+      - concept
+      - api
+      - subsystem
+      - guide
+      - plugin
+    summary:
+     description: "One-sentence description of what this guide achieves"
+     type: string
+     required: true
+     missing_severity: warning
+    difficulty:
+     description: "Approximate difficulty level for a TypeScript developer"
+     type: enum
+     required: false
+     enum:
+      - beginner
+      - intermediate
+      - advanced
+  article_structure:
+   - heading: "Overview"
+     description: "What the reader will build or achieve. Set clear expectations."
+     required: true
+   - heading: "Prerequisites"
+     description: "What they need installed, configured, or understood first."
+     required: false
+   - heading: "Step-by-Step"
+     description: "The actual implementation steps with full working code."
+     required: true
+   - heading: "Configuration Reference"
+     description: "All relevant config options with types and defaults."
+     required: false
+   - heading: "Common Mistakes"
+     description: "The top 3-5 things that go wrong and how to fix them."
+     required: false
+   - heading: "Next Steps"
+     description: "What to read or build next. Link to related guides and API articles."
+     required: false
+
+ plugin:
+  description: "A YAAF plugin — a class implementing one or more PluginCapability adapter interfaces (memory, browser, session, observability, etc.) that extends the framework via the plugin system."
+  linkable_to:
+   - api
+   - concept
+   - subsystem
+   - guide
+  frontmatter:
+   fields:
+    title:
+     description: "Article title — the plugin name"
+     type: string
+     required: true
+    entity_type:
+     description: "Entity type identifier"
+     type: enum
+     required: true
+     enum:
+      - concept
+      - api
+      - subsystem
+      - guide
+      - plugin
+    summary:
+     description: "One-sentence description of what this plugin provides"
+     type: string
+     required: true
+     missing_severity: warning
+    capabilities:
+     description: "Plugin capability types it implements (memory, browser, session, etc.)"
+     type: string[]
+     required: true
+     missing_severity: warning
+    built_in:
+     description: "Whether this plugin ships with the yaaf package"
+     type: boolean
+     required: false
+  article_structure:
+   - heading: "Overview"
+     description: "What this plugin does and what capability types it implements."
+     required: true
+   - heading: "Installation"
+     description: "How to install and import it. Show peer dependency requirements."
+     required: true
+   - heading: "Configuration"
+     description: "Constructor parameters and config types. Show a complete working example."
+     required: true
+   - heading: "Capabilities"
+     description: "For each capability it implements, explain what it provides."
+     required: true
+   - heading: "Limitations"
+     description: "Known constraints, unsupported features, or environmental requirements."
+     required: false
+
+# ── Relationship Types ────────────────────────────────────────────────────
+relationship_types:
+ - name: IMPLEMENTS
+   from: plugin
+   to: concept
+   description: "A plugin that provides a concrete implementation of an adapter concept"
+   reciprocal: IMPLEMENTED_BY
+ - name: IMPLEMENTED_BY
+   from: concept
+   to: plugin
+   description: "A concept that is implemented by a plugin"
+   reciprocal: IMPLEMENTS
+ - name: EXTENDS
+   from: api
+   to: api
+   description: "A class or type that extends another"
+   reciprocal: EXTENDED_BY
+ - name: EXTENDED_BY
+   from: api
+   to: api
+   description: "A class or type that is extended by another"
+   reciprocal: EXTENDS
+ - name: BELONGS_TO
+   from: api
+   to: subsystem
+   description: "An API entity that is part of a subsystem"
+   reciprocal: CONTAINS
+ - name: CONTAINS
+   from: subsystem
+   to: api
+   description: "A subsystem that contains an API entity"
+   reciprocal: BELONGS_TO
+ - name: DEPENDS_ON
+   from: subsystem
+   to: subsystem
+   description: "A subsystem that depends on another"
+   reciprocal: DEPENDED_ON_BY
+ - name: DEPENDED_ON_BY
+   from: subsystem
+   to: subsystem
+   description: "A subsystem that is depended on by another"
+   reciprocal: DEPENDS_ON
+ - name: ILLUSTRATES
+   from: guide
+   to: concept
+   description: "A guide that demonstrates or applies a concept"
+   reciprocal: ILLUSTRATED_BY
+ - name: ILLUSTRATED_BY
+   from: concept
+   to: guide
+   description: "A concept that is demonstrated by a guide"
+   reciprocal: ILLUSTRATES
+ - name: CONFIGURES
+   from: guide
+   to: api
+   description: "A guide that explains how to configure a specific API entity"
+   reciprocal: CONFIGURED_BY
+ - name: CONFIGURED_BY
+   from: api
+   to: guide
+   description: "An API entity that is explained by a guide"
+   reciprocal: CONFIGURES
+ - name: WRAPS
+   from: api
+   to: api
+   description: "A higher-level API that wraps or composes a lower-level one"
+   reciprocal: WRAPPED_BY
+ - name: WRAPPED_BY
+   from: api
+   to: api
+   description: "A lower-level API that is wrapped by a higher-level one"
+   reciprocal: WRAPS
+
+# ── Vocabulary ────────────────────────────────────────────────────────────
+vocabulary:
+ "agent":
+  entity_type: api
+  aliases:
+   - "YAAF agent"
+   - "Agent class"
+   - "agent instance"
+ "agentconfig":
+  entity_type: api
+  aliases:
+   - "Agent Config"
+   - "agent configuration"
+ "agentrunner":
+  entity_type: api
+  aliases:
+   - "Agent Runner"
+   - "runner"
+   - "LLM loop"
+   - "execution loop"
+ "agentrunnerconfig":
+  entity_type: api
+  aliases:
+   - "Agent Runner Config"
+ "geminiagent":
+  entity_type: api
+  aliases:
+   - "Gemini agent"
+   - "Gemini Agent factory"
+ "openaiagent":
+  entity_type: api
+  aliases:
+   - "OpenAI agent"
+   - "OpenAI Agent factory"
+ "ollamaagent":
+  entity_type: api
+  aliases:
+   - "Ollama agent"
+   - "Ollama Agent factory"
+ "agentthread":
+  entity_type: api
+  aliases:
+   - "Agent Thread"
+   - "thread"
+   - "durable pause-resume"
+ "createthread":
+  entity_type: api
+  aliases:
+   - "create thread"
+ "forkthread":
+  entity_type: api
+  aliases:
+   - "fork thread"
+ "createstore":
+  entity_type: api
+  aliases:
+   - "create store"
+   - "state store"
+ "store":
+  entity_type: api
+  aliases:
+   - "state store"
+   - "reactive store"
+ "tool":
+  entity_type: concept
+  aliases:
+   - "YAAF tool"
+   - "tool definition"
+   - "buildTool"
+   - "tool call"
+ "buildtool":
+  entity_type: api
+  aliases:
+   - "build tool"
+   - "tool builder"
+ "findtoolbyname":
+  entity_type: api
+  aliases:
+   - "find tool by name"
+ "openapitoolset":
+  entity_type: api
+  aliases:
+   - "OpenAPI Toolset"
+   - "REST API toolset"
+   - "OpenAPI tool"
+ "agenttool":
+  entity_type: api
+  aliases:
+   - "agent tool"
+   - "agent-as-tool"
+ "agenttools":
+  entity_type: api
+  aliases:
+   - "agent tools"
+ "toolloopdetector":
+  entity_type: api
+  aliases:
+   - "Tool Loop Detector"
+   - "loop detection"
+   - "tool loop"
+ "streamingtoolexecutor":
+  entity_type: api
+  aliases:
+   - "Streaming Tool Executor"
+   - "concurrent tool execution"
+ "applytoolresultbudget":
+  entity_type: api
+  aliases:
+   - "tool result budget"
+ "memorystore":
+  entity_type: api
+  aliases:
+   - "Memory Store"
+   - "memory store"
+ "memoryrelevanceengine":
+  entity_type: api
+  aliases:
+   - "Memory Relevance Engine"
+ "teammemory":
+  entity_type: api
+  aliases:
+   - "Team Memory"
+   - "shared memory"
+ "automemoryextractor":
+  entity_type: api
+  aliases:
+   - "Auto Memory Extractor"
+   - "auto-extract"
+ "memory strategy":
+  entity_type: concept
+  aliases:
+   - "MemoryStrategy"
+   - "memory extraction"
+   - "memory retrieval"
+ "sessionmemoryextractor":
+  entity_type: api
+  aliases:
+   - "Session Memory Extractor"
+ "topicfileextractor":
+  entity_type: api
+  aliases:
+   - "Topic File Extractor"
+ "ephemeralbufferstrategy":
+  entity_type: api
+  aliases:
+   - "Ephemeral Buffer Strategy"
+ "llmretrievalstrategy":
+  entity_type: api
+  aliases:
+   - "LLM Retrieval Strategy"
+ "recencyretrievalstrategy":
+  entity_type: api
+  aliases:
+   - "Recency Retrieval Strategy"
+ "compositememorystrategy":
+  entity_type: api
+  aliases:
+   - "Composite Memory Strategy"
+ "honchomemorystrategy":
+  entity_type: api
+  aliases:
+   - "Honcho Memory Strategy"
+ "contextmanager":
+  entity_type: api
+  aliases:
+   - "Context Manager"
+   - "context window management"
+   - "token budget management"
+ "contextengine":
+  entity_type: api
+  aliases:
+   - "Context Engine"
+ "compaction":
+  entity_type: concept
+  aliases:
+   - "context compaction"
+   - "compaction strategy"
+   - "auto-compaction"
+   - "history compaction"
+ "summarizestrategy":
+  entity_type: api
+  aliases:
+   - "Summarize Strategy"
+ "truncatestrategy":
+  entity_type: api
+  aliases:
+   - "Truncate Strategy"
+ "slidingwindowstrategy":
+  entity_type: api
+  aliases:
+   - "Sliding Window Strategy"
+ "microcompactstrategy":
+  entity_type: api
+  aliases:
+   - "Micro Compact Strategy"
+ "timebasedmicrocompactstrategy":
+  entity_type: api
+  aliases:
+   - "Time Based Micro Compact Strategy"
+ "compactioncircuitbreaker":
+  entity_type: api
+  aliases:
+   - "Compaction Circuit Breaker"
+   - "circuit breaker"
+ "sniphistory":
+  entity_type: api
+  aliases:
+   - "snip history"
+   - "history snipping"
+ "contentreplacementtracker":
+  entity_type: api
+  aliases:
+   - "Content Replacement Tracker"
+ "buildcompactionprompt":
+  entity_type: api
+  aliases:
+   - "compaction prompt"
+ "agentorchestrator":
+  entity_type: api
+  aliases:
+   - "Agent Orchestrator"
+   - "orchestrator"
+   - "multi-agent orchestrator"
+   - "agent swarm"
+ "mailbox":
+  entity_type: api
+  aliases:
+   - "mailbox"
+   - "agent mailbox"
+   - "IPC"
+ "taskmanager":
+  entity_type: api
+  aliases:
+   - "Task Manager"
+   - "task management"
+ "agentrouter":
+  entity_type: api
+  aliases:
+   - "Agent Router"
+   - "delegate architecture"
+   - "agent routing"
+ "buildcoordinatorprompt":
+  entity_type: api
+  aliases:
+   - "coordinator prompt"
+   - "coordinator mode"
+ "sequential":
+  entity_type: api
+  aliases:
+   - "sequential workflow"
+ "parallel":
+  entity_type: api
+  aliases:
+   - "parallel workflow"
+ "loop":
+  entity_type: api
+  aliases:
+   - "loop workflow"
+ "conditional":
+  entity_type: api
+  aliases:
+   - "conditional workflow"
+ "transform":
+  entity_type: api
+  aliases:
+   - "transform step"
+ "workflowagent":
+  entity_type: api
+  aliases:
+   - "Workflow Agent"
+   - "workflow"
+ "structuredagent":
+  entity_type: api
+  aliases:
+   - "structured agent"
+   - "structured output agent"
+ "parsestructuredoutput":
+  entity_type: api
+  aliases:
+   - "parse structured output"
+ "vigil":
+  entity_type: api
+  aliases:
+   - "vigil"
+   - "autonomous mode"
+   - "scheduled agent"
+   - "daemon mode"
+ "heartbeat":
+  entity_type: api
+  aliases:
+   - "heartbeat"
+   - "proactive scheduling"
+   - "standing order"
+ "systempromptbuilder":
+  entity_type: api
+  aliases:
+   - "System Prompt Builder"
+   - "system prompt"
+   - "system context"
+ "envsection":
+  entity_type: api
+  aliases:
+   - "env section"
+ "rulessection":
+  entity_type: api
+  aliases:
+   - "rules section"
+ "identitysection":
+  entity_type: api
+  aliases:
+   - "identity section"
+ "hook":
+  entity_type: concept
+  aliases:
+   - "lifecycle hook"
+   - "beforeLLM hook"
+   - "afterLLM hook"
+   - "agent hook"
+ "hooks":
+  entity_type: api
+  aliases:
+   - "hooks interface"
+ "permissionpolicy":
+  entity_type: api
+  aliases:
+   - "Permission Policy"
+   - "permission system"
+   - "tool permission"
+ "allowall":
+  entity_type: api
+  aliases:
+   - "allow all policy"
+ "denyall":
+  entity_type: api
+  aliases:
+   - "deny all policy"
+ "cliapproval":
+  entity_type: api
+  aliases:
+   - "CLI approval"
+   - "human-in-the-loop"
+ "secureclipolicy":
+  entity_type: api
+  aliases:
+   - "secure CLI policy"
+ "accesspolicy":
+  entity_type: api
+  aliases:
+   - "access policy"
+   - "IAM policy"
+ "rolestrategy":
+  entity_type: api
+  aliases:
+   - "Role Strategy"
+   - "RBAC"
+ "attributestrategy":
+  entity_type: api
+  aliases:
+   - "Attribute Strategy"
+   - "ABAC"
+ "tenantscopestrategy":
+  entity_type: api
+  aliases:
+   - "Tenant Scope Strategy"
+   - "multi-tenancy"
+ "ownershipscopestrategy":
+  entity_type: api
+  aliases:
+   - "Ownership Scope Strategy"
+ "hierarchyscopestrategy":
+  entity_type: api
+  aliases:
+   - "Hierarchy Scope Strategy"
+ "jwtidentityprovider":
+  entity_type: api
+  aliases:
+   - "JWT Identity Provider"
+   - "JWT provider"
+ "apikeyidentityprovider":
+  entity_type: api
+  aliases:
+   - "API Key Identity Provider"
+ "oidcidentityprovider":
+  entity_type: api
+  aliases:
+   - "OIDC Identity Provider"
+   - "OpenID Connect"
+ "verifyjwt":
+  entity_type: api
+  aliases:
+   - "verify JWT"
+ "decodejwt":
+  entity_type: api
+  aliases:
+   - "decode JWT"
+ "security hooks":
+  entity_type: concept
+  aliases:
+   - "securityHooks"
+   - "prompt guard"
+   - "PII redactor"
+   - "output sanitizer"
+ "promptguard":
+  entity_type: api
+  aliases:
+   - "Prompt Guard"
+   - "injection detection"
+ "outputsanitizer":
+  entity_type: api
+  aliases:
+   - "Output Sanitizer"
+ "piiredactor":
+  entity_type: api
+  aliases:
+   - "PII Redactor"
+   - "PII detection"
+ "trustpolicy":
+  entity_type: api
+  aliases:
+   - "Trust Policy"
+   - "plugin trust"
+ "groundingvalidator":
+  entity_type: api
+  aliases:
+   - "Grounding Validator"
+   - "hallucination detection"
+ "peruserratelimiter":
+  entity_type: api
+  aliases:
+   - "Per User Rate Limiter"
+   - "rate limiting"
+ "inputanomalydetector":
+  entity_type: api
+  aliases:
+   - "Input Anomaly Detector"
+   - "anomaly detection"
+ "structuredoutputvalidator":
+  entity_type: api
+  aliases:
+   - "Structured Output Validator"
+ "securityauditlog":
+  entity_type: api
+  aliases:
+   - "Security Audit Log"
+   - "audit log"
+ "sandbox":
+  entity_type: api
+  aliases:
+   - "sandbox"
+   - "code sandbox"
+ "projectsandbox":
+  entity_type: api
+  aliases:
+   - "project sandbox"
+ "strictsandbox":
+  entity_type: api
+  aliases:
+   - "strict sandbox"
+ "openaichatmodel":
+  entity_type: api
+  aliases:
+   - "OpenAI Chat Model"
+   - "OpenAI model"
+ "geminichatmodel":
+  entity_type: api
+  aliases:
+   - "Gemini Chat Model"
+   - "Gemini model"
+ "anthropicchatmodel":
+  entity_type: api
+  aliases:
+   - "Anthropic Chat Model"
+   - "Claude model"
+ "routerchatmodel":
+  entity_type: api
+  aliases:
+   - "Router Chat Model"
+   - "model router"
+ "basellmadapter":
+  entity_type: api
+  aliases:
+   - "Base LLM Adapter"
+ "resolvemodel":
+  entity_type: api
+  aliases:
+   - "resolve model"
+   - "model resolver"
+ "resolvemodelspecs":
+  entity_type: api
+  aliases:
+   - "model specs"
+ "session":
+  entity_type: api
+  aliases:
+   - "session"
+   - "session persistence"
+   - "conversation history"
+   - "JSONL session"
+ "securestorage":
+  entity_type: api
+  aliases:
+   - "Secure Storage"
+ "plugin":
+  entity_type: concept
+  aliases:
+   - "YAAF plugin"
+   - "adapter plugin"
+   - "capability plugin"
+ "plugin capability":
+  entity_type: concept
+  aliases:
+   - "PluginCapability"
+   - "adapter capability"
+   - "capability type"
+ "pluginhost":
+  entity_type: api
+  aliases:
+   - "Plugin Host"
+   - "plugin registry"
+   - "adapter registry"
+ "pluginbase":
+  entity_type: api
+  aliases:
+   - "Plugin Base"
+ "honchoplugin":
+  entity_type: plugin
+  aliases:
+   - "Honcho Plugin"
+   - "Honcho integration"
+ "agentfsplugin":
+  entity_type: plugin
+  aliases:
+   - "Agent FS Plugin"
+   - "filesystem plugin"
+ "camoufoxplugin":
+  entity_type: plugin
+  aliases:
+   - "Camoufox Plugin"
+   - "browser plugin"
+ "mcpplugin":
+  entity_type: plugin
+  aliases:
+   - "MCP Plugin"
+   - "MCP integration"
+ "mcp":
+  entity_type: concept
+  aliases:
+   - "Model Context Protocol"
+   - "McpPlugin"
+   - "MCP server"
+   - "MCP tool"
+ "stdiomcp":
+  entity_type: api
+  aliases:
+   - "stdio MCP"
+   - "MCP stdio server"
+ "ssemcp":
+  entity_type: api
+  aliases:
+   - "SSE MCP"
+ "mcpoauthclient":
+  entity_type: api
+  aliases:
+   - "MCP OAuth Client"
+ "a2aclient":
+  entity_type: api
+  aliases:
+   - "A2A Client"
+   - "agent-to-agent client"
+ "a2aserver":
+  entity_type: api
+  aliases:
+   - "A2A Server"
+   - "agent-to-agent server"
+ "a2atool":
+  entity_type: api
+  aliases:
+   - "A2A tool"
+ "servea2a":
+  entity_type: api
+  aliases:
+   - "serve A2A"
+ "skillregistry":
+  entity_type: api
+  aliases:
+   - "Skill Registry"
+ "loadskills":
+  entity_type: api
+  aliases:
+   - "load skills"
+ "defineskill":
+  entity_type: api
+  aliases:
+   - "define skill"
+ "consolenotifier":
+  entity_type: api
+  aliases:
+   - "Console Notifier"
+ "webhooknotifier":
+  entity_type: api
+  aliases:
+   - "Webhook Notifier"
+ "buffernotifier":
+  entity_type: api
+  aliases:
+   - "Buffer Notifier"
+ "compositenotifier":
+  entity_type: api
+  aliases:
+   - "Composite Notifier"
+ "telemetry":
+  entity_type: subsystem
+  aliases:
+   - "OpenTelemetry"
+   - "OTel"
+   - "YAAF telemetry"
+   - "tracing"
+ "inityaaftelemetry":
+  entity_type: api
+  aliases:
+   - "init YAAF telemetry"
+   - "telemetry init"
+ "startagentrunspan":
+  entity_type: api
+  aliases:
+   - "start agent run span"
+ "executeinspan":
+  entity_type: api
+  aliases:
+   - "execute in span"
+ "costtracker":
+  entity_type: api
+  aliases:
+   - "Cost Tracker"
+   - "token cost"
+   - "usage tracking"
+ "guardrails":
+  entity_type: api
+  aliases:
+   - "guardrails"
+   - "budget guardrail"
+   - "resource limit"
+ "budgetexceedederror":
+  entity_type: api
+  aliases:
+   - "Budget Exceeded Error"
+ "yaaferror":
+  entity_type: api
+  aliases:
+   - "YAAF Error"
+   - "base error"
+ "contextoverflowerror":
+  entity_type: api
+  aliases:
+   - "Context Overflow Error"
+   - "context window overflow"
+   - "token limit exceeded"
+ "ratelimiterror":
+  entity_type: api
+  aliases:
+   - "Rate Limit Error"
+ "toolexecutionerror":
+  entity_type: api
+  aliases:
+   - "Tool Execution Error"
+ "apierror":
+  entity_type: api
+  aliases:
+   - "API Error"
+ "compactionerror":
+  entity_type: api
+  aliases:
+   - "Compaction Error"
+ "aborterror":
+  entity_type: api
+  aliases:
+   - "Abort Error"
+ "retryexhaustederror":
+  entity_type: api
+  aliases:
+   - "Retry Exhausted Error"
+ "maxiterationserror":
+  entity_type: api
+  aliases:
+   - "Max Iterations Error"
+ "eventbus":
+  entity_type: api
+  aliases:
+   - "Event Bus"
+   - "event system"
+ "logger":
+  entity_type: api
+  aliases:
+   - "logger"
+   - "structured logging"
+ "estimatetokens":
+  entity_type: api
+  aliases:
+   - "estimate tokens"
+   - "token counting"
+ "withretry":
+  entity_type: api
+  aliases:
+   - "with retry"
+   - "retry logic"
+ "scratchpad":
+  entity_type: api
+  aliases:
+   - "scratchpad"
+   - "agent scratchpad"
+ "generateawaysummary":
+  entity_type: api
+  aliases:
+   - "away summary"
+   - "resume summary"
+ "generatetoolusesummary":
+  entity_type: api
+  aliases:
+   - "tool use summary"
+ "adaptstream":
+  entity_type: api
+  aliases:
+   - "adapt stream"
+   - "stream adapter"
+ "tostreamableagent":
+  entity_type: api
+  aliases:
+   - "streamable agent"
+ "gateway":
+  entity_type: api
+  aliases:
+   - "Gateway"
+   - "channel adapter"
+   - "messaging transport"
+ "yaafdoctor":
+  entity_type: api
+  aliases:
+   - "YAAF Doctor"
+   - "doctor"
+   - "embedded expert agent"
+ "knowledge base":
+  entity_type: subsystem
+  aliases:
+   - "KnowledgeBase"
+   - "KB"
+   - "compiled knowledge"
+   - "KBCompiler"
+   - "KBStore"
+ "kbstore":
+  entity_type: api
+  aliases:
+   - "KB Store"
+   - "knowledge store"
+ "createkbtools":
+  entity_type: api
+  aliases:
+   - "create KB tools"
+   - "knowledge tools"
+ "federatedknowledgebase":
+  entity_type: api
+  aliases:
+   - "Federated Knowledge Base"
+ "runtimestreamevent":
+  entity_type: api
+  aliases:
+   - "Runtime Stream Event"
+ "streamableagent":
+  entity_type: api
+  aliases:
+   - "Streamable Agent"
+ "startagentsummarization":
+  entity_type: api
+  aliases:
+   - "agent summarization"
+ "validatecron":
+  entity_type: api
+  aliases:
+   - "validate cron"
+ "nextcronrunms":
+  entity_type: api
+  aliases:
+   - "next cron run"
+ "describecron":
+  entity_type: api
+  aliases:
+   - "describe cron"
+ "abac":
+  entity_type: api
+  doc_id: apis/abac
+  aliases:
+   - "abac"
+ "addcomponent":
+  entity_type: api
+  doc_id: apis/add-component
+  aliases:
+   - "addcomponent"
+ "agententry":
+  entity_type: api
+  doc_id: apis/agent-entry
+  aliases:
+   - "agententry"
+ "agentsummarizationconfig":
+  entity_type: api
+  doc_id: apis/agent-summarization-config
+  aliases:
+   - "agentsummarizationconfig"
+ "agenttoolconfig":
+  entity_type: api
+  doc_id: apis/agent-tool-config
+  aliases:
+   - "agenttoolconfig"
+ "aliasindex":
+  entity_type: api
+  doc_id: apis/alias-index
+  aliases:
+   - "aliasindex"
+ "alwayscapable":
+  entity_type: api
+  doc_id: apis/always-capable
+  aliases:
+   - "alwayscapable"
+ "alwaysfast":
+  entity_type: api
+  doc_id: apis/always-fast
+  aliases:
+   - "alwaysfast"
+ "anomalytype":
+  entity_type: api
+  doc_id: apis/anomaly-type
+  aliases:
+   - "anomalytype"
+ "appendqualityrecord":
+  entity_type: api
+  doc_id: apis/append-quality-record
+  aliases:
+   - "appendqualityrecord"
+ "applyauth":
+  entity_type: api
+  doc_id: apis/apply-auth
+  aliases:
+   - "applyauth"
+ "applyfixes":
+  entity_type: api
+  doc_id: apis/apply-fixes
+  aliases:
+   - "applyfixes"
+ "applysoul":
+  entity_type: api
+  doc_id: apis/apply-soul
+  aliases:
+   - "applysoul"
+ "approvaldecision":
+  entity_type: api
+  doc_id: apis/approval-decision
+  aliases:
+   - "approvaldecision"
+ "approvalhandler":
+  entity_type: api
+  doc_id: apis/approval-handler
+  aliases:
+   - "approvalhandler"
+ "approvalmanager":
+  entity_type: api
+  doc_id: apis/approval-manager
+  aliases:
+   - "approvalmanager"
+ "approvalmanager api":
+  entity_type: api
+  doc_id: apis/approval-manager-api
+  aliases:
+   - "approvalmanager api"
+ "approvalmanagerconfig":
+  entity_type: api
+  doc_id: apis/approval-manager-config
+  aliases:
+   - "approvalmanagerconfig"
+ "approvalrecord":
+  entity_type: api
+  doc_id: apis/approval-record
+  aliases:
+   - "approvalrecord"
+ "approvalrequest":
+  entity_type: api
+  doc_id: apis/approval-request
+  aliases:
+   - "approvalrequest"
+ "approvaltransport":
+  entity_type: api
+  doc_id: apis/approval-transport
+  aliases:
+   - "approvaltransport"
+ "articleaction":
+  entity_type: api
+  doc_id: apis/article-action
+  aliases:
+   - "articleaction"
+ "articlefrontmatter":
+  entity_type: api
+  doc_id: apis/article-frontmatter
+  aliases:
+   - "articlefrontmatter"
+ "articlefrontmatterschema":
+  entity_type: api
+  doc_id: apis/article-frontmatter-schema
+  aliases:
+   - "articlefrontmatterschema"
+ "articleplan":
+  entity_type: api
+  doc_id: apis/article-plan
+  aliases:
+   - "articleplan"
+ "articlesection":
+  entity_type: api
+  doc_id: apis/article-section
+  aliases:
+   - "articlesection"
+ "articlesynthesisresult":
+  entity_type: api
+  doc_id: apis/article-synthesis-result
+  aliases:
+   - "articlesynthesisresult"
+ "articlesaffectedbysource":
+  entity_type: api
+  doc_id: apis/articles-affected-by-source
+  aliases:
+   - "articlesaffectedbysource"
+ "articleswithsharedsources":
+  entity_type: api
+  doc_id: apis/articles-with-shared-sources
+  aliases:
+   - "articleswithsharedsources"
+ "asstep":
+  entity_type: api
+  doc_id: apis/as-step
+  aliases:
+   - "asstep"
+ "atomicwritefile":
+  entity_type: api
+  doc_id: apis/atomic-write-file
+  aliases:
+   - "atomicwritefile"
+ "attributerule":
+  entity_type: api
+  doc_id: apis/attribute-rule
+  aliases:
+   - "attributerule"
+ "attributestrategyconfig":
+  entity_type: api
+  doc_id: apis/attribute-strategy-config
+  aliases:
+   - "attributestrategyconfig"
+ "auditcategory":
+  entity_type: api
+  doc_id: apis/audit-category
+  aliases:
+   - "auditcategory"
+ "auditentry":
+  entity_type: api
+  doc_id: apis/audit-entry
+  aliases:
+   - "auditentry"
+ "auditlogconfig":
+  entity_type: api
+  doc_id: apis/audit-log-config
+  aliases:
+   - "auditlogconfig"
+ "auditseverity":
+  entity_type: api
+  doc_id: apis/audit-severity
+  aliases:
+   - "auditseverity"
+ "auditstats":
+  entity_type: api
+  doc_id: apis/audit-stats
+  aliases:
+   - "auditstats"
+ "authconfig":
+  entity_type: api
+  doc_id: apis/auth-config
+  aliases:
+   - "authconfig"
+ "authorizationdecision":
+  entity_type: api
+  doc_id: apis/authorization-decision
+  aliases:
+   - "authorizationdecision"
+ "authorizationstrategy":
+  entity_type: api
+  doc_id: apis/authorization-strategy
+  aliases:
+   - "authorizationstrategy"
+ "autodetectkbclients":
+  entity_type: api
+  doc_id: apis/auto-detect-kb-clients
+  aliases:
+   - "autodetectkbclients"
+ "autoextractorconfig":
+  entity_type: api
+  doc_id: apis/auto-extractor-config
+  aliases:
+   - "autoextractorconfig"
+ "autofixresult":
+  entity_type: api
+  doc_id: apis/auto-fix-result
+  aliases:
+   - "autofixresult"
+ "awaysummaryconfig":
+  entity_type: api
+  doc_id: apis/away-summary-config
+  aliases:
+   - "awaysummaryconfig"
+ "buildcitationindex":
+  entity_type: api
+  doc_id: apis/build-citation-index
+  aliases:
+   - "buildcitationindex"
+ "buildcompletefrontmatter":
+  entity_type: api
+  doc_id: apis/build-complete-frontmatter
+  aliases:
+   - "buildcompletefrontmatter"
+ "buildconceptregistry":
+  entity_type: api
+  doc_id: apis/build-concept-registry
+  aliases:
+   - "buildconceptregistry"
+ "builddevuihtml":
+  entity_type: api
+  doc_id: apis/build-dev-ui-html
+  aliases:
+   - "builddevuihtml"
+ "builddocidaliasmap":
+  entity_type: api
+  doc_id: apis/build-doc-id-alias-map
+  aliases:
+   - "builddocidaliasmap"
+ "buildextractionsystemprompt":
+  entity_type: api
+  doc_id: apis/build-extraction-system-prompt
+  aliases:
+   - "buildextractionsystemprompt"
+ "buildextractionuserprompt":
+  entity_type: api
+  doc_id: apis/build-extraction-user-prompt
+  aliases:
+   - "buildextractionuserprompt"
+ "buildqualityrecord":
+  entity_type: api
+  doc_id: apis/build-quality-record
+  aliases:
+   - "buildqualityrecord"
+ "buildschemapromptsection":
+  entity_type: api
+  doc_id: apis/build-schema-prompt-section
+  aliases:
+   - "buildschemapromptsection"
+ "buildskillsection":
+  entity_type: api
+  doc_id: apis/build-skill-section
+  aliases:
+   - "buildskillsection"
+ "buildspanattributes":
+  entity_type: api
+  doc_id: apis/build-span-attributes
+  aliases:
+   - "buildspanattributes"
+ "buildworkerresult":
+  entity_type: api
+  doc_id: apis/build-worker-result
+  aliases:
+   - "buildworkerresult"
+ "camoufoxconfig":
+  entity_type: api
+  doc_id: apis/camoufox-config
+  aliases:
+   - "camoufoxconfig"
+ "candidateconcept":
+  entity_type: api
+  doc_id: apis/candidate-concept
+  aliases:
+   - "candidateconcept"
+ "channel":
+  entity_type: api
+  doc_id: apis/channel
+  aliases:
+   - "channel"
+ "channel api":
+  entity_type: api
+  doc_id: apis/channel-api
+  aliases:
+   - "channel api"
+ "channellimits":
+  entity_type: api
+  doc_id: apis/channel-limits
+  aliases:
+   - "channellimits"
+ "chatmodel":
+  entity_type: api
+  doc_id: apis/chat-model
+  aliases:
+   - "chatmodel"
+ "chunkresponse":
+  entity_type: api
+  doc_id: apis/chunk-response
+  aliases:
+   - "chunkresponse"
+ "circuitbreakerconfig":
+  entity_type: api
+  doc_id: apis/circuit-breaker-config
+  aliases:
+   - "circuitbreakerconfig"
+ "citationindex":
+  entity_type: api
+  doc_id: apis/citation-index
+  aliases:
+   - "citationindex"
+ "classifyapierror":
+  entity_type: api
+  doc_id: apis/classify-api-error
+  aliases:
+   - "classifyapierror"
+ "_cleardeprecationcache":
+  entity_type: api
+  doc_id: apis/clear-deprecation-cache
+  aliases:
+   - "_cleardeprecationcache"
+ "clislashcommand":
+  entity_type: api
+  doc_id: apis/cli-slash-command
+  aliases:
+   - "clislashcommand"
+ "clitheme":
+  entity_type: api
+  doc_id: apis/cli-theme
+  aliases:
+   - "clitheme"
+ "codeingester":
+  entity_type: api
+  doc_id: apis/code-ingester
+  aliases:
+   - "codeingester"
+ "compactioncontext":
+  entity_type: api
+  doc_id: apis/compaction-context
+  aliases:
+   - "compactioncontext"
+ "compactionpromptconfig":
+  entity_type: api
+  doc_id: apis/compaction-prompt-config
+  aliases:
+   - "compactionpromptconfig"
+ "compactionstrategy":
+  entity_type: api
+  doc_id: apis/compaction-strategy
+  aliases:
+   - "compactionstrategy"
+ "comparecompiles":
+  entity_type: api
+  doc_id: apis/compare-compiles
+  aliases:
+   - "comparecompiles"
+ "compilationplan":
+  entity_type: api
+  doc_id: apis/compilation-plan
+  aliases:
+   - "compilationplan"
+ "compilelock":
+  entity_type: api
+  doc_id: apis/compile-lock
+  aliases:
+   - "compilelock"
+ "compilequalityrecord":
+  entity_type: api
+  doc_id: apis/compile-quality-record
+  aliases:
+   - "compilequalityrecord"
+ "compileddocument":
+  entity_type: api
+  doc_id: apis/compiled-document
+  aliases:
+   - "compileddocument"
+ "compositestrategy":
+  entity_type: api
+  doc_id: apis/composite-strategy
+  aliases:
+   - "compositestrategy"
+ "computeretrydelay":
+  entity_type: api
+  doc_id: apis/compute-retry-delay
+  aliases:
+   - "computeretrydelay"
+ "conceptregistryentry":
+  entity_type: api
+  doc_id: apis/concept-registry-entry
+  aliases:
+   - "conceptregistryentry"
+ "consolechannel":
+  entity_type: api
+  doc_id: apis/console-channel
+  aliases:
+   - "consolechannel"
+ "contentreplacementsnapshot":
+  entity_type: api
+  doc_id: apis/content-replacement-snapshot
+  aliases:
+   - "contentreplacementsnapshot"
+ "contextengineconfig":
+  entity_type: api
+  doc_id: apis/context-engine-config
+  aliases:
+   - "contextengineconfig"
+ "contextinspection":
+  entity_type: api
+  doc_id: apis/context-inspection
+  aliases:
+   - "contextinspection"
+ "contextlist":
+  entity_type: api
+  doc_id: apis/context-list
+  aliases:
+   - "contextlist"
+ "contextsection":
+  entity_type: api
+  doc_id: apis/context-section
+  aliases:
+   - "contextsection"
+ "contradictionoptions":
+  entity_type: api
+  doc_id: apis/contradiction-options
+  aliases:
+   - "contradictionoptions"
+ "contradictionpair":
+  entity_type: api
+  doc_id: apis/contradiction-pair
+  aliases:
+   - "contradictionpair"
+ "contradictionreport":
+  entity_type: api
+  doc_id: apis/contradiction-report
+  aliases:
+   - "contradictionreport"
+ "costsnapshot":
+  entity_type: api
+  doc_id: apis/cost-snapshot
+  aliases:
+   - "costsnapshot"
+ "createcli":
+  entity_type: api
+  doc_id: apis/create-cli
+  aliases:
+   - "createcli"
+ "createcoordinator":
+  entity_type: api
+  doc_id: apis/create-coordinator
+  aliases:
+   - "createcoordinator"
+ "createdoctortools":
+  entity_type: api
+  doc_id: apis/create-doctor-tools
+  aliases:
+   - "createdoctortools"
+ "createinkcli":
+  entity_type: api
+  doc_id: apis/create-ink-cli
+  aliases:
+   - "createinkcli"
+ "createllmclassifier":
+  entity_type: api
+  doc_id: apis/create-llm-classifier
+  aliases:
+   - "createllmclassifier"
+ "createrestapitool":
+  entity_type: api
+  doc_id: apis/create-rest-api-tool
+  aliases:
+   - "createrestapitool"
+ "createserver":
+  entity_type: api
+  doc_id: apis/create-server
+  aliases:
+   - "createserver"
+ "createsoul":
+  entity_type: api
+  doc_id: apis/create-soul
+  aliases:
+   - "createsoul"
+ "createworker":
+  entity_type: api
+  doc_id: apis/create-worker
+  aliases:
+   - "createworker"
+ "dangerous_patterns":
+  entity_type: api
+  doc_id: apis/dangerous-patterns
+  aliases:
+   - "dangerous_patterns"
+ "datascope":
+  entity_type: api
+  doc_id: apis/data-scope
+  aliases:
+   - "datascope"
+ "datascopestrategy":
+  entity_type: api
+  doc_id: apis/data-scope-strategy
+  aliases:
+   - "datascopestrategy"
+ "datesection":
+  entity_type: api
+  doc_id: apis/date-section
+  aliases:
+   - "datesection"
+ "dedupresult":
+  entity_type: api
+  doc_id: apis/dedup-result
+  aliases:
+   - "dedupresult"
+ "deduplicatenames":
+  entity_type: api
+  doc_id: apis/deduplicate-names
+  aliases:
+   - "deduplicatenames"
+ "deduplicateplans":
+  entity_type: api
+  doc_id: apis/deduplicate-plans
+  aliases:
+   - "deduplicateplans"
+ "`deduplicatetoolresults`":
+  entity_type: api
+  doc_id: apis/deduplicate-tool-results
+  aliases:
+   - "`deduplicatetoolresults`"
+ "defaultpromptbuilder":
+  entity_type: api
+  doc_id: apis/default-prompt-builder
+  aliases:
+   - "defaultpromptbuilder"
+ "deprecated":
+  entity_type: api
+  doc_id: apis/deprecated
+  aliases:
+   - "deprecated"
+ "deprecationwarning":
+  entity_type: api
+  doc_id: apis/deprecation-warning
+  aliases:
+   - "deprecationwarning"
+ "depthimbalance":
+  entity_type: api
+  doc_id: apis/depth-imbalance
+  aliases:
+   - "depthimbalance"
+ "deserializeregistry":
+  entity_type: api
+  doc_id: apis/deserialize-registry
+  aliases:
+   - "deserializeregistry"
+ "detectcontradictions":
+  entity_type: api
+  doc_id: apis/detect-contradictions
+  aliases:
+   - "detectcontradictions"
+ "detectimagemimetype":
+  entity_type: api
+  doc_id: apis/detect-image-mime-type
+  aliases:
+   - "detectimagemimetype"
+ "detectmimetype":
+  entity_type: api
+  doc_id: apis/detect-mime-type
+  aliases:
+   - "detectmimetype"
+ "devuioptions":
+  entity_type: api
+  doc_id: apis/dev-ui-options
+  aliases:
+   - "devuioptions"
+ "differentialengine":
+  entity_type: api
+  doc_id: apis/differential-engine
+  aliases:
+   - "differentialengine"
+ "discovergaps":
+  entity_type: api
+  doc_id: apis/discover-gaps
+  aliases:
+   - "discovergaps"
+ "discoveryconnection":
+  entity_type: api
+  doc_id: apis/discovery-connection
+  aliases:
+   - "discoveryconnection"
+ "discoveryoptions":
+  entity_type: api
+  doc_id: apis/discovery-options
+  aliases:
+   - "discoveryoptions"
+ "discoveryprogressevent":
+  entity_type: api
+  doc_id: apis/discovery-progress-event
+  aliases:
+   - "discoveryprogressevent"
+ "discoveryresponse":
+  entity_type: api
+  doc_id: apis/discovery-response
+  aliases:
+   - "discoveryresponse"
+ "discoveryresponseschema":
+  entity_type: api
+  doc_id: apis/discovery-response-schema
+  aliases:
+   - "discoveryresponseschema"
+ "discoveryresult":
+  entity_type: api
+  doc_id: apis/discovery-result
+  aliases:
+   - "discoveryresult"
+ "discoverysuggestion":
+  entity_type: api
+  doc_id: apis/discovery-suggestion
+  aliases:
+   - "discoverysuggestion"
+ "dispatchafterllm":
+  entity_type: api
+  doc_id: apis/dispatch-after-llm
+  aliases:
+   - "dispatchafterllm"
+ "dispatchbeforellm":
+  entity_type: api
+  doc_id: apis/dispatch-before-llm
+  aliases:
+   - "dispatchbeforellm"
+ "distributedipcbackend":
+  entity_type: api
+  doc_id: apis/distributed-ipc-backend
+  aliases:
+   - "distributedipcbackend"
+ "distributedratelimitbackend":
+  entity_type: api
+  doc_id: apis/distributed-rate-limit-backend
+  aliases:
+   - "distributedratelimitbackend"
+ "doctorissue":
+  entity_type: api
+  doc_id: apis/doctor-issue
+  aliases:
+   - "doctorissue"
+ "doctor_system_prompt":
+  entity_type: api
+  doc_id: apis/doctor-system-prompt
+  aliases:
+   - "doctor_system_prompt"
+ "doctor_tick_prompt":
+  entity_type: api
+  doc_id: apis/doctor-tick-prompt
+  aliases:
+   - "doctor_tick_prompt"
+ "documentmeta":
+  entity_type: api
+  doc_id: apis/document-meta
+  aliases:
+   - "documentmeta"
+ "downloadimage":
+  entity_type: api
+  doc_id: apis/download-image
+  aliases:
+   - "downloadimage"
+ "edittype":
+  entity_type: api
+  doc_id: apis/edit-type
+  aliases:
+   - "edittype"
+ "elementinfo":
+  entity_type: api
+  doc_id: apis/element-info
+  aliases:
+   - "elementinfo"
+ "endagentrunspan":
+  entity_type: api
+  doc_id: apis/end-agent-run-span
+  aliases:
+   - "endagentrunspan"
+ "endllmrequestspan":
+  entity_type: api
+  doc_id: apis/end-llm-request-span
+  aliases:
+   - "endllmrequestspan"
+ "endtoolcallspan":
+  entity_type: api
+  doc_id: apis/end-tool-call-span
+  aliases:
+   - "endtoolcallspan"
+ "endtoolexecutionspan":
+  entity_type: api
+  doc_id: apis/end-tool-execution-span
+  aliases:
+   - "endtoolexecutionspan"
+ "englishtokenizer":
+  entity_type: api
+  doc_id: apis/english-tokenizer
+  aliases:
+   - "englishtokenizer"
+ "entitymention":
+  entity_type: api
+  doc_id: apis/entity-mention
+  aliases:
+   - "entitymention"
+ "entitytypeschema":
+  entity_type: api
+  doc_id: apis/entity-type-schema
+  aliases:
+   - "entitytypeschema"
+ "errorcode":
+  entity_type: api
+  doc_id: apis/error-code
+  aliases:
+   - "errorcode"
+ "estimateconversationtokens":
+  entity_type: api
+  doc_id: apis/estimate-conversation-tokens
+  aliases:
+   - "estimateconversationtokens"
+ "estimatemessagetokens":
+  entity_type: api
+  doc_id: apis/estimate-message-tokens
+  aliases:
+   - "estimatemessagetokens"
+ "eventhandler":
+  entity_type: api
+  doc_id: apis/event-handler
+  aliases:
+   - "eventhandler"
+ "exceedsbudget":
+  entity_type: api
+  doc_id: apis/exceeds-budget
+  aliases:
+   - "exceedsbudget"
+ "extractanalysisblock":
+  entity_type: api
+  doc_id: apis/extract-analysis-block
+  aliases:
+   - "extractanalysisblock"
+ "extractmarkdownimagerefs":
+  entity_type: api
+  doc_id: apis/extract-markdown-image-refs
+  aliases:
+   - "extractmarkdownimagerefs"
+ "extractionarticleschema":
+  entity_type: api
+  doc_id: apis/extraction-article-schema
+  aliases:
+   - "extractionarticleschema"
+ "extractionplan":
+  entity_type: api
+  doc_id: apis/extraction-plan
+  aliases:
+   - "extractionplan"
+ "extractionplanschema":
+  entity_type: api
+  doc_id: apis/extraction-plan-schema
+  aliases:
+   - "extractionplanschema"
+ "extractionresult":
+  entity_type: api
+  doc_id: apis/extraction-result
+  aliases:
+   - "extractionresult"
+ "fencecontent":
+  entity_type: api
+  doc_id: apis/fence-content
+  aliases:
+   - "fencecontent"
+ "fieldrule":
+  entity_type: api
+  doc_id: apis/field-rule
+  aliases:
+   - "fieldrule"
+ "fieldtype":
+  entity_type: api
+  doc_id: apis/field-type
+  aliases:
+   - "fieldtype"
+ "fileedit":
+  entity_type: api
+  doc_id: apis/file-edit
+  aliases:
+   - "fileedit"
+ "fileresolver":
+  entity_type: api
+  doc_id: apis/file-resolver
+  aliases:
+   - "fileresolver"
+ "findbyentitytype":
+  entity_type: api
+  doc_id: apis/find-by-entity-type
+  aliases:
+   - "findbyentitytype"
+ "findbywikilink":
+  entity_type: api
+  doc_id: apis/find-by-wikilink
+  aliases:
+   - "findbywikilink"
+ "firecrackersandboxconfig":
+  entity_type: api
+  doc_id: apis/firecracker-sandbox-config
+  aliases:
+   - "firecrackersandboxconfig"
+ "fixedissue":
+  entity_type: api
+  doc_id: apis/fixed-issue
+  aliases:
+   - "fixedissue"
+ "flushyaaftelemetry":
+  entity_type: api
+  doc_id: apis/flush-yaaf-telemetry
+  aliases:
+   - "flushyaaftelemetry"
+ "fromsections":
+  entity_type: api
+  doc_id: apis/from-sections
+  aliases:
+   - "fromsections"
+ "frontmatterfieldschema":
+  entity_type: api
+  doc_id: apis/frontmatter-field-schema
+  aliases:
+   - "frontmatterfieldschema"
+ "frontmatterschema":
+  entity_type: api
+  doc_id: apis/frontmatter-schema
+  aliases:
+   - "frontmatterschema"
+ "frontmattervalidationresult":
+  entity_type: api
+  doc_id: apis/frontmatter-validation-result
+  aliases:
+   - "frontmattervalidationresult"
+ "gateway api":
+  entity_type: api
+  doc_id: apis/gateway-api
+  aliases:
+   - "gateway api"
+ "gatewayconfig":
+  entity_type: api
+  doc_id: apis/gateway-config
+  aliases:
+   - "gatewayconfig"
+ "geminimodelconfig":
+  entity_type: api
+  doc_id: apis/gemini-model-config
+  aliases:
+   - "geminimodelconfig"
+ "generatedocid":
+  entity_type: api
+  doc_id: apis/generate-doc-id
+  aliases:
+   - "generatedocid"
+ "generatefn":
+  entity_type: api
+  doc_id: apis/generate-fn
+  aliases:
+   - "generatefn"
+ "generateontologyoptions":
+  entity_type: api
+  doc_id: apis/generate-ontology-options
+  aliases:
+   - "generateontologyoptions"
+ "generateontologyproposals":
+  entity_type: api
+  doc_id: apis/generate-ontology-proposals
+  aliases:
+   - "generateontologyproposals"
+ "generateontologyresult":
+  entity_type: api
+  doc_id: apis/generate-ontology-result
+  aliases:
+   - "generateontologyresult"
+ "generatetoolname":
+  entity_type: api
+  doc_id: apis/generate-tool-name
+  aliases:
+   - "generatetoolname"
+ "getbaseattributes":
+  entity_type: api
+  doc_id: apis/get-base-attributes
+  aliases:
+   - "getbaseattributes"
+ "getbodypropertynames":
+  entity_type: api
+  doc_id: apis/get-body-property-names
+  aliases:
+   - "getbodypropertynames"
+ "getcurrentrunspan":
+  entity_type: api
+  doc_id: apis/get-current-run-span
+  aliases:
+   - "getcurrentrunspan"
+ "getcurrenttoolspan":
+  entity_type: api
+  doc_id: apis/get-current-tool-span
+  aliases:
+   - "getcurrenttoolspan"
+ "getyaafmeter":
+  entity_type: api
+  doc_id: apis/get-yaaf-meter
+  aliases:
+   - "getyaafmeter"
+ "getyaafotellogger":
+  entity_type: api
+  doc_id: apis/get-yaafo-tel-logger
+  aliases:
+   - "getyaafotellogger"
+ "groundingassessment":
+  entity_type: api
+  doc_id: apis/grounding-assessment
+  aliases:
+   - "groundingassessment"
+ "groundingmode":
+  entity_type: api
+  doc_id: apis/grounding-mode
+  aliases:
+   - "groundingmode"
+ "groundingsentence":
+  entity_type: api
+  doc_id: apis/grounding-sentence
+  aliases:
+   - "groundingsentence"
+ "groundingvalidatorconfig":
+  entity_type: api
+  doc_id: apis/grounding-validator-config
+  aliases:
+   - "groundingvalidatorconfig"
+ "groundingverdict":
+  entity_type: api
+  doc_id: apis/grounding-verdict
+  aliases:
+   - "groundingverdict"
+ "groundingverdictschema":
+  entity_type: api
+  doc_id: apis/grounding-verdict-schema
+  aliases:
+   - "groundingverdictschema"
+ "guardrailcheckresult":
+  entity_type: api
+  doc_id: apis/guardrail-check-result
+  aliases:
+   - "guardrailcheckresult"
+ "guardrailconfig":
+  entity_type: api
+  doc_id: apis/guardrail-config
+  aliases:
+   - "guardrailconfig"
+ "guardraildetail":
+  entity_type: api
+  doc_id: apis/guardrail-detail
+  aliases:
+   - "guardraildetail"
+ "guardrailevent":
+  entity_type: api
+  doc_id: apis/guardrail-event
+  aliases:
+   - "guardrailevent"
+ "guardraillistener":
+  entity_type: api
+  doc_id: apis/guardrail-listener
+  aliases:
+   - "guardraillistener"
+ "guardrailresource":
+  entity_type: api
+  doc_id: apis/guardrail-resource
+  aliases:
+   - "guardrailresource"
+ "guardrailstatus":
+  entity_type: api
+  doc_id: apis/guardrail-status
+  aliases:
+   - "guardrailstatus"
+ "healdetail":
+  entity_type: api
+  doc_id: apis/heal-detail
+  aliases:
+   - "healdetail"
+ "heallintissues":
+  entity_type: api
+  doc_id: apis/heal-lint-issues
+  aliases:
+   - "heallintissues"
+ "healoptions":
+  entity_type: api
+  doc_id: apis/heal-options
+  aliases:
+   - "healoptions"
+ "healprogressevent":
+  entity_type: api
+  doc_id: apis/heal-progress-event
+  aliases:
+   - "healprogressevent"
+ "healresult":
+  entity_type: api
+  doc_id: apis/heal-result
+  aliases:
+   - "healresult"
+ "heartbeatconfig":
+  entity_type: api
+  doc_id: apis/heartbeat-config
+  aliases:
+   - "heartbeatconfig"
+ "honchoconfig":
+  entity_type: api
+  doc_id: apis/honcho-config
+  aliases:
+   - "honchoconfig"
+ "honchocontextopts":
+  entity_type: api
+  doc_id: apis/honcho-context-opts
+  aliases:
+   - "honchocontextopts"
+ "honchomessage":
+  entity_type: api
+  doc_id: apis/honcho-message
+  aliases:
+   - "honchomessage"
+ "honchorepresentation":
+  entity_type: api
+  doc_id: apis/honcho-representation
+  aliases:
+   - "honchorepresentation"
+ "honchosearchresult":
+  entity_type: api
+  doc_id: apis/honcho-search-result
+  aliases:
+   - "honchosearchresult"
+ "honchosession":
+  entity_type: api
+  doc_id: apis/honcho-session
+  aliases:
+   - "honchosession"
+ "hookcontext":
+  entity_type: api
+  doc_id: apis/hook-context
+  aliases:
+   - "hookcontext"
+ "hookresult":
+  entity_type: api
+  doc_id: apis/hook-result
+  aliases:
+   - "hookresult"
+ "htmlingester":
+  entity_type: api
+  doc_id: apis/html-ingester
+  aliases:
+   - "htmlingester"
+ "httpmethod":
+  entity_type: api
+  doc_id: apis/http-method
+  aliases:
+   - "httpmethod"
+ "hybridtokenizer":
+  entity_type: api
+  doc_id: apis/hybrid-tokenizer
+  aliases:
+   - "hybridtokenizer"
+ "identityprovider":
+  entity_type: api
+  doc_id: apis/identity-provider
+  aliases:
+   - "identityprovider"
+ "idlenotification":
+  entity_type: api
+  doc_id: apis/idle-notification
+  aliases:
+   - "idlenotification"
+ "imageref":
+  entity_type: api
+  doc_id: apis/image-ref
+  aliases:
+   - "imageref"
+ "inmemoryipcbackend":
+  entity_type: api
+  doc_id: apis/in-memory-ipc-backend
+  aliases:
+   - "inmemoryipcbackend"
+ "inmemoryjtiblocklist":
+  entity_type: api
+  doc_id: apis/in-memory-jti-blocklist
+  aliases:
+   - "inmemoryjtiblocklist"
+ "ingestedcontent":
+  entity_type: api
+  doc_id: apis/ingested-content
+  aliases:
+   - "ingestedcontent"
+ "ingester":
+  entity_type: api
+  doc_id: apis/ingester
+  aliases:
+   - "ingester"
+ "ingesteroptions":
+  entity_type: api
+  doc_id: apis/ingester-options
+  aliases:
+   - "ingesteroptions"
+ "inkclitheme":
+  entity_type: api
+  doc_id: apis/ink-cli-theme
+  aliases:
+   - "inkclitheme"
+ "inputanomalyconfig":
+  entity_type: api
+  doc_id: apis/input-anomaly-config
+  aliases:
+   - "inputanomalyconfig"
+ "inputanomalyevent":
+  entity_type: api
+  doc_id: apis/input-anomaly-event
+  aliases:
+   - "inputanomalyevent"
+ "inputanomalyresult":
+  entity_type: api
+  doc_id: apis/input-anomaly-result
+  aliases:
+   - "inputanomalyresult"
+ "ipcadapter":
+  entity_type: api
+  doc_id: apis/ipc-adapter
+  aliases:
+   - "ipcadapter"
+ "ipcevent":
+  entity_type: api
+  doc_id: apis/ipc-event
+  aliases:
+   - "ipcevent"
+ "ipcmessage":
+  entity_type: api
+  doc_id: apis/ipc-message
+  aliases:
+   - "ipcmessage"
+ "isdangerouscommand":
+  entity_type: api
+  doc_id: apis/is-dangerous-command
+  aliases:
+   - "isdangerouscommand"
+ "isimagemimetype":
+  entity_type: api
+  doc_id: apis/is-image-mime-type
+  aliases:
+   - "isimagemimetype"
+ "isprivatehost":
+  entity_type: api
+  doc_id: apis/is-private-host
+  aliases:
+   - "isprivatehost"
+ "issvg":
+  entity_type: api
+  doc_id: apis/is-svg
+  aliases:
+   - "issvg"
+ "istracingenabled":
+  entity_type: api
+  doc_id: apis/is-tracing-enabled
+  aliases:
+   - "istracingenabled"
+ "jsoningester":
+  entity_type: api
+  doc_id: apis/json-ingester
+  aliases:
+   - "jsoningester"
+ "jtiblocklist":
+  entity_type: api
+  doc_id: apis/jti-blocklist
+  aliases:
+   - "jtiblocklist"
+ "kbanalytics":
+  entity_type: api
+  doc_id: apis/kb-analytics
+  aliases:
+   - "kbanalytics"
+ "kbbudgetconfig":
+  entity_type: api
+  doc_id: apis/kb-budget-config
+  aliases:
+   - "kbbudgetconfig"
+ "kbclipper":
+  entity_type: api
+  doc_id: apis/kb-clipper
+  aliases:
+   - "kbclipper"
+ "kbcompiler":
+  entity_type: api
+  doc_id: apis/kb-compiler
+  aliases:
+   - "kbcompiler"
+ "kbcompilermodelconfig":
+  entity_type: api
+  doc_id: apis/kb-compiler-model-config
+  aliases:
+   - "kbcompilermodelconfig"
+ "kb_config_filename":
+  entity_type: api
+  doc_id: apis/kb-config-filename
+  aliases:
+   - "kb_config_filename"
+ "kbhitrecord":
+  entity_type: api
+  doc_id: apis/kb-hit-record
+  aliases:
+   - "kbhitrecord"
+ "kbindex":
+  entity_type: api
+  doc_id: apis/kb-index
+  aliases:
+   - "kbindex"
+ "kbindexentry":
+  entity_type: api
+  doc_id: apis/kb-index-entry
+  aliases:
+   - "kbindexentry"
+ "kblinter":
+  entity_type: api
+  doc_id: apis/kb-linter
+  aliases:
+   - "kblinter"
+ "kbontology":
+  entity_type: api
+  doc_id: apis/kb-ontology
+  aliases:
+   - "kbontology"
+ "kbtooloptions":
+  entity_type: api
+  doc_id: apis/kb-tool-options
+  aliases:
+   - "kbtooloptions"
+ "linkgraph":
+  entity_type: api
+  doc_id: apis/link-graph
+  aliases:
+   - "linkgraph"
+ "lintcode":
+  entity_type: api
+  doc_id: apis/lint-code
+  aliases:
+   - "lintcode"
+ "lintissue":
+  entity_type: api
+  doc_id: apis/lint-issue
+  aliases:
+   - "lintissue"
+ "lintoptions":
+  entity_type: api
+  doc_id: apis/lint-options
+  aliases:
+   - "lintoptions"
+ "lintreport":
+  entity_type: api
+  doc_id: apis/lint-report
+  aliases:
+   - "lintreport"
+ "lintseverity":
+  entity_type: api
+  doc_id: apis/lint-severity
+  aliases:
+   - "lintseverity"
+ "listsessions":
+  entity_type: api
+  doc_id: apis/list-sessions
+  aliases:
+   - "listsessions"
+ "llmadapter":
+  entity_type: api
+  doc_id: apis/llm-adapter
+  aliases:
+   - "llmadapter"
+ "llmcallfn":
+  entity_type: api
+  doc_id: apis/llm-call-fn
+  aliases:
+   - "llmcallfn"
+ "llmclientoptions":
+  entity_type: api
+  doc_id: apis/llm-client-options
+  aliases:
+   - "llmclientoptions"
+ "llmhookresult":
+  entity_type: api
+  doc_id: apis/llm-hook-result
+  aliases:
+   - "llmhookresult"
+ "llmmessage":
+  entity_type: api
+  doc_id: apis/llm-message
+  aliases:
+   - "llmmessage"
+ "llmqueryparams":
+  entity_type: api
+  doc_id: apis/llm-query-params
+  aliases:
+   - "llmqueryparams"
+ "llmresponse":
+  entity_type: api
+  doc_id: apis/llm-response
+  aliases:
+   - "llmresponse"
+ "loadcitationindex":
+  entity_type: api
+  doc_id: apis/load-citation-index
+  aliases:
+   - "loadcitationindex"
+ "loadproposals":
+  entity_type: api
+  doc_id: apis/load-proposals
+  aliases:
+   - "loadproposals"
+ "loadqualityhistory":
+  entity_type: api
+  doc_id: apis/load-quality-history
+  aliases:
+   - "loadqualityhistory"
+ "loadskill":
+  entity_type: api
+  doc_id: apis/load-skill
+  aliases:
+   - "loadskill"
+ "loadsoul":
+  entity_type: api
+  doc_id: apis/load-soul
+  aliases:
+   - "loadsoul"
+ "lockstrategy":
+  entity_type: api
+  doc_id: apis/lock-strategy
+  aliases:
+   - "lockstrategy"
+ "loglevel":
+  entity_type: api
+  doc_id: apis/log-level
+  aliases:
+   - "loglevel"
+ "loopconfig":
+  entity_type: api
+  doc_id: apis/loop-config
+  aliases:
+   - "loopconfig"
+ "loopdetectorconfig":
+  entity_type: api
+  doc_id: apis/loop-detector-config
+  aliases:
+   - "loopdetectorconfig"
+ "loopinfo":
+  entity_type: api
+  doc_id: apis/loop-info
+  aliases:
+   - "loopinfo"
+ "lrucache":
+  entity_type: api
+  doc_id: apis/lru-cache
+  aliases:
+   - "lrucache"
+ "mailboxconfig":
+  entity_type: api
+  doc_id: apis/mailbox-config
+  aliases:
+   - "mailboxconfig"
+ "mailboxmessage":
+  entity_type: api
+  doc_id: apis/mailbox-message
+  aliases:
+   - "mailboxmessage"
+ "main (cli entrypoint)":
+  entity_type: api
+  doc_id: apis/main-cli-entrypoint
+  aliases:
+   - "main (cli entrypoint)"
+ "makegeneratefn":
+  entity_type: api
+  doc_id: apis/make-generate-fn
+  aliases:
+   - "makegeneratefn"
+ "makekbvisionclient":
+  entity_type: api
+  doc_id: apis/make-kb-vision-client
+  aliases:
+   - "makekbvisionclient"
+ "makekbllmclient":
+  entity_type: api
+  doc_id: apis/make-kbllm-client
+  aliases:
+   - "makekbllmclient"
+ "markdowningester":
+  entity_type: api
+  doc_id: apis/markdown-ingester
+  aliases:
+   - "markdowningester"
+ "mcpservertrust":
+  entity_type: api
+  doc_id: apis/mcp-server-trust
+  aliases:
+   - "mcpservertrust"
+ "mcptoolfilterresult":
+  entity_type: api
+  doc_id: apis/mcp-tool-filter-result
+  aliases:
+   - "mcptoolfilterresult"
+ "memorycontext":
+  entity_type: api
+  doc_id: apis/memory-context
+  aliases:
+   - "memorycontext"
+ "memoryextractionstrategy":
+  entity_type: api
+  doc_id: apis/memory-extraction-strategy
+  aliases:
+   - "memoryextractionstrategy"
+ "memorytype":
+  entity_type: api
+  doc_id: apis/memory-type
+  aliases:
+   - "memorytype"
+ "memory_types":
+  entity_type: api
+  doc_id: apis/memory-types
+  aliases:
+   - "memory_types"
+ "messagehandler":
+  entity_type: api
+  doc_id: apis/message-handler
+  aliases:
+   - "messagehandler"
+ "`messagelike`":
+  entity_type: api
+  doc_id: apis/message-like
+  aliases:
+   - "`messagelike`"
+ "microcompactstrategyconfig":
+  entity_type: api
+  doc_id: apis/micro-compact-strategy-config
+  aliases:
+   - "microcompactstrategyconfig"
+ "modelspecs":
+  entity_type: api
+  doc_id: apis/model-specs
+  aliases:
+   - "modelspecs"
+ "modelusage":
+  entity_type: api
+  doc_id: apis/model-usage
+  aliases:
+   - "modelusage"
+ "ngramtokenizer":
+  entity_type: api
+  doc_id: apis/ngram-tokenizer
+  aliases:
+   - "ngramtokenizer"
+ "normalizationresult":
+  entity_type: api
+  doc_id: apis/normalization-result
+  aliases:
+   - "normalizationresult"
+ "normalizeoptions":
+  entity_type: api
+  doc_id: apis/normalize-options
+  aliases:
+   - "normalizeoptions"
+ "notification":
+  entity_type: api
+  doc_id: apis/notification
+  aliases:
+   - "notification"
+ "notificationadapterfromchannel":
+  entity_type: api
+  doc_id: apis/notification-adapter-from-channel
+  aliases:
+   - "notificationadapterfromchannel"
+ "notificationchannel":
+  entity_type: api
+  doc_id: apis/notification-channel
+  aliases:
+   - "notificationchannel"
+ "notificationtype":
+  entity_type: api
+  doc_id: apis/notification-type
+  aliases:
+   - "notificationtype"
+ "ontology_filename":
+  entity_type: api
+  doc_id: apis/ontology-filename
+  aliases:
+   - "ontology_filename"
+ "ontologygenerator":
+  entity_type: api
+  doc_id: apis/ontology-generator
+  aliases:
+   - "ontologygenerator"
+ "ontologygeneratoroptions":
+  entity_type: api
+  doc_id: apis/ontology-generator-options
+  aliases:
+   - "ontologygeneratoroptions"
+ "ontologyloader":
+  entity_type: api
+  doc_id: apis/ontology-loader
+  aliases:
+   - "ontologyloader"
+ "ontologyproposal":
+  entity_type: api
+  doc_id: apis/ontology-proposal
+  aliases:
+   - "ontologyproposal"
+ "ontologyvalidationissue":
+  entity_type: api
+  doc_id: apis/ontology-validation-issue
+  aliases:
+   - "ontologyvalidationissue"
+ "ontologyvalidationresult":
+  entity_type: api
+  doc_id: apis/ontology-validation-result
+  aliases:
+   - "ontologyvalidationresult"
+ "openaimodelconfig":
+  entity_type: api
+  doc_id: apis/open-ai-model-config
+  aliases:
+   - "openaimodelconfig"
+ "openapitoolsetoptions":
+  entity_type: api
+  doc_id: apis/open-api-toolset-options
+  aliases:
+   - "openapitoolsetoptions"
+ "operationtotoolinput":
+  entity_type: api
+  doc_id: apis/operation-to-tool-input
+  aliases:
+   - "operationtotoolinput"
+ "outputsanitizerconfig":
+  entity_type: api
+  doc_id: apis/output-sanitizer-config
+  aliases:
+   - "outputsanitizerconfig"
+ "outputschema":
+  entity_type: api
+  doc_id: apis/output-schema
+  aliases:
+   - "outputschema"
+ "outputvalidationevent":
+  entity_type: api
+  doc_id: apis/output-validation-event
+  aliases:
+   - "outputvalidationevent"
+ "outputvalidationviolation":
+  entity_type: api
+  doc_id: apis/output-validation-violation
+  aliases:
+   - "outputvalidationviolation"
+ "outputvalidatorconfig":
+  entity_type: api
+  doc_id: apis/output-validator-config
+  aliases:
+   - "outputvalidatorconfig"
+ "pallsettled":
+  entity_type: api
+  doc_id: apis/p-all-settled
+  aliases:
+   - "pallsettled"
+ "parallelconfig":
+  entity_type: api
+  doc_id: apis/parallel-config
+  aliases:
+   - "parallelconfig"
+ "parsearticleoutput":
+  entity_type: api
+  doc_id: apis/parse-article-output
+  aliases:
+   - "parsearticleoutput"
+ "parsecompiledarticle":
+  entity_type: api
+  doc_id: apis/parse-compiled-article
+  aliases:
+   - "parsecompiledarticle"
+ "parseexporterlist":
+  entity_type: api
+  doc_id: apis/parse-exporter-list
+  aliases:
+   - "parseexporterlist"
+ "parsefrontmatter":
+  entity_type: api
+  doc_id: apis/parse-frontmatter
+  aliases:
+   - "parsefrontmatter"
+ "parseopenapispec":
+  entity_type: api
+  doc_id: apis/parse-open-api-spec
+  aliases:
+   - "parseopenapispec"
+ "parseresult":
+  entity_type: api
+  doc_id: apis/parse-result
+  aliases:
+   - "parseresult"
+ "parseretryafterheader":
+  entity_type: api
+  doc_id: apis/parse-retry-after-header
+  aliases:
+   - "parseretryafterheader"
+ "parsesoulmd":
+  entity_type: api
+  doc_id: apis/parse-soul-md
+  aliases:
+   - "parsesoulmd"
+ "parseyamlfrontmatter":
+  entity_type: api
+  doc_id: apis/parse-yaml-frontmatter
+  aliases:
+   - "parseyamlfrontmatter"
+ "parsedarticle":
+  entity_type: api
+  doc_id: apis/parsed-article
+  aliases:
+   - "parsedarticle"
+ "parsedbody":
+  entity_type: api
+  doc_id: apis/parsed-body
+  aliases:
+   - "parsedbody"
+ "parsedcompiledarticle":
+  entity_type: api
+  doc_id: apis/parsed-compiled-article
+  aliases:
+   - "parsedcompiledarticle"
+ "parsedfrontmatter":
+  entity_type: api
+  doc_id: apis/parsed-frontmatter
+  aliases:
+   - "parsedfrontmatter"
+ "parsedoperation":
+  entity_type: api
+  doc_id: apis/parsed-operation
+  aliases:
+   - "parsedoperation"
+ "parsedparam":
+  entity_type: api
+  doc_id: apis/parsed-param
+  aliases:
+   - "parsedparam"
+ "peruserratelimitstore":
+  entity_type: api
+  doc_id: apis/per-user-rate-limit-store
+  aliases:
+   - "peruserratelimitstore"
+ "permissionoutcome":
+  entity_type: api
+  doc_id: apis/permission-outcome
+  aliases:
+   - "permissionoutcome"
+ "permissionrequest":
+  entity_type: api
+  doc_id: apis/permission-request
+  aliases:
+   - "permissionrequest"
+ "permissionresolver":
+  entity_type: api
+  doc_id: apis/permission-resolver
+  aliases:
+   - "permissionresolver"
+ "permissionresponse":
+  entity_type: api
+  doc_id: apis/permission-response
+  aliases:
+   - "permissionresponse"
+ "plaintextingester":
+  entity_type: api
+  doc_id: apis/plain-text-ingester
+  aliases:
+   - "plaintextingester"
+ "plugincapability":
+  entity_type: api
+  doc_id: apis/plugin-capability
+  aliases:
+   - "plugincapability"
+ "plugintrust":
+  entity_type: api
+  doc_id: apis/plugin-trust
+  aliases:
+   - "plugintrust"
+ "pluginverificationresult":
+  entity_type: api
+  doc_id: apis/plugin-verification-result
+  aliases:
+   - "pluginverificationresult"
+ "pluralizeentitytype":
+  entity_type: api
+  doc_id: apis/pluralize-entity-type
+  aliases:
+   - "pluralizeentitytype"
+ "porterstem":
+  entity_type: api
+  doc_id: apis/porter-stem
+  aliases:
+   - "porterstem"
+ "postprocesscompiledarticles":
+  entity_type: api
+  doc_id: apis/post-process-compiled-articles
+  aliases:
+   - "postprocesscompiledarticles"
+ "postprocessoptions":
+  entity_type: api
+  doc_id: apis/post-process-options
+  aliases:
+   - "postprocessoptions"
+ "postprocessresult":
+  entity_type: api
+  doc_id: apis/post-process-result
+  aliases:
+   - "postprocessresult"
+ "promptguardclassifyfn":
+  entity_type: api
+  doc_id: apis/prompt-guard-classify-fn
+  aliases:
+   - "promptguardclassifyfn"
+ "promptguardconfig":
+  entity_type: api
+  doc_id: apis/prompt-guard-config
+  aliases:
+   - "promptguardconfig"
+ "promptguardevent":
+  entity_type: api
+  doc_id: apis/prompt-guard-event
+  aliases:
+   - "promptguardevent"
+ "promptguardmode":
+  entity_type: api
+  doc_id: apis/prompt-guard-mode
+  aliases:
+   - "promptguardmode"
+ "promptguardpattern":
+  entity_type: api
+  doc_id: apis/prompt-guard-pattern
+  aliases:
+   - "promptguardpattern"
+ "promptguardresult":
+  entity_type: api
+  doc_id: apis/prompt-guard-result
+  aliases:
+   - "promptguardresult"
+ "promptguardsensitivity":
+  entity_type: api
+  doc_id: apis/prompt-guard-sensitivity
+  aliases:
+   - "promptguardsensitivity"
+ "proposalfile":
+  entity_type: api
+  doc_id: apis/proposal-file
+  aliases:
+   - "proposalfile"
+ "proposalfileschema":
+  entity_type: api
+  doc_id: apis/proposal-file-schema
+  aliases:
+   - "proposalfileschema"
+ "proposalgeneratoroptions":
+  entity_type: api
+  doc_id: apis/proposal-generator-options
+  aliases:
+   - "proposalgeneratoroptions"
+ "proposalresult":
+  entity_type: api
+  doc_id: apis/proposal-result
+  aliases:
+   - "proposalresult"
+ "pruneingestcache":
+  entity_type: api
+  doc_id: apis/prune-ingest-cache
+  aliases:
+   - "pruneingestcache"
+ "pruneoldsessions":
+  entity_type: api
+  doc_id: apis/prune-old-sessions
+  aliases:
+   - "pruneoldsessions"
+ "prunesessionarchives":
+  entity_type: api
+  doc_id: apis/prune-session-archives
+  aliases:
+   - "prunesessionarchives"
+ "qualitydelta":
+  entity_type: api
+  doc_id: apis/quality-delta
+  aliases:
+   - "qualitydelta"
+ "ratelimitcheckresult":
+  entity_type: api
+  doc_id: apis/rate-limit-check-result
+  aliases:
+   - "ratelimitcheckresult"
+ "ratelimitevent":
+  entity_type: api
+  doc_id: apis/rate-limit-event
+  aliases:
+   - "ratelimitevent"
+ "rawimageref":
+  entity_type: api
+  doc_id: apis/raw-image-ref
+  aliases:
+   - "rawimageref"
+ "rbac":
+  entity_type: api
+  doc_id: apis/rbac
+  aliases:
+   - "rbac"
+ "readcompiledarticles":
+  entity_type: api
+  doc_id: apis/read-compiled-articles
+  aliases:
+   - "readcompiledarticles"
+ "redisjtiblocklist":
+  entity_type: api
+  doc_id: apis/redis-jti-blocklist
+  aliases:
+   - "redisjtiblocklist"
+ "registermodelspecs":
+  entity_type: api
+  doc_id: apis/register-model-specs
+  aliases:
+   - "registermodelspecs"
+ "relationshiptype":
+  entity_type: api
+  doc_id: apis/relationship-type
+  aliases:
+   - "relationshiptype"
+ "relevancequeryfn":
+  entity_type: api
+  doc_id: apis/relevance-query-fn
+  aliases:
+   - "relevancequeryfn"
+ "relevantmemory":
+  entity_type: api
+  doc_id: apis/relevant-memory
+  aliases:
+   - "relevantmemory"
+ "removeregistryentry":
+  entity_type: api
+  doc_id: apis/remove-registry-entry
+  aliases:
+   - "removeregistryentry"
+ "resolveallmarkdownimages":
+  entity_type: api
+  doc_id: apis/resolve-all-markdown-images
+  aliases:
+   - "resolveallmarkdownimages"
+ "resolveauth":
+  entity_type: api
+  doc_id: apis/resolve-auth
+  aliases:
+   - "resolveauth"
+ "resolveimageref":
+  entity_type: api
+  doc_id: apis/resolve-image-ref
+  aliases:
+   - "resolveimageref"
+ "resolvewikilinks":
+  entity_type: api
+  doc_id: apis/resolve-wikilinks
+  aliases:
+   - "resolvewikilinks"
+ "restapitoolconfig":
+  entity_type: api
+  doc_id: apis/rest-api-tool-config
+  aliases:
+   - "restapitoolconfig"
+ "retryconfig":
+  entity_type: api
+  doc_id: apis/retry-config
+  aliases:
+   - "retryconfig"
+ "retryoptions":
+  entity_type: api
+  doc_id: apis/retry-options
+  aliases:
+   - "retryoptions"
+ "rolestrategyconfig":
+  entity_type: api
+  doc_id: apis/role-strategy-config
+  aliases:
+   - "rolestrategyconfig"
+ "routerconfig":
+  entity_type: api
+  doc_id: apis/router-config
+  aliases:
+   - "routerconfig"
+ "routercontext":
+  entity_type: api
+  doc_id: apis/router-context
+  aliases:
+   - "routercontext"
+ "routingdecision":
+  entity_type: api
+  doc_id: apis/routing-decision
+  aliases:
+   - "routingdecision"
+ "routingrule":
+  entity_type: api
+  doc_id: apis/routing-rule
+  aliases:
+   - "routingrule"
+ "rundev":
+  entity_type: api
+  doc_id: apis/run-dev
+  aliases:
+   - "rundev"
+ "runvisionpass":
+  entity_type: api
+  doc_id: apis/run-vision-pass
+  aliases:
+   - "runvisionpass"
+ "sandboxconfig":
+  entity_type: api
+  doc_id: apis/sandbox-config
+  aliases:
+   - "sandboxconfig"
+ "sandboxexternalbackend":
+  entity_type: api
+  doc_id: apis/sandbox-external-backend
+  aliases:
+   - "sandboxexternalbackend"
+ "sanitizeevent":
+  entity_type: api
+  doc_id: apis/sanitize-event
+  aliases:
+   - "sanitizeevent"
+ "sanitizeresult":
+  entity_type: api
+  doc_id: apis/sanitize-result
+  aliases:
+   - "sanitizeresult"
+ "scheduledtask":
+  entity_type: api
+  doc_id: apis/scheduled-task
+  aliases:
+   - "scheduledtask"
+ "schemetoauthconfig":
+  entity_type: api
+  doc_id: apis/scheme-to-auth-config
+  aliases:
+   - "schemetoauthconfig"
+ "scratchpadconfig":
+  entity_type: api
+  doc_id: apis/scratchpad-config
+  aliases:
+   - "scratchpadconfig"
+ "scratchpadentry":
+  entity_type: api
+  doc_id: apis/scratchpad-entry
+  aliases:
+   - "scratchpadentry"
+ "searchresult":
+  entity_type: api
+  doc_id: apis/search-result
+  aliases:
+   - "searchresult"
+ "securestorageconfig":
+  entity_type: api
+  doc_id: apis/secure-storage-config
+  aliases:
+   - "securestorageconfig"
+ "securityscheme":
+  entity_type: api
+  doc_id: apis/security-scheme
+  aliases:
+   - "securityscheme"
+ "segmentoversizedarticles":
+  entity_type: api
+  doc_id: apis/segment-oversized-articles
+  aliases:
+   - "segmentoversizedarticles"
+ "sequentialconfig":
+  entity_type: api
+  doc_id: apis/sequential-config
+  aliases:
+   - "sequentialconfig"
+ "serializefrontmatter":
+  entity_type: api
+  doc_id: apis/serialize-frontmatter
+  aliases:
+   - "serializefrontmatter"
+ "serializeontology":
+  entity_type: api
+  doc_id: apis/serialize-ontology
+  aliases:
+   - "serializeontology"
+ "serializeregistry":
+  entity_type: api
+  doc_id: apis/serialize-registry
+  aliases:
+   - "serializeregistry"
+ "sessionlike":
+  entity_type: api
+  doc_id: apis/session-like
+  aliases:
+   - "sessionlike"
+ "sessionscope":
+  entity_type: api
+  doc_id: apis/session-scope
+  aliases:
+   - "sessionscope"
+ "shutdownrequest":
+  entity_type: api
+  doc_id: apis/shutdown-request
+  aliases:
+   - "shutdownrequest"
+ "skill":
+  entity_type: api
+  doc_id: apis/skill
+  aliases:
+   - "skill"
+ "skillfrontmatter":
+  entity_type: api
+  doc_id: apis/skill-frontmatter
+  aliases:
+   - "skillfrontmatter"
+ "skillregistryevents":
+  entity_type: api
+  doc_id: apis/skill-registry-events
+  aliases:
+   - "skillregistryevents"
+ "slidingwindowstrategyconfig":
+  entity_type: api
+  doc_id: apis/sliding-window-strategy-config
+  aliases:
+   - "slidingwindowstrategyconfig"
+ "`snipconfig`":
+  entity_type: api
+  doc_id: apis/snip-config
+  aliases:
+   - "`snipconfig`"
+ "`sniphistory`":
+  entity_type: api
+  doc_id: apis/snip-history
+  aliases:
+   - "`sniphistory`"
+ "`snipresult`":
+  entity_type: api
+  doc_id: apis/snip-result
+  aliases:
+   - "`snipresult`"
+ "soul":
+  entity_type: api
+  doc_id: apis/soul
+  aliases:
+   - "soul"
+ "soulconfig":
+  entity_type: api
+  doc_id: apis/soul-config
+  aliases:
+   - "soulconfig"
+ "soultransform":
+  entity_type: api
+  doc_id: apis/soul-transform
+  aliases:
+   - "soultransform"
+ "sourcehashmanifestschema":
+  entity_type: api
+  doc_id: apis/source-hash-manifest-schema
+  aliases:
+   - "sourcehashmanifestschema"
+ "sourcetrustlevel":
+  entity_type: api
+  doc_id: apis/source-trust-level
+  aliases:
+   - "sourcetrustlevel"
+ "source_trust_weights":
+  entity_type: api
+  doc_id: apis/source-trust-weights
+  aliases:
+   - "source_trust_weights"
+ "span":
+  entity_type: api
+  doc_id: apis/span
+  aliases:
+   - "span"
+ "splitsentences":
+  entity_type: api
+  doc_id: apis/split-sentences
+  aliases:
+   - "splitsentences"
+ "ssrfsafefetch":
+  entity_type: api
+  doc_id: apis/ssrf-safe-fetch
+  aliases:
+   - "ssrfsafefetch"
+ "standingorder":
+  entity_type: api
+  doc_id: apis/standing-order
+  aliases:
+   - "standingorder"
+ "startllmrequestspan":
+  entity_type: api
+  doc_id: apis/start-llm-request-span
+  aliases:
+   - "startllmrequestspan"
+ "starttoolcallspan":
+  entity_type: api
+  doc_id: apis/start-tool-call-span
+  aliases:
+   - "starttoolcallspan"
+ "starttoolexecutionspan":
+  entity_type: api
+  doc_id: apis/start-tool-execution-span
+  aliases:
+   - "starttoolexecutionspan"
+ "staticanalysisresult":
+  entity_type: api
+  doc_id: apis/static-analysis-result
+  aliases:
+   - "staticanalysisresult"
+ "stop_words":
+  entity_type: api
+  doc_id: apis/stop-words
+  aliases:
+   - "stop_words"
+ "storesubscriber":
+  entity_type: api
+  doc_id: apis/store-subscriber
+  aliases:
+   - "storesubscriber"
+ "strategyresult":
+  entity_type: api
+  doc_id: apis/strategy-result
+  aliases:
+   - "strategyresult"
+ "streamingchatmodel":
+  entity_type: api
+  doc_id: apis/streaming-chat-model
+  aliases:
+   - "streamingchatmodel"
+ "strictgroundingvalidator":
+  entity_type: api
+  doc_id: apis/strict-grounding-validator
+  aliases:
+   - "strictgroundingvalidator"
+ "strictpromptguard":
+  entity_type: api
+  doc_id: apis/strict-prompt-guard
+  aliases:
+   - "strictpromptguard"
+ "strictsanitizer":
+  entity_type: api
+  doc_id: apis/strict-sanitizer
+  aliases:
+   - "strictsanitizer"
+ "stripanalysisblock":
+  entity_type: api
+  doc_id: apis/strip-analysis-block
+  aliases:
+   - "stripanalysisblock"
+ "structuredagentconfig":
+  entity_type: api
+  doc_id: apis/structured-agent-config
+  aliases:
+   - "structuredagentconfig"
+ "structuredlogbackend":
+  entity_type: api
+  doc_id: apis/structured-log-backend
+  aliases:
+   - "structuredlogbackend"
+ "summarizationhandle":
+  entity_type: api
+  doc_id: apis/summarization-handle
+  aliases:
+   - "summarizationhandle"
+ "summarizestrategyconfig":
+  entity_type: api
+  doc_id: apis/summarize-strategy-config
+  aliases:
+   - "summarizestrategyconfig"
+ "synthesisarticle":
+  entity_type: api
+  doc_id: apis/synthesis-article
+  aliases:
+   - "synthesisarticle"
+ "synthesisarticleschema":
+  entity_type: api
+  doc_id: apis/synthesis-article-schema
+  aliases:
+   - "synthesisarticleschema"
+ "synthesisoptions":
+  entity_type: api
+  doc_id: apis/synthesis-options
+  aliases:
+   - "synthesisoptions"
+ "synthesisprogressevent":
+  entity_type: api
+  doc_id: apis/synthesis-progress-event
+  aliases:
+   - "synthesisprogressevent"
+ "synthesisresult":
+  entity_type: api
+  doc_id: apis/synthesis-result
+  aliases:
+   - "synthesisresult"
+ "tasknotification":
+  entity_type: api
+  doc_id: apis/task-notification
+  aliases:
+   - "tasknotification"
+ "taskstate":
+  entity_type: api
+  doc_id: apis/task-state
+  aliases:
+   - "taskstate"
+ "taskstatus":
+  entity_type: api
+  doc_id: apis/task-status
+  aliases:
+   - "taskstatus"
+ "tasktype":
+  entity_type: api
+  doc_id: apis/task-type
+  aliases:
+   - "tasktype"
+ "timebasedmicrocompactconfig":
+  entity_type: api
+  doc_id: apis/time-based-micro-compact-config
+  aliases:
+   - "timebasedmicrocompactconfig"
+ "tosnakecase":
+  entity_type: api
+  doc_id: apis/to-snake-case
+  aliases:
+   - "tosnakecase"
+ "tokenizerstrategy":
+  entity_type: api
+  doc_id: apis/tokenizer-strategy
+  aliases:
+   - "tokenizerstrategy"
+ "tool (api type)":
+  entity_type: api
+  doc_id: apis/tool-api-type
+  aliases:
+   - "tool (api type)"
+ "toolcallrecord":
+  entity_type: api
+  doc_id: apis/tool-call-record
+  aliases:
+   - "toolcallrecord"
+ "tooldef":
+  entity_type: api
+  doc_id: apis/tool-def
+  aliases:
+   - "tooldef"
+ "toolinfo":
+  entity_type: api
+  doc_id: apis/tool-info
+  aliases:
+   - "toolinfo"
+ "toolinput":
+  entity_type: api
+  doc_id: apis/tool-input
+  aliases:
+   - "toolinput"
+ "toolresult":
+  entity_type: api
+  doc_id: apis/tool-result
+  aliases:
+   - "toolresult"
+ "toolresultbudgetconfig":
+  entity_type: api
+  doc_id: apis/tool-result-budget-config
+  aliases:
+   - "toolresultbudgetconfig"
+ "toolresultbudgetresult":
+  entity_type: api
+  doc_id: apis/tool-result-budget-result
+  aliases:
+   - "toolresultbudgetresult"
+ "toolsummaryconfig":
+  entity_type: api
+  doc_id: apis/tool-summary-config
+  aliases:
+   - "toolsummaryconfig"
+ "tool (type)":
+  entity_type: api
+  doc_id: apis/tool-type
+  aliases:
+   - "tool (type)"
+ "truncatestrategyconfig":
+  entity_type: api
+  doc_id: apis/truncate-strategy-config
+  aliases:
+   - "truncatestrategyconfig"
+ "trustpolicyconfig":
+  entity_type: api
+  doc_id: apis/trust-policy-config
+  aliases:
+   - "trustpolicyconfig"
+ "trustverificationevent":
+  entity_type: api
+  doc_id: apis/trust-verification-event
+  aliases:
+   - "trustverificationevent"
+ "unicodetokenizer":
+  entity_type: api
+  doc_id: apis/unicode-tokenizer
+  aliases:
+   - "unicodetokenizer"
+ "upsertregistryentry":
+  entity_type: api
+  doc_id: apis/upsert-registry-entry
+  aliases:
+   - "upsertregistryentry"
+ "usagerecord":
+  entity_type: api
+  doc_id: apis/usage-record
+  aliases:
+   - "usagerecord"
+ "usercontext":
+  entity_type: api
+  doc_id: apis/user-context
+  aliases:
+   - "usercontext"
+ "userusagesnapshot":
+  entity_type: api
+  doc_id: apis/user-usage-snapshot
+  aliases:
+   - "userusagesnapshot"
+ "userusagesummary":
+  entity_type: api
+  doc_id: apis/user-usage-summary
+  aliases:
+   - "userusagesummary"
+ "validatefrontmatter":
+  entity_type: api
+  doc_id: apis/validate-frontmatter
+  aliases:
+   - "validatefrontmatter"
+ "validateontology":
+  entity_type: api
+  doc_id: apis/validate-ontology
+  aliases:
+   - "validateontology"
+ "validateurlforssrf":
+  entity_type: api
+  doc_id: apis/validate-url-for-ssrf
+  aliases:
+   - "validateurlforssrf"
+ "vectorsearchresult":
+  entity_type: api
+  doc_id: apis/vector-search-result
+  aliases:
+   - "vectorsearchresult"
+ "vectorstoreadapter":
+  entity_type: api
+  doc_id: apis/vector-store-adapter
+  aliases:
+   - "vectorstoreadapter"
+ "vigilconfig":
+  entity_type: api
+  doc_id: apis/vigil-config
+  aliases:
+   - "vigilconfig"
+ "vigileventhandler":
+  entity_type: api
+  doc_id: apis/vigil-event-handler
+  aliases:
+   - "vigileventhandler"
+ "vigilevents":
+  entity_type: api
+  doc_id: apis/vigil-events
+  aliases:
+   - "vigilevents"
+ "vigil (factory function)":
+  entity_type: api
+  doc_id: apis/vigil-factory-function
+  aliases:
+   - "vigil (factory function)"
+ "visioncallfn":
+  entity_type: api
+  doc_id: apis/vision-call-fn
+  aliases:
+   - "visioncallfn"
+ "visiondetail":
+  entity_type: api
+  doc_id: apis/vision-detail
+  aliases:
+   - "visiondetail"
+ "visionpassoptions":
+  entity_type: api
+  doc_id: apis/vision-pass-options
+  aliases:
+   - "visionpassoptions"
+ "visionpassresult":
+  entity_type: api
+  doc_id: apis/vision-pass-result
+  aliases:
+   - "visionpassresult"
+ "visionprogressevent":
+  entity_type: api
+  doc_id: apis/vision-progress-event
+  aliases:
+   - "visionprogressevent"
+ "vocabsidecar":
+  entity_type: api
+  doc_id: apis/vocab-sidecar
+  aliases:
+   - "vocabsidecar"
+ "vocabsidecarschema":
+  entity_type: api
+  doc_id: apis/vocab-sidecar-schema
+  aliases:
+   - "vocabsidecarschema"
+ "vocabularyentry":
+  entity_type: api
+  doc_id: apis/vocabulary-entry
+  aliases:
+   - "vocabularyentry"
+ "watchoptions":
+  entity_type: api
+  doc_id: apis/watch-options
+  aliases:
+   - "watchoptions"
+ "when":
+  entity_type: api
+  doc_id: apis/when
+  aliases:
+   - "when"
+ "workflowstep":
+  entity_type: api
+  doc_id: apis/workflow-step
+  aliases:
+   - "workflowstep"
+ "writecitationindex":
+  entity_type: api
+  doc_id: apis/write-citation-index
+  aliases:
+   - "writecitationindex"
+ "yaafdoctorconfig":
+  entity_type: api
+  doc_id: apis/yaaf-doctor-config
+  aliases:
+   - "yaafdoctorconfig"
+ "yaaf_logger_name":
+  entity_type: api
+  doc_id: apis/yaaf-logger-name
+  aliases:
+   - "yaaf_logger_name"
+ "yaaf_meter_name":
+  entity_type: api
+  doc_id: apis/yaaf-meter-name
+  aliases:
+   - "yaaf_meter_name"
+ "yaaf_service_name":
+  entity_type: api
+  doc_id: apis/yaaf-service-name
+  aliases:
+   - "yaaf_service_name"
+ "yaafspantype":
+  entity_type: api
+  doc_id: apis/yaaf-span-type
+  aliases:
+   - "yaafspantype"
+ "yaaf_tracer_name":
+  entity_type: api
+  doc_id: apis/yaaf-tracer-name
+  aliases:
+   - "yaaf_tracer_name"
+ "abort signal":
+  entity_type: concept
+  doc_id: concepts/abort-signal
+  aliases:
+   - "abort signal"
+ "access policy (concept)":
+  entity_type: concept
+  doc_id: concepts/access-policy-concept
+  aliases:
+   - "access policy (concept)"
+ "agent composition":
+  entity_type: concept
+  doc_id: concepts/agent-composition
+  aliases:
+   - "agent composition"
+ "agent delegation":
+  entity_type: concept
+  doc_id: concepts/agent-delegation
+  aliases:
+   - "agent delegation"
+ "agent hooks":
+  entity_type: concept
+  doc_id: concepts/agent-hooks
+  aliases:
+   - "agent hooks"
+ "agent lifecycle tracing":
+  entity_type: concept
+  doc_id: concepts/agent-lifecycle-tracing
+  aliases:
+   - "agent lifecycle tracing"
+ "agent personality":
+  entity_type: concept
+  doc_id: concepts/agent-personality
+  aliases:
+   - "agent personality"
+ "agent personality system (soul)":
+  entity_type: concept
+  doc_id: concepts/agent-personality-system-soul
+  aliases:
+   - "agent personality system (soul)"
+ "agent project structure":
+  entity_type: concept
+  doc_id: concepts/agent-project-structure
+  aliases:
+   - "agent project structure"
+ "agent summarization":
+  entity_type: concept
+  doc_id: concepts/agent-summarization
+  aliases:
+   - "agent summarization"
+ "agent turn":
+  entity_type: concept
+  doc_id: concepts/agent-turn
+  aliases:
+   - "agent turn"
+ "article segmentation":
+  entity_type: concept
+  doc_id: concepts/article-segmentation
+  aliases:
+   - "article segmentation"
+ "article structure":
+  entity_type: concept
+  doc_id: concepts/article-structure
+  aliases:
+   - "article structure"
+ "attribute-based access control (abac)":
+  entity_type: concept
+  doc_id: concepts/attribute-based-access-control-abac
+  aliases:
+   - "attribute-based access control (abac)"
+ "audit logging (security)":
+  entity_type: concept
+  doc_id: concepts/audit-logging-security
+  aliases:
+   - "audit logging (security)"
+ "authorization":
+  entity_type: concept
+  doc_id: concepts/authorization
+  aliases:
+   - "authorization"
+ "auto-fixing":
+  entity_type: concept
+  doc_id: concepts/auto-fixing
+  aliases:
+   - "auto-fixing"
+ "auto memory extraction":
+  entity_type: concept
+  doc_id: concepts/auto-memory-extraction
+  aliases:
+   - "auto memory extraction"
+ "away summary":
+  entity_type: concept
+  doc_id: concepts/away-summary
+  aliases:
+   - "away summary"
+ "backpressure":
+  entity_type: concept
+  doc_id: concepts/backpressure
+  aliases:
+   - "backpressure"
+ "central state management":
+  entity_type: concept
+  doc_id: concepts/central-state-management
+  aliases:
+   - "central state management"
+ "circuit breaker pattern":
+  entity_type: concept
+  doc_id: concepts/circuit-breaker-pattern
+  aliases:
+   - "circuit breaker pattern"
+ "compilation locking":
+  entity_type: concept
+  doc_id: concepts/compilation-locking
+  aliases:
+   - "compilation locking"
+ "compiler-injected metadata":
+  entity_type: concept
+  doc_id: concepts/compiler-injected-metadata
+  aliases:
+   - "compiler-injected metadata"
+ "content ingestion":
+  entity_type: concept
+  doc_id: concepts/content-ingestion
+  aliases:
+   - "content ingestion"
+ "context overflow":
+  entity_type: concept
+  doc_id: concepts/context-overflow
+  aliases:
+   - "context overflow"
+ "context propagation":
+  entity_type: concept
+  doc_id: concepts/context-propagation
+  aliases:
+   - "context propagation"
+ "context sources":
+  entity_type: concept
+  doc_id: concepts/context-sources
+  aliases:
+   - "context sources"
+ "context window management":
+  entity_type: concept
+  doc_id: concepts/context-window-management
+  aliases:
+   - "context window management"
+ "coordinatoragent":
+  entity_type: concept
+  doc_id: concepts/coordinator-agent
+  aliases:
+   - "coordinatoragent"
+ "cost optimization":
+  entity_type: concept
+  doc_id: concepts/cost-optimization
+  aliases:
+   - "cost optimization"
+ "data scoping":
+  entity_type: concept
+  doc_id: concepts/data-scoping
+  aliases:
+   - "data scoping"
+ "dead letter queue (dlq)":
+  entity_type: concept
+  doc_id: concepts/dead-letter-queue-dlq
+  aliases:
+   - "dead letter queue (dlq)"
+ "distributed rate limiting":
+  entity_type: concept
+  doc_id: concepts/distributed-rate-limiting
+  aliases:
+   - "distributed rate limiting"
+ "droppable context sections":
+  entity_type: concept
+  doc_id: concepts/droppable-context-sections
+  aliases:
+   - "droppable context sections"
+ "dynamic prompt sections":
+  entity_type: concept
+  doc_id: concepts/dynamic-prompt-sections
+  aliases:
+   - "dynamic prompt sections"
+ "entity type":
+  entity_type: concept
+  doc_id: concepts/entity-type
+  aliases:
+   - "entity type"
+ "error classification":
+  entity_type: concept
+  doc_id: concepts/error-classification
+  aliases:
+   - "error classification"
+ "error isolation":
+  entity_type: concept
+  doc_id: concepts/error-isolation
+  aliases:
+   - "error isolation"
+ "error retryability":
+  entity_type: concept
+  doc_id: concepts/error-retryability
+  aliases:
+   - "error retryability"
+ "exponential backoff":
+  entity_type: concept
+  doc_id: concepts/exponential-backoff
+  aliases:
+   - "exponential backoff"
+ "file-based ipc":
+  entity_type: concept
+  doc_id: concepts/file-based-ipc
+  aliases:
+   - "file-based ipc"
+ "frontmatter":
+  entity_type: concept
+  doc_id: concepts/frontmatter
+  aliases:
+   - "frontmatter"
+ "frontmatter validation":
+  entity_type: concept
+  doc_id: concepts/frontmatter-validation
+  aliases:
+   - "frontmatter validation"
+ "history snipping":
+  entity_type: concept
+  doc_id: concepts/history-snipping
+  aliases:
+   - "history snipping"
+ "identity management":
+  entity_type: concept
+  doc_id: concepts/identity-management
+  aliases:
+   - "identity management"
+ "inter-agent communication (ipc)":
+  entity_type: concept
+  doc_id: concepts/inter-agent-communication-ipc
+  aliases:
+   - "inter-agent communication (ipc)"
+ "inter-process communication":
+  entity_type: concept
+  doc_id: concepts/inter-process-communication
+  aliases:
+   - "inter-process communication"
+ "inter-process communication (ipc)":
+  entity_type: concept
+  doc_id: concepts/inter-process-communication-ipc
+  aliases:
+   - "inter-process communication (ipc)"
+ "inter-subsystem communication":
+  entity_type: concept
+  doc_id: concepts/inter-subsystem-communication
+  aliases:
+   - "inter-subsystem communication"
+ "jaccard similarity":
+  entity_type: concept
+  doc_id: concepts/jaccard-similarity
+  aliases:
+   - "jaccard similarity"
+ "jitter":
+  entity_type: concept
+  doc_id: concepts/jitter
+  aliases:
+   - "jitter"
+ "jti blocklisting":
+  entity_type: concept
+  doc_id: concepts/jti-blocklisting
+  aliases:
+   - "jti blocklisting"
+ "kbgraphadapter":
+  entity_type: concept
+  doc_id: concepts/kb-graph-adapter
+  aliases:
+   - "kbgraphadapter"
+ "kbsearchadapter":
+  entity_type: concept
+  doc_id: concepts/kb-search-adapter
+  aliases:
+   - "kbsearchadapter"
+ "knowledge base analytics":
+  entity_type: concept
+  doc_id: concepts/knowledge-base-analytics
+  aliases:
+   - "knowledge base analytics"
+ "knowledge domain":
+  entity_type: concept
+  doc_id: concepts/knowledge-domain
+  aliases:
+   - "knowledge domain"
+ "knowledge ingestion pipeline":
+  entity_type: concept
+  doc_id: concepts/knowledge-ingestion-pipeline
+  aliases:
+   - "knowledge ingestion pipeline"
+ "lazy loading":
+  entity_type: concept
+  doc_id: concepts/lazy-loading
+  aliases:
+   - "lazy loading"
+ "lifecycle hooks":
+  entity_type: concept
+  doc_id: concepts/lifecycle-hooks
+  aliases:
+   - "lifecycle hooks"
+ "linter discovery mode":
+  entity_type: concept
+  doc_id: concepts/linter-discovery-mode
+  aliases:
+   - "linter discovery mode"
+ "linting":
+  entity_type: concept
+  doc_id: concepts/linting
+  aliases:
+   - "linting"
+ "llmadapter capability":
+  entity_type: concept
+  doc_id: concepts/llm-adapter-capability
+  aliases:
+   - "llmadapter capability"
+ "llm-based injection classifiers":
+  entity_type: concept
+  doc_id: concepts/llm-based-injection-classifiers
+  aliases:
+   - "llm-based injection classifiers"
+ "llm call":
+  entity_type: concept
+  doc_id: concepts/llm-call
+  aliases:
+   - "llm call"
+ "llm model resolution":
+  entity_type: concept
+  doc_id: concepts/llm-model-resolution
+  aliases:
+   - "llm model resolution"
+ "llm provider configuration":
+  entity_type: concept
+  doc_id: concepts/llm-provider-configuration
+  aliases:
+   - "llm provider configuration"
+ "loop agent":
+  entity_type: concept
+  doc_id: concepts/loop-agent
+  aliases:
+   - "loop agent"
+ "mcp tool allowlist/blocklist":
+  entity_type: concept
+  doc_id: concepts/mcp-tool-allowlist-blocklist
+  aliases:
+   - "mcp tool allowlist/blocklist"
+ "memory relevance":
+  entity_type: concept
+  doc_id: concepts/memory-relevance
+  aliases:
+   - "memory relevance"
+ "message filtering":
+  entity_type: concept
+  doc_id: concepts/message-filtering
+  aliases:
+   - "message filtering"
+ "metric":
+  entity_type: concept
+  doc_id: concepts/metric
+  aliases:
+   - "metric"
+ "model routing":
+  entity_type: concept
+  doc_id: concepts/model-routing
+  aliases:
+   - "model routing"
+ "multi-provider diagnostics":
+  entity_type: concept
+  doc_id: concepts/multi-provider-diagnostics
+  aliases:
+   - "multi-provider diagnostics"
+ "n-gram tokenization":
+  entity_type: concept
+  doc_id: concepts/n-gram-tokenization
+  aliases:
+   - "n-gram tokenization"
+ "negation contradiction":
+  entity_type: concept
+  doc_id: concepts/negation-contradiction
+  aliases:
+   - "negation contradiction"
+ "numeric disagreement":
+  entity_type: concept
+  doc_id: concepts/numeric-disagreement
+  aliases:
+   - "numeric disagreement"
+ "observability":
+  entity_type: concept
+  doc_id: concepts/observability
+  aliases:
+   - "observability"
+ "observability events":
+  entity_type: concept
+  doc_id: concepts/observability-events
+  aliases:
+   - "observability events"
+ "ontology":
+  entity_type: concept
+  doc_id: concepts/ontology
+  aliases:
+   - "ontology"
+ "ontology definition":
+  entity_type: concept
+  doc_id: concepts/ontology-definition
+  aliases:
+   - "ontology definition"
+ "ontology feedback loop":
+  entity_type: concept
+  doc_id: concepts/ontology-feedback-loop
+  aliases:
+   - "ontology feedback loop"
+ "ontology validation":
+  entity_type: concept
+  doc_id: concepts/ontology-validation
+  aliases:
+   - "ontology validation"
+ "opentelemetry":
+  entity_type: concept
+  doc_id: concepts/open-telemetry
+  aliases:
+   - "opentelemetry"
+ "opentelemetry integration":
+  entity_type: concept
+  doc_id: concepts/open-telemetry-integration
+  aliases:
+   - "opentelemetry integration"
+ "optional dependencies":
+  entity_type: concept
+  doc_id: concepts/optional-dependencies
+  aliases:
+   - "optional dependencies"
+ "plugin-defined lint rules":
+  entity_type: concept
+  doc_id: concepts/plugin-defined-lint-rules
+  aliases:
+   - "plugin-defined lint rules"
+ "plugin integrity verification":
+  entity_type: concept
+  doc_id: concepts/plugin-integrity-verification
+  aliases:
+   - "plugin integrity verification"
+ "prompt caching modes":
+  entity_type: concept
+  doc_id: concepts/prompt-caching-modes
+  aliases:
+   - "prompt caching modes"
+ "prompt injection":
+  entity_type: concept
+  doc_id: concepts/prompt-injection
+  aliases:
+   - "prompt injection"
+ "prompt injection detection":
+  entity_type: concept
+  doc_id: concepts/prompt-injection-detection
+  aliases:
+   - "prompt injection detection"
+ "response chunking":
+  entity_type: concept
+  doc_id: concepts/response-chunking
+  aliases:
+   - "response chunking"
+ "retry-after header":
+  entity_type: concept
+  doc_id: concepts/retry-after-header
+  aliases:
+   - "retry-after header"
+ "sandbox external backend capability":
+  entity_type: concept
+  doc_id: concepts/sandbox-external-backend-capability
+  aliases:
+   - "sandbox external backend capability"
+ "sandbox runtime":
+  entity_type: concept
+  doc_id: concepts/sandbox-runtime
+  aliases:
+   - "sandbox runtime"
+ "schema-based llm output validation":
+  entity_type: concept
+  doc_id: concepts/schema-based-llm-output-validation
+  aliases:
+   - "schema-based llm output validation"
+ "section-based prompt assembly":
+  entity_type: concept
+  doc_id: concepts/section-based-prompt-assembly
+  aliases:
+   - "section-based prompt assembly"
+ "semantic deduplication":
+  entity_type: concept
+  doc_id: concepts/semantic-deduplication
+  aliases:
+   - "semantic deduplication"
+ "semantic memory":
+  entity_type: concept
+  doc_id: concepts/semantic-memory
+  aliases:
+   - "semantic memory"
+ "server-side request forgery (ssrf)":
+  entity_type: concept
+  doc_id: concepts/server-side-request-forgery-ssrf
+  aliases:
+   - "server-side request forgery (ssrf)"
+ "session isolation":
+  entity_type: concept
+  doc_id: concepts/session-isolation
+  aliases:
+   - "session isolation"
+ "session persistence":
+  entity_type: concept
+  doc_id: concepts/session-persistence
+  aliases:
+   - "session persistence"
+ "session resolution":
+  entity_type: concept
+  doc_id: concepts/session-resolution
+  aliases:
+   - "session resolution"
+ "skills":
+  entity_type: concept
+  doc_id: concepts/skills
+  aliases:
+   - "skills"
+ "soul transform (concept)":
+  entity_type: concept
+  doc_id: concepts/soul-transform-concept
+  aliases:
+   - "soul transform (concept)"
+ "source trust classification":
+  entity_type: concept
+  doc_id: concepts/source-trust-classification
+  aliases:
+   - "source trust classification"
+ "stemming":
+  entity_type: concept
+  doc_id: concepts/stemming
+  aliases:
+   - "stemming"
+ "stream adapter":
+  entity_type: concept
+  doc_id: concepts/stream-adapter
+  aliases:
+   - "stream adapter"
+ "streaming":
+  entity_type: concept
+  doc_id: concepts/streaming
+  aliases:
+   - "streaming"
+ "structured log":
+  entity_type: concept
+  doc_id: concepts/structured-log
+  aliases:
+   - "structured log"
+ "structured output":
+  entity_type: concept
+  doc_id: concepts/structured-output
+  aliases:
+   - "structured output"
+ "system prompt":
+  entity_type: concept
+  doc_id: concepts/system-prompt
+  aliases:
+   - "system prompt"
+ "task cancellation":
+  entity_type: concept
+  doc_id: concepts/task-cancellation
+  aliases:
+   - "task cancellation"
+ "task lifecycle management":
+  entity_type: concept
+  doc_id: concepts/task-lifecycle-management
+  aliases:
+   - "task lifecycle management"
+ "telemetry attributes":
+  entity_type: concept
+  doc_id: concepts/telemetry-attributes
+  aliases:
+   - "telemetry attributes"
+ "telemetry exporter":
+  entity_type: concept
+  doc_id: concepts/telemetry-exporter
+  aliases:
+   - "telemetry exporter"
+ "temporal conflict":
+  entity_type: concept
+  doc_id: concepts/temporal-conflict
+  aliases:
+   - "temporal conflict"
+ "thundering herd problem":
+  entity_type: concept
+  doc_id: concepts/thundering-herd-problem
+  aliases:
+   - "thundering herd problem"
+ "time-to-live (ttl)":
+  entity_type: concept
+  doc_id: concepts/time-to-live-ttl
+  aliases:
+   - "time-to-live (ttl)"
+ "token budget":
+  entity_type: concept
+  doc_id: concepts/token-budget
+  aliases:
+   - "token budget"
+ "token estimation":
+  entity_type: concept
+  doc_id: concepts/token-estimation
+  aliases:
+   - "token estimation"
+ "token estimation heuristic":
+  entity_type: concept
+  doc_id: concepts/token-estimation-heuristic
+  aliases:
+   - "token estimation heuristic"
+ "tool execution":
+  entity_type: concept
+  doc_id: concepts/tool-execution
+  aliases:
+   - "tool execution"
+ "tool execution isolation":
+  entity_type: concept
+  doc_id: concepts/tool-execution-isolation
+  aliases:
+   - "tool execution isolation"
+ "tool loop detection":
+  entity_type: concept
+  doc_id: concepts/tool-loop-detection
+  aliases:
+   - "tool loop detection"
+ "tool naming":
+  entity_type: concept
+  doc_id: concepts/tool-naming
+  aliases:
+   - "tool naming"
+ "tool result budget":
+  entity_type: concept
+  doc_id: concepts/tool-result-budget
+  aliases:
+   - "tool result budget"
+ "tool use":
+  entity_type: concept
+  doc_id: concepts/tool-use
+  aliases:
+   - "tool use"
+ "trace":
+  entity_type: concept
+  doc_id: concepts/trace
+  aliases:
+   - "trace"
+ "trust policy mode":
+  entity_type: concept
+  doc_id: concepts/trust-policy-mode
+  aliases:
+   - "trust policy mode"
+ "union-find algorithm":
+  entity_type: concept
+  doc_id: concepts/union-find-algorithm
+  aliases:
+   - "union-find algorithm"
+ "vector store adapter capability":
+  entity_type: concept
+  doc_id: concepts/vector-store-adapter-capability
+  aliases:
+   - "vector store adapter capability"
+ "wikilink resolution":
+  entity_type: concept
+  doc_id: concepts/wikilink-resolution
+  aliases:
+   - "wikilink resolution"
+ "wikilinks":
+  entity_type: concept
+  doc_id: concepts/wikilinks
+  aliases:
+   - "wikilinks"
+ "workeragent":
+  entity_type: concept
+  doc_id: concepts/worker-agent
+  aliases:
+   - "workeragent"
+ "yaaf cli":
+  entity_type: concept
+  doc_id: concepts/yaaf-cli
+  aliases:
+   - "yaaf cli"
+ "building a cli for your yaaf agent":
+  entity_type: guide
+  doc_id: guides/building-a-cli-for-your-yaaf-agent
+  aliases:
+   - "building a cli for your yaaf agent"
+ "building loop agents":
+  entity_type: guide
+  doc_id: guides/building-loop-agents
+  aliases:
+   - "building loop agents"
+ "building multi-agent systems":
+  entity_type: guide
+  doc_id: guides/building-multi-agent-systems
+  aliases:
+   - "building multi-agent systems"
+ "clipping web pages with kbclipper":
+  entity_type: guide
+  doc_id: guides/clipping-web-pages-with-kb-clipper
+  aliases:
+   - "clipping web pages with kbclipper"
+ "compiling a yaaf knowledge base":
+  entity_type: guide
+  doc_id: guides/compiling-a-yaaf-knowledge-base
+  aliases:
+   - "compiling a yaaf knowledge base"
+ "configuring tf-idf search":
+  entity_type: guide
+  doc_id: guides/configuring-tf-idf-search
+  aliases:
+   - "configuring tf-idf search"
+ "configuring tool sandboxing":
+  entity_type: guide
+  doc_id: guides/configuring-tool-sandboxing
+  aliases:
+   - "configuring tool sandboxing"
+ "creating custom channels guide":
+  entity_type: guide
+  doc_id: guides/creating-custom-channels-guide
+  aliases:
+   - "creating custom channels guide"
+ "deploying a yaaf agent as an api":
+  entity_type: guide
+  doc_id: guides/deploying-a-yaaf-agent-as-an-api
+  aliases:
+   - "deploying a yaaf agent as an api"
+ "deploying yaaf agents to edge runtimes":
+  entity_type: guide
+  doc_id: guides/deploying-yaaf-agents-to-edge-runtimes
+  aliases:
+   - "deploying yaaf agents to edge runtimes"
+ "developing agents with the yaaf dev repl":
+  entity_type: guide
+  doc_id: guides/developing-agents-with-the-yaaf-dev-repl
+  aliases:
+   - "developing agents with the yaaf dev repl"
+ "getting started with yaaf":
+  entity_type: guide
+  doc_id: guides/getting-started-with-yaaf
+  aliases:
+   - "getting started with yaaf"
+ "how to inspect the assembled system prompt":
+  entity_type: guide
+  doc_id: guides/how-to-inspect-the-assembled-system-prompt
+  aliases:
+   - "how to inspect the assembled system prompt"
+ "how to revoke jwts with jti blocklist":
+  entity_type: guide
+  doc_id: guides/how-to-revoke-jw-ts-with-jti-blocklist
+  aliases:
+   - "how to revoke jwts with jti blocklist"
+ "how to use skills in yaaf agents":
+  entity_type: guide
+  doc_id: guides/how-to-use-skills-in-yaaf-agents
+  aliases:
+   - "how to use skills in yaaf agents"
+ "how to use vector memory":
+  entity_type: guide
+  doc_id: guides/how-to-use-vector-memory
+  aliases:
+   - "how to use vector memory"
+ "scaffolding new tools and skills with yaaf add":
+  entity_type: guide
+  doc_id: guides/scaffolding-new-tools-and-skills-with-yaaf-add
+  aliases:
+   - "scaffolding new tools and skills with yaaf add"
+ "setting up guardrails":
+  entity_type: guide
+  doc_id: guides/setting-up-guardrails
+  aliases:
+   - "setting up guardrails"
+ "setting up rate limiting storage":
+  entity_type: guide
+  doc_id: guides/setting-up-rate-limiting-storage
+  aliases:
+   - "setting up rate limiting storage"
+ "setting up yaaf telemetry":
+  entity_type: guide
+  doc_id: guides/setting-up-yaaf-telemetry
+  aliases:
+   - "setting up yaaf telemetry"
+ "using the knowledge base":
+  entity_type: guide
+  doc_id: guides/using-the-knowledge-base
+  aliases:
+   - "using the knowledge base"
+ "agentfs plugin":
+  entity_type: plugin
+  doc_id: plugins/agent-fs-plugin
+  aliases:
+   - "agentfs plugin"
+ "camoufox plugin":
+  entity_type: plugin
+  doc_id: plugins/camoufox-plugin
+  aliases:
+   - "camoufox plugin"
+ "firecrackersandboxbackend":
+  entity_type: plugin
+  doc_id: plugins/firecracker-sandbox-backend
+  aliases:
+   - "firecrackersandboxbackend"
+ "honcho plugin":
+  entity_type: plugin
+  doc_id: plugins/honcho-plugin
+  aliases:
+   - "honcho plugin"
+ "inmemoryratelimitstore":
+  entity_type: plugin
+  doc_id: plugins/in-memory-rate-limit-store
+  aliases:
+   - "inmemoryratelimitstore"
+ "inprocessipcplugin":
+  entity_type: plugin
+  doc_id: plugins/in-process-ipc-plugin
+  aliases:
+   - "inprocessipcplugin"
+ "redisratelimitstore":
+  entity_type: plugin
+  doc_id: plugins/redis-rate-limit-store
+  aliases:
+   - "redisratelimitstore"
+ "tfidfsearchplugin":
+  entity_type: plugin
+  doc_id: plugins/tf-idf-search-plugin
+  aliases:
+   - "tfidfsearchplugin"
+ "vectormemoryplugin":
+  entity_type: plugin
+  doc_id: plugins/vector-memory-plugin
+  aliases:
+   - "vectormemoryplugin"
+ "wikilinkgraphplugin":
+  entity_type: plugin
+  doc_id: plugins/wikilink-graph-plugin
+  aliases:
+   - "wikilinkgraphplugin"
+ "agent collaboration":
+  entity_type: subsystem
+  doc_id: subsystems/agent-collaboration
+  aliases:
+   - "agent collaboration"
+ "agent orchestration system":
+  entity_type: subsystem
+  doc_id: subsystems/agent-orchestration-system
+  aliases:
+   - "agent orchestration system"
+ "agent routing subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/agent-routing-subsystem
+  aliases:
+   - "agent routing subsystem"
+ "agent spawner system":
+  entity_type: subsystem
+  doc_id: subsystems/agent-spawner-system
+  aliases:
+   - "agent spawner system"
+ "async approvals gateway":
+  entity_type: subsystem
+  doc_id: subsystems/async-approvals-gateway
+  aliases:
+   - "async approvals gateway"
+ "authorization system":
+  entity_type: subsystem
+  doc_id: subsystems/authorization-system
+  aliases:
+   - "authorization system"
+ "automation system":
+  entity_type: subsystem
+  doc_id: subsystems/automation-system
+  aliases:
+   - "automation system"
+ "budget management":
+  entity_type: subsystem
+  doc_id: subsystems/budget-management
+  aliases:
+   - "budget management"
+ "cli":
+  entity_type: subsystem
+  doc_id: subsystems/cli
+  aliases:
+   - "cli"
+ "cli add subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/cli-add-subsystem
+  aliases:
+   - "cli add subsystem"
+ "cli runtime":
+  entity_type: subsystem
+  doc_id: subsystems/cli-runtime
+  aliases:
+   - "cli runtime"
+ "command line interface (cli)":
+  entity_type: subsystem
+  doc_id: subsystems/command-line-interface-cli
+  aliases:
+   - "command line interface (cli)"
+ "compaction strategy system":
+  entity_type: subsystem
+  doc_id: subsystems/compaction-strategy-system
+  aliases:
+   - "compaction strategy system"
+ "compile quality history":
+  entity_type: subsystem
+  doc_id: subsystems/compile-quality-history
+  aliases:
+   - "compile quality history"
+ "compiled article reader":
+  entity_type: subsystem
+  doc_id: subsystems/compiled-article-reader
+  aliases:
+   - "compiled article reader"
+ "concept extractor":
+  entity_type: subsystem
+  doc_id: subsystems/concept-extractor
+  aliases:
+   - "concept extractor"
+ "concept registry":
+  entity_type: subsystem
+  doc_id: subsystems/concept-registry
+  aliases:
+   - "concept registry"
+ "content ingestion system":
+  entity_type: subsystem
+  doc_id: subsystems/content-ingestion-system
+  aliases:
+   - "content ingestion system"
+ "context management":
+  entity_type: subsystem
+  doc_id: subsystems/context-management
+  aliases:
+   - "context management"
+ "context management system":
+  entity_type: subsystem
+  doc_id: subsystems/context-management-system
+  aliases:
+   - "context management system"
+ "coordinator mode":
+  entity_type: subsystem
+  doc_id: subsystems/coordinator-mode
+  aliases:
+   - "coordinator mode"
+ "core utilities":
+  entity_type: subsystem
+  doc_id: subsystems/core-utilities
+  aliases:
+   - "core utilities"
+ "cost management":
+  entity_type: subsystem
+  doc_id: subsystems/cost-management
+  aliases:
+   - "cost management"
+ "deduplication subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/deduplication-subsystem
+  aliases:
+   - "deduplication subsystem"
+ "deprecation management":
+  entity_type: subsystem
+  doc_id: subsystems/deprecation-management
+  aliases:
+   - "deprecation management"
+ "differential compilation engine":
+  entity_type: subsystem
+  doc_id: subsystems/differential-compilation-engine
+  aliases:
+   - "differential compilation engine"
+ "doctor system":
+  entity_type: subsystem
+  doc_id: subsystems/doctor-system
+  aliases:
+   - "doctor system"
+ "frontmatter parsing subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/frontmatter-parsing-subsystem
+  aliases:
+   - "frontmatter parsing subsystem"
+ "gateway & channels subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/gateway-channels-subsystem
+  aliases:
+   - "gateway & channels subsystem"
+ "gateway module":
+  entity_type: subsystem
+  doc_id: subsystems/gateway-module
+  aliases:
+   - "gateway module"
+ "gateway system":
+  entity_type: subsystem
+  doc_id: subsystems/gateway-system
+  aliases:
+   - "gateway system"
+ "iam system":
+  entity_type: subsystem
+  doc_id: subsystems/iam-system
+  aliases:
+   - "iam system"
+ "identity and access management (iam)":
+  entity_type: subsystem
+  doc_id: subsystems/identity-and-access-management-iam
+  aliases:
+   - "identity and access management (iam)"
+ "ingester image utilities":
+  entity_type: subsystem
+  doc_id: subsystems/ingester-image-utilities
+  aliases:
+   - "ingester image utilities"
+ "ingestion disk cache":
+  entity_type: subsystem
+  doc_id: subsystems/ingestion-disk-cache
+  aliases:
+   - "ingestion disk cache"
+ "ink cli runtime":
+  entity_type: subsystem
+  doc_id: subsystems/ink-cli-runtime
+  aliases:
+   - "ink cli runtime"
+ "input security system":
+  entity_type: subsystem
+  doc_id: subsystems/input-security-system
+  aliases:
+   - "input security system"
+ "integrations":
+  entity_type: subsystem
+  doc_id: subsystems/integrations
+  aliases:
+   - "integrations"
+ "inter-agent communication":
+  entity_type: subsystem
+  doc_id: subsystems/inter-agent-communication
+  aliases:
+   - "inter-agent communication"
+ "kb runtime tools":
+  entity_type: subsystem
+  doc_id: subsystems/kb-runtime-tools
+  aliases:
+   - "kb runtime tools"
+ "knowledge base citation index":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-citation-index
+  aliases:
+   - "knowledge base citation index"
+ "knowledge base compilation utilities":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-compilation-utilities
+  aliases:
+   - "knowledge base compilation utilities"
+ "knowledge base compiler":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-compiler
+  aliases:
+   - "knowledge base compiler"
+ "knowledge base discovery":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-discovery
+  aliases:
+   - "knowledge base discovery"
+ "knowledge base linter":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-linter
+  aliases:
+   - "knowledge base linter"
+ "knowledge base management":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-management
+  aliases:
+   - "knowledge base management"
+ "knowledge base ontology":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-ontology
+  aliases:
+   - "knowledge base ontology"
+ "knowledge base system":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-system
+  aliases:
+   - "knowledge base system"
+ "knowledge compilation and synthesis":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compilation-and-synthesis
+  aliases:
+   - "knowledge compilation and synthesis"
+ "knowledge compilation system":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compilation-system
+  aliases:
+   - "knowledge compilation system"
+ "knowledge compiler":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compiler
+  aliases:
+   - "knowledge compiler"
+ "knowledge compiler contradiction detection":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compiler-contradiction-detection
+  aliases:
+   - "knowledge compiler contradiction detection"
+ "knowledge compiler extractor":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compiler-extractor
+  aliases:
+   - "knowledge compiler extractor"
+ "knowledge compiler post-processing":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compiler-post-processing
+  aliases:
+   - "knowledge compiler post-processing"
+ "knowledge compiler synthesizer":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-compiler-synthesizer
+  aliases:
+   - "knowledge compiler synthesizer"
+ "knowledge extraction subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-extraction-subsystem
+  aliases:
+   - "knowledge extraction subsystem"
+ "knowledge ingestion system":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-ingestion-system
+  aliases:
+   - "knowledge ingestion system"
+ "knowledge synthesizer":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-synthesizer
+  aliases:
+   - "knowledge synthesizer"
+ "linter fixer":
+  entity_type: subsystem
+  doc_id: subsystems/linter-fixer
+  aliases:
+   - "linter fixer"
+ "linter heal mode":
+  entity_type: subsystem
+  doc_id: subsystems/linter-heal-mode
+  aliases:
+   - "linter heal mode"
+ "llm adapters":
+  entity_type: subsystem
+  doc_id: subsystems/llm-adapters
+  aliases:
+   - "llm adapters"
+ "llm call retry subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/llm-call-retry-subsystem
+  aliases:
+   - "llm call retry subsystem"
+ "llm client system":
+  entity_type: subsystem
+  doc_id: subsystems/llm-client-system
+  aliases:
+   - "llm client system"
+ "logging system":
+  entity_type: subsystem
+  doc_id: subsystems/logging-system
+  aliases:
+   - "logging system"
+ "memory system":
+  entity_type: subsystem
+  doc_id: subsystems/memory-system
+  aliases:
+   - "memory system"
+ "model specification system":
+  entity_type: subsystem
+  doc_id: subsystems/model-specification-system
+  aliases:
+   - "model specification system"
+ "notifier system":
+  entity_type: subsystem
+  doc_id: subsystems/notifier-system
+  aliases:
+   - "notifier system"
+ "ontology proposals system":
+  entity_type: subsystem
+  doc_id: subsystems/ontology-proposals-system
+  aliases:
+   - "ontology proposals system"
+ "ontology system":
+  entity_type: subsystem
+  doc_id: subsystems/ontology-system
+  aliases:
+   - "ontology system"
+ "openapi authentication":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-authentication
+  aliases:
+   - "openapi authentication"
+ "openapi integration":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-integration
+  aliases:
+   - "openapi integration"
+ "openapi parser":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-parser
+  aliases:
+   - "openapi parser"
+ "openapi tool schema generation":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-tool-schema-generation
+  aliases:
+   - "openapi tool schema generation"
+ "openapi tools":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-tools
+  aliases:
+   - "openapi tools"
+ "permission system":
+  entity_type: subsystem
+  doc_id: subsystems/permission-system
+  aliases:
+   - "permission system"
+ "permissions management":
+  entity_type: subsystem
+  doc_id: subsystems/permissions-management
+  aliases:
+   - "permissions management"
+ "plugin system":
+  entity_type: subsystem
+  doc_id: subsystems/plugin-system
+  aliases:
+   - "plugin system"
+ "rate limiting":
+  entity_type: subsystem
+  doc_id: subsystems/rate-limiting
+  aliases:
+   - "rate limiting"
+ "remote sessions subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/remote-sessions-subsystem
+  aliases:
+   - "remote sessions subsystem"
+ "runtime management":
+  entity_type: subsystem
+  doc_id: subsystems/runtime-management
+  aliases:
+   - "runtime management"
+ "sandbox system":
+  entity_type: subsystem
+  doc_id: subsystems/sandbox-system
+  aliases:
+   - "sandbox system"
+ "sandbox worker subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/sandbox-worker-subsystem
+  aliases:
+   - "sandbox worker subsystem"
+ "sandboxing":
+  entity_type: subsystem
+  doc_id: subsystems/sandboxing
+  aliases:
+   - "sandboxing"
+ "security system":
+  entity_type: subsystem
+  doc_id: subsystems/security-system
+  aliases:
+   - "security system"
+ "server runtime":
+  entity_type: subsystem
+  doc_id: subsystems/server-runtime
+  aliases:
+   - "server runtime"
+ "session management":
+  entity_type: subsystem
+  doc_id: subsystems/session-management
+  aliases:
+   - "session management"
+ "skills management":
+  entity_type: subsystem
+  doc_id: subsystems/skills-management
+  aliases:
+   - "skills management"
+ "ssrf prevention subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/ssrf-prevention-subsystem
+  aliases:
+   - "ssrf prevention subsystem"
+ "ssrf protection":
+  entity_type: subsystem
+  doc_id: subsystems/ssrf-protection
+  aliases:
+   - "ssrf protection"
+ "state management system":
+  entity_type: subsystem
+  doc_id: subsystems/state-management-system
+  aliases:
+   - "state management system"
+ "state store system":
+  entity_type: subsystem
+  doc_id: subsystems/state-store-system
+  aliases:
+   - "state store system"
+ "telemetry system":
+  entity_type: subsystem
+  doc_id: subsystems/telemetry-system
+  aliases:
+   - "telemetry system"
+ "token management":
+  entity_type: subsystem
+  doc_id: subsystems/token-management
+  aliases:
+   - "token management"
+ "tokenization system":
+  entity_type: subsystem
+  doc_id: subsystems/tokenization-system
+  aliases:
+   - "tokenization system"
+ "tool management":
+  entity_type: subsystem
+  doc_id: subsystems/tool-management
+  aliases:
+   - "tool management"
+ "tool result budget management":
+  entity_type: subsystem
+  doc_id: subsystems/tool-result-budget-management
+  aliases:
+   - "tool result budget management"
+ "tool system":
+  entity_type: subsystem
+  doc_id: subsystems/tool-system
+  aliases:
+   - "tool system"
+ "tool use summary system":
+  entity_type: subsystem
+  doc_id: subsystems/tool-use-summary-system
+  aliases:
+   - "tool use summary system"
+ "tools":
+  entity_type: subsystem
+  doc_id: subsystems/tools
+  aliases:
+   - "tools"
+ "tools subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/tools-subsystem
+  aliases:
+   - "tools subsystem"
+ "tools system":
+  entity_type: subsystem
+  doc_id: subsystems/tools-system
+  aliases:
+   - "tools system"
+ "utilities":
+  entity_type: subsystem
+  doc_id: subsystems/utilities
+  aliases:
+   - "utilities"
+ "vigil autonomous agent mode":
+  entity_type: subsystem
+  doc_id: subsystems/vigil-autonomous-agent-mode
+  aliases:
+   - "vigil autonomous agent mode"
+ "vision pass":
+  entity_type: subsystem
+  doc_id: subsystems/vision-pass
+  aliases:
+   - "vision pass"
+ "worker runtime":
+  entity_type: subsystem
+  doc_id: subsystems/worker-runtime
+  aliases:
+   - "worker runtime"
+ "workflow agents":
+  entity_type: subsystem
+  doc_id: subsystems/workflow-agents
+  aliases:
+   - "workflow agents"
+ "yaaf dev ui":
+  entity_type: subsystem
+  doc_id: subsystems/yaaf-dev-ui
+  aliases:
+   - "yaaf dev ui"
+ "accessdecisionevent":
+  entity_type: api
+  doc_id: apis/access-decision-event
+  aliases:
+   - "accessdecisionevent"
+ "runnerstreamevent":
+  entity_type: api
+  doc_id: apis/runner-stream-event
+  aliases:
+   - "runnerstreamevent"
+ "multi-agent systems":
+  entity_type: concept
+  doc_id: concepts/multi-agent-systems
+  aliases:
+   - "multi-agent systems"
+ "pii detection":
+  entity_type: concept
+  doc_id: concepts/pii-detection
+  aliases:
+   - "pii detection"
+ "pii redaction":
+  entity_type: concept
+  doc_id: concepts/pii-redaction
+  aliases:
+   - "pii redaction"
+ "authorizationcontext":
+  entity_type: api
+  doc_id: apis/authorization-context
+  aliases:
+   - "authorizationcontext"
+ "llm adapter pattern":
+  entity_type: concept
+  doc_id: concepts/llm-adapter-pattern
+  aliases:
+   - "llm adapter pattern"
+ "context window":
+  entity_type: concept
+  doc_id: concepts/context-window
+  aliases:
+   - "context window"
+ "heartbeat mechanism":
+  entity_type: concept
+  doc_id: concepts/heartbeat-mechanism
+  aliases:
+   - "heartbeat mechanism"
+ "scopecontext":
+  entity_type: api
+  doc_id: apis/scope-context
+  aliases:
+   - "scopecontext"
+ "attributescopestrategy":
+  entity_type: api
+  doc_id: apis/attribute-scope-strategy
+  aliases:
+   - "attributescopestrategy"
+ "resolverscopestrategy":
+  entity_type: api
+  doc_id: apis/resolver-scope-strategy
+  aliases:
+   - "resolverscopestrategy"
+ "multi-turn history":
+  entity_type: concept
+  doc_id: concepts/multi-turn-history
+  aliases:
+   - "multi-turn history"
+ "inprocessipcconfig":
+  entity_type: api
+  doc_id: apis/in-process-ipc-config
+  aliases:
+   - "inprocessipcconfig"
+ "thinking budget":
+  entity_type: concept
+  doc_id: concepts/thinking-budget
+  aliases:
+   - "thinking budget"
+ "hallucination (llm)":
+  entity_type: concept
+  doc_id: concepts/hallucination-llm
+  aliases:
+   - "hallucination (llm)"
+ "grounding (llm)":
+  entity_type: concept
+  doc_id: concepts/grounding-llm
+  aliases:
+   - "grounding (llm)"
+ "tf-idf":
+  entity_type: concept
+  doc_id: concepts/tf-idf
+  aliases:
+   - "tf-idf"
+ "embedding similarity":
+  entity_type: concept
+  doc_id: concepts/embedding-similarity
+  aliases:
+   - "embedding similarity"
+ "cosine similarity":
+  entity_type: concept
+  doc_id: concepts/cosine-similarity
+  aliases:
+   - "cosine similarity"
+ "llm semantic scorer":
+  entity_type: concept
+  doc_id: concepts/llm-semantic-scorer
+  aliases:
+   - "llm semantic scorer"
+ "hook (agent framework)":
+  entity_type: concept
+  doc_id: concepts/hook-agent-framework
+  aliases:
+   - "hook (agent framework)"
+ "cron expression":
+  entity_type: concept
+  doc_id: concepts/cron-expression
+  aliases:
+   - "cron expression"
+ "tf-idf search engine":
+  entity_type: subsystem
+  doc_id: subsystems/tf-idf-search-engine
+  aliases:
+   - "tf-idf search engine"
+ "incomingrequest":
+  entity_type: api
+  doc_id: apis/incoming-request
+  aliases:
+   - "incomingrequest"
+ "defense-in-depth":
+  entity_type: concept
+  doc_id: concepts/defense-in-depth
+  aliases:
+   - "defense-in-depth"
+ "agent session":
+  entity_type: concept
+  doc_id: concepts/agent-session
+  aliases:
+   - "agent session"
+ "knowledge store":
+  entity_type: api
+  doc_id: apis/knowledge-store
+  aliases:
+   - "knowledge store"
+ "compiler discovery phase":
+  entity_type: concept
+  doc_id: concepts/compiler-discovery-phase
+  aliases:
+   - "compiler discovery phase"
+ "docid":
+  entity_type: concept
+  doc_id: concepts/doc-id
+  aliases:
+   - "docid"
+ "buildaliasindex":
+  entity_type: api
+  doc_id: apis/build-alias-index
+  aliases:
+   - "buildaliasindex"
+ "linterruleadapter":
+  entity_type: api
+  doc_id: apis/linter-rule-adapter
+  aliases:
+   - "linterruleadapter"
+ "logentry":
+  entity_type: api
+  doc_id: apis/log-entry
+  aliases:
+   - "logentry"
+ "observabilityadapter":
+  entity_type: concept
+  doc_id: concepts/observability-adapter
+  aliases:
+   - "observabilityadapter"
+ "least-recently-used (lru) cache":
+  entity_type: concept
+  doc_id: concepts/least-recently-used-lru-cache
+  aliases:
+   - "least-recently-used (lru) cache"
+ "memoryheader":
+  entity_type: concept
+  doc_id: concepts/memory-header
+  aliases:
+   - "memoryheader"
+ "safeparsejson":
+  entity_type: api
+  doc_id: apis/safe-parse-json
+  aliases:
+   - "safeparsejson"
+ "memoryrelevanceresponseschema":
+  entity_type: concept
+  doc_id: concepts/memory-relevance-response-schema
+  aliases:
+   - "memoryrelevanceresponseschema"
+ "notificationadapter":
+  entity_type: concept
+  doc_id: concepts/notification-adapter
+  aliases:
+   - "notificationadapter"
+ "apiconnectionerror":
+  entity_type: api
+  doc_id: apis/api-connection-error
+  aliases:
+   - "apiconnectionerror"
+ "tool calls":
+  entity_type: concept
+  doc_id: concepts/tool-calls
+  aliases:
+   - "tool calls"
+ "reasoning effort":
+  entity_type: concept
+  doc_id: concepts/reasoning-effort
+  aliases:
+   - "reasoning effort"
+ "flat tool input schema":
+  entity_type: concept
+  doc_id: concepts/flat-tool-input-schema
+  aliases:
+   - "flat tool input schema"
+ "resolvedpermissions":
+  entity_type: api
+  doc_id: apis/resolved-permissions
+  aliases:
+   - "resolvedpermissions"
+ "memoryadapter":
+  entity_type: concept
+  doc_id: concepts/memory-adapter
+  aliases:
+   - "memoryadapter"
+ "memory":
+  entity_type: concept
+  doc_id: concepts/memory
+  aliases:
+   - "memory"
+ "anthropicmodelconfig":
+  entity_type: api
+  doc_id: apis/anthropic-model-config
+  aliases:
+   - "anthropicmodelconfig"
+ "resolverconfig":
+  entity_type: api
+  doc_id: apis/resolver-config
+  aliases:
+   - "resolverconfig"
+ "model resolution system":
+  entity_type: subsystem
+  doc_id: subsystems/model-resolution-system
+  aliases:
+   - "model resolution system"
+ "openaimodel":
+  entity_type: api
+  doc_id: apis/openai-model
+  aliases:
+   - "openaimodel"
+ "chatmessage":
+  entity_type: api
+  doc_id: apis/chat-message
+  aliases:
+   - "chatmessage"
+ "toolschema":
+  entity_type: api
+  doc_id: apis/tool-schema
+  aliases:
+   - "toolschema"
+ "path guard":
+  entity_type: concept
+  doc_id: concepts/path-guard
+  aliases:
+   - "path guard"
+ "network guard":
+  entity_type: concept
+  doc_id: concepts/network-guard
+  aliases:
+   - "network guard"
+ "execution timeout":
+  entity_type: concept
+  doc_id: concepts/execution-timeout
+  aliases:
+   - "execution timeout"
+ "worker thread isolation":
+  entity_type: concept
+  doc_id: concepts/worker-thread-isolation
+  aliases:
+   - "worker thread isolation"
+ "external sandbox execution":
+  entity_type: concept
+  doc_id: concepts/external-sandbox-execution
+  aliases:
+   - "external sandbox execution"
+ "createtools":
+  entity_type: api
+  doc_id: apis/create-tools
+  aliases:
+   - "createtools"
+ "yaaf_storage_key":
+  entity_type: concept
+  doc_id: concepts/yaaf-storage-key
+  aliases:
+   - "yaaf_storage_key"
+ "key derivation":
+  entity_type: concept
+  doc_id: concepts/key-derivation
+  aliases:
+   - "key derivation"
+ "storage system":
+  entity_type: subsystem
+  doc_id: subsystems/storage-system
+  aliases:
+   - "storage system"
+ "appstate":
+  entity_type: concept
+  doc_id: concepts/app-state
+  aliases:
+   - "appstate"
+ "workflow":
+  entity_type: concept
+  doc_id: concepts/workflow
+  aliases:
+   - "workflow"
+ "memoryscope":
+  entity_type: api
+  doc_id: apis/memory-scope
+  aliases:
+   - "memoryscope"
+ "teammemoryentry":
+  entity_type: api
+  doc_id: apis/team-memory-entry
+  aliases:
+   - "teammemoryentry"
+ "teammemoryconfig":
+  entity_type: api
+  doc_id: apis/team-memory-config
+  aliases:
+   - "teammemoryconfig"
+ "saveoptions":
+  entity_type: api
+  doc_id: apis/save-options
+  aliases:
+   - "saveoptions"
+ "searchoptions":
+  entity_type: api
+  doc_id: apis/search-options
+  aliases:
+   - "searchoptions"
+ "multi-agent swarm":
+  entity_type: concept
+  doc_id: concepts/multi-agent-swarm
+  aliases:
+   - "multi-agent swarm"
+ "two-directory memory model":
+  entity_type: concept
+  doc_id: concepts/two-directory-memory-model
+  aliases:
+   - "two-directory memory model"
+ "usercredentials":
+  entity_type: api
+  doc_id: apis/user-credentials
+  aliases:
+   - "usercredentials"
+ "retry logic":
+  entity_type: concept
+  doc_id: concepts/retry-logic
+  aliases:
+   - "retry logic"
+ "llm":
+  entity_type: concept
+  doc_id: concepts/llm
+  aliases:
+   - "llm"
+ "max iterations":
+  entity_type: concept
+  doc_id: concepts/max-iterations
+  aliases:
+   - "max iterations"
+ "context compaction":
+  entity_type: concept
+  doc_id: concepts/context-compaction
+  aliases:
+   - "context compaction"
+ "tool results":
+  entity_type: concept
+  doc_id: concepts/tool-results
+  aliases:
+   - "tool results"
+ "document re-synthesis":
+  entity_type: concept
+  doc_id: concepts/document-re-synthesis
+  aliases:
+   - "document re-synthesis"
+ "relevance engine":
+  entity_type: concept
+  doc_id: concepts/relevance-engine
+  aliases:
+   - "relevance engine"
+ "fast model":
+  entity_type: concept
+  doc_id: concepts/fast-model
+  aliases:
+   - "fast model"
+ "capable model":
+  entity_type: concept
+  doc_id: concepts/capable-model
+  aliases:
+   - "capable model"
+ "dns rebinding":
+  entity_type: concept
+  doc_id: concepts/dns-rebinding
+  aliases:
+   - "dns rebinding"
+ "http redirects":
+  entity_type: concept
+  doc_id: concepts/http-redirects
+  aliases:
+   - "http redirects"
+ "context blowout":
+  entity_type: concept
+  doc_id: concepts/context-blowout
+  aliases:
+   - "context blowout"
+ "size placeholder":
+  entity_type: concept
+  doc_id: concepts/size-placeholder
+  aliases:
+   - "size placeholder"
+ "chromaplugin":
+  entity_type: plugin
+  doc_id: plugins/chroma-plugin
+  aliases:
+   - "chromaplugin"
+ "qdrantplugin":
+  entity_type: plugin
+  doc_id: plugins/qdrant-plugin
+  aliases:
+   - "qdrantplugin"
+ "pgvectorplugin":
+  entity_type: plugin
+  doc_id: plugins/pgvector-plugin
+  aliases:
+   - "pgvectorplugin"
+ "agent skills":
+  entity_type: concept
+  doc_id: concepts/agent-skills
+  aliases:
+   - "agent skills"
+ "memory storage":
+  entity_type: concept
+  doc_id: concepts/memory-storage
+  aliases:
+   - "memory storage"
+ "filesystemadapter":
+  entity_type: concept
+  doc_id: concepts/file-system-adapter
+  aliases:
+   - "filesystemadapter"
+ "toolprovider":
+  entity_type: concept
+  doc_id: concepts/tool-provider
+  aliases:
+   - "toolprovider"
+ "contextprovider":
+  entity_type: concept
+  doc_id: concepts/context-provider
+  aliases:
+   - "contextprovider"
+ "toolcontext":
+  entity_type: api
+  doc_id: apis/tool-context
+  aliases:
+   - "toolcontext"
+ "fsnodetype":
+  entity_type: api
+  doc_id: apis/fs-node-type
+  aliases:
+   - "fsnodetype"
+ "fsentry":
+  entity_type: api
+  doc_id: apis/fs-entry
+  aliases:
+   - "fsentry"
+ "treeentry":
+  entity_type: api
+  doc_id: apis/tree-entry
+  aliases:
+   - "treeentry"
+ "agentfsconfig":
+  entity_type: api
+  doc_id: apis/agent-fs-config
+  aliases:
+   - "agentfsconfig"
+ "fschange":
+  entity_type: api
+  doc_id: apis/fs-change
+  aliases:
+   - "fschange"
+ "browseradapter":
+  entity_type: concept
+  doc_id: concepts/browser-adapter
+  aliases:
+   - "browseradapter"
+ "subscribeoptions":
+  entity_type: api
+  doc_id: apis/subscribe-options
+  aliases:
+   - "subscribeoptions"
+ "leader/worker hierarchy":
+  entity_type: concept
+  doc_id: concepts/leader-worker-hierarchy
+  aliases:
+   - "leader/worker hierarchy"
+ "independent abortcontrollers":
+  entity_type: concept
+  doc_id: concepts/independent-abort-controllers
+  aliases:
+   - "independent abortcontrollers"
+ "task-based work distribution":
+  entity_type: concept
+  doc_id: concepts/task-based-work-distribution
+  aliases:
+   - "task-based work distribution"
+ "agent idle loop":
+  entity_type: concept
+  doc_id: concepts/agent-idle-loop
+  aliases:
+   - "agent idle loop"
+ "permission delegation":
+  entity_type: concept
+  doc_id: concepts/permission-delegation
+  aliases:
+   - "permission delegation"
+ "multi-agent orchestration":
+  entity_type: concept
+  doc_id: concepts/multi-agent-orchestration
+  aliases:
+   - "multi-agent orchestration"
+ "mailbox-based ipc":
+  entity_type: concept
+  doc_id: concepts/mailbox-based-ipc
+  aliases:
+   - "mailbox-based ipc"
+ "user-in-the-loop permission requests":
+  entity_type: concept
+  doc_id: concepts/user-in-the-loop-permission-requests
+  aliases:
+   - "user-in-the-loop permission requests"
+ "compileresult":
+  entity_type: api
+  doc_id: apis/compile-result
+  aliases:
+   - "compileresult"
+ "backlink resolver":
+  entity_type: subsystem
+  doc_id: subsystems/backlink-resolver
+  aliases:
+   - "backlink resolver"
+ "coordinatorpromptbuilder":
+  entity_type: concept
+  doc_id: concepts/coordinator-prompt-builder
+  aliases:
+   - "coordinatorpromptbuilder"
+ "compileoptions":
+  entity_type: concept
+  doc_id: concepts/compile-options
+  aliases:
+   - "compileoptions"
+ "filterincremental":
+  entity_type: concept
+  doc_id: concepts/filter-incremental
+  aliases:
+   - "filterincremental"
+ "modelprovider":
+  entity_type: concept
+  doc_id: concepts/model-provider
+  aliases:
+   - "modelprovider"
+ "runnerevents":
+  entity_type: concept
+  doc_id: concepts/runner-events
+  aliases:
+   - "runnerevents"
+ "runnereventhandler":
+  entity_type: concept
+  doc_id: concepts/runner-event-handler
+  aliases:
+   - "runnereventhandler"
+ "agent core":
+  entity_type: subsystem
+  doc_id: subsystems/agent-core
+  aliases:
+   - "agent core"
+ "permission management":
+  entity_type: subsystem
+  doc_id: subsystems/permission-management
+  aliases:
+   - "permission management"
+ "retrieval augmented generation (rag)":
+  entity_type: concept
+  doc_id: concepts/retrieval-augmented-generation-rag
+  aliases:
+   - "retrieval augmented generation (rag)"
+ "vector embeddings":
+  entity_type: concept
+  doc_id: concepts/vector-embeddings
+  aliases:
+   - "vector embeddings"
+ "document retrieval":
+  entity_type: concept
+  doc_id: concepts/document-retrieval
+  aliases:
+   - "document retrieval"
+ "reverse citation index":
+  entity_type: concept
+  doc_id: concepts/reverse-citation-index
+  aliases:
+   - "reverse citation index"
+ "llm extraction":
+  entity_type: concept
+  doc_id: concepts/llm-extraction
+  aliases:
+   - "llm extraction"
+ "llm grounding":
+  entity_type: concept
+  doc_id: concepts/llm-grounding
+  aliases:
+   - "llm grounding"
+ "llm synthesis":
+  entity_type: concept
+  doc_id: concepts/llm-synthesis
+  aliases:
+   - "llm synthesis"
+ "schema validation":
+  entity_type: concept
+  doc_id: concepts/schema-validation
+  aliases:
+   - "schema validation"
+ "kb compiler boundary":
+  entity_type: concept
+  doc_id: concepts/kb-compiler-boundary
+  aliases:
+   - "kb compiler boundary"
+ "vocabulary":
+  entity_type: concept
+  doc_id: concepts/vocabulary
+  aliases:
+   - "vocabulary"
+ "grounding score":
+  entity_type: concept
+  doc_id: concepts/grounding-score
+  aliases:
+   - "grounding score"
+ "incremental synthesis":
+  entity_type: concept
+  doc_id: concepts/incremental-synthesis
+  aliases:
+   - "incremental synthesis"
+ "differential compiler":
+  entity_type: concept
+  doc_id: concepts/differential-compiler
+  aliases:
+   - "differential compiler"
+ "kbcompileroptions":
+  entity_type: api
+  doc_id: apis/kb-compiler-options
+  aliases:
+   - "kbcompileroptions"
+ "compileprogressevent":
+  entity_type: api
+  doc_id: apis/compile-progress-event
+  aliases:
+   - "compileprogressevent"
+ "modellike":
+  entity_type: api
+  doc_id: apis/model-like
+  aliases:
+   - "modellike"
+ "articleversion":
+  entity_type: api
+  doc_id: apis/article-version
+  aliases:
+   - "articleversion"
+ "writeresult":
+  entity_type: api
+  doc_id: apis/write-result
+  aliases:
+   - "writeresult"
+ "pdfextractfn":
+  entity_type: api
+  doc_id: apis/pdf-extract-fn
+  aliases:
+   - "pdfextractfn"
+ "pdfingesteroptions":
+  entity_type: api
+  doc_id: apis/pdf-ingester-options
+  aliases:
+   - "pdfingesteroptions"
+ "geminipdfextractoroptions":
+  entity_type: api
+  doc_id: apis/gemini-pdf-extractor-options
+  aliases:
+   - "geminipdfextractoroptions"
+ "claudepdfextractoroptions":
+  entity_type: api
+  doc_id: apis/claude-pdf-extractor-options
+  aliases:
+   - "claudepdfextractoroptions"
+ "openaipdfextractoroptions":
+  entity_type: api
+  doc_id: apis/open-ai-pdf-extractor-options
+  aliases:
+   - "openaipdfextractoroptions"
+ "sourcehashmanifest":
+  entity_type: api
+  doc_id: apis/source-hash-manifest
+  aliases:
+   - "sourcehashmanifest"
+ "differentialplan":
+  entity_type: api
+  doc_id: apis/differential-plan
+  aliases:
+   - "differentialplan"
+ "multilayergroundingoptions":
+  entity_type: api
+  doc_id: apis/multi-layer-grounding-options
+  aliases:
+   - "multilayergroundingoptions"
+ "ontology registry":
+  entity_type: subsystem
+  doc_id: subsystems/ontology-registry
+  aliases:
+   - "ontology registry"
+ "tokenization utilities":
+  entity_type: subsystem
+  doc_id: subsystems/tokenization-utilities
+  aliases:
+   - "tokenization utilities"
+ "compiler utilities":
+  entity_type: subsystem
+  doc_id: subsystems/compiler-utilities
+  aliases:
+   - "compiler utilities"
+ "json compilation plan":
+  entity_type: concept
+  doc_id: concepts/json-compilation-plan
+  aliases:
+   - "json compilation plan"
+ "prompt engineering":
+  entity_type: concept
+  doc_id: concepts/prompt-engineering
+  aliases:
+   - "prompt engineering"
+ "non_canonical_wikilink":
+  entity_type: concept
+  doc_id: concepts/non-canonical-wikilink
+  aliases:
+   - "non_canonical_wikilink"
+ "unlinked_mention":
+  entity_type: concept
+  doc_id: concepts/unlinked-mention
+  aliases:
+   - "unlinked_mention"
+ "missing_required_field":
+  entity_type: concept
+  doc_id: concepts/missing-required-field
+  aliases:
+   - "missing_required_field"
+ "llm client":
+  entity_type: concept
+  doc_id: concepts/llm-client
+  aliases:
+   - "llm client"
+ "linter":
+  entity_type: concept
+  doc_id: concepts/linter
+  aliases:
+   - "linter"
+ "phase c features":
+  entity_type: concept
+  doc_id: concepts/phase-c-features
+  aliases:
+   - "phase c features"
+ "heal":
+  entity_type: concept
+  doc_id: concepts/heal
+  aliases:
+   - "heal"
+ "discovery":
+  entity_type: concept
+  doc_id: concepts/discovery
+  aliases:
+   - "discovery"
+ "vision (feature)":
+  entity_type: concept
+  doc_id: concepts/vision-feature
+  aliases:
+   - "vision (feature)"
+ "memory taxonomy":
+  entity_type: concept
+  doc_id: concepts/memory-taxonomy
+  aliases:
+   - "memory taxonomy"
+ "persistent memory":
+  entity_type: concept
+  doc_id: concepts/persistent-memory
+  aliases:
+   - "persistent memory"
+ "lifecycle notification system":
+  entity_type: concept
+  doc_id: concepts/lifecycle-notification-system
+  aliases:
+   - "lifecycle notification system"
+ "openapi schema":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-schema
+  aliases:
+   - "openapi schema"
+ "openapi naming":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-naming
+  aliases:
+   - "openapi naming"
+ "openapi auth":
+  entity_type: subsystem
+  doc_id: subsystems/open-api-auth
+  aliases:
+   - "openapi auth"
+ "tool call authorization":
+  entity_type: concept
+  doc_id: concepts/tool-call-authorization
+  aliases:
+   - "tool call authorization"
+ "adapter interfaces":
+  entity_type: concept
+  doc_id: concepts/adapter-interfaces
+  aliases:
+   - "adapter interfaces"
+ "swappable backends":
+  entity_type: concept
+  doc_id: concepts/swappable-backends
+  aliases:
+   - "swappable backends"
+ "remotesessionserver":
+  entity_type: api
+  doc_id: apis/remote-session-server
+  aliases:
+   - "remotesessionserver"
+ "startremoteserver":
+  entity_type: api
+  doc_id: apis/start-remote-server
+  aliases:
+   - "startremoteserver"
+ "network isolation":
+  entity_type: concept
+  doc_id: concepts/network-isolation
+  aliases:
+   - "network isolation"
+ "reactive state management":
+  entity_type: concept
+  doc_id: concepts/reactive-state-management
+  aliases:
+   - "reactive state management"
+ "selector-based state":
+  entity_type: concept
+  doc_id: concepts/selector-based-state
+  aliases:
+   - "selector-based state"
+ "tokenization":
+  entity_type: concept
+  doc_id: concepts/tokenization
+  aliases:
+   - "tokenization"
+ "permission layers":
+  entity_type: concept
+  doc_id: concepts/permission-layers
+  aliases:
+   - "permission layers"
+ "autonomous loop":
+  entity_type: concept
+  doc_id: concepts/autonomous-loop
+  aliases:
+   - "autonomous loop"
+ "cron scheduler":
+  entity_type: concept
+  doc_id: concepts/cron-scheduler
+  aliases:
+   - "cron scheduler"
+ "brief output channel":
+  entity_type: concept
+  doc_id: concepts/brief-output-channel
+  aliases:
+   - "brief output channel"
+ "session journal":
+  entity_type: concept
+  doc_id: concepts/session-journal
+  aliases:
+   - "session journal"
+ "edge platforms":
+  entity_type: concept
+  doc_id: concepts/edge-platforms
+  aliases:
+   - "edge platforms"
+ "attributescoperule":
+  entity_type: api
+  doc_id: apis/attribute-scope-rule
+  aliases:
+   - "attributescoperule"
+ "buildvocabularyaliasmap":
+  entity_type: api
+  doc_id: apis/build-vocabulary-alias-map
+  aliases:
+   - "buildvocabularyaliasmap"
+ "channelmessage":
+  entity_type: api
+  doc_id: apis/channel-message
+  aliases:
+   - "channelmessage"
+ "chatresult":
+  entity_type: api
+  doc_id: apis/chat-result
+  aliases:
+   - "chatresult"
+ "compositescope":
+  entity_type: api
+  doc_id: apis/composite-scope
+  aliases:
+   - "compositescope"
+ "coordinatorpromptconfig":
+  entity_type: api
+  doc_id: apis/coordinator-prompt-config
+  aliases:
+   - "coordinatorpromptconfig"
+ "deserializethread":
+  entity_type: api
+  doc_id: apis/deserialize-thread
+  aliases:
+   - "deserializethread"
+ "discordchannel":
+  entity_type: api
+  doc_id: apis/discord-channel
+  aliases:
+   - "discordchannel"
+ "federatedindex":
+  entity_type: api
+  doc_id: apis/federated-index
+  aliases:
+   - "federatedindex"
+ "federatedkbconfig":
+  entity_type: api
+  doc_id: apis/federated-kb-config
+  aliases:
+   - "federatedkbconfig"
+ "federatedkbentry":
+  entity_type: api
+  doc_id: apis/federated-kb-entry
+  aliases:
+   - "federatedkbentry"
+ "federatedkboptions":
+  entity_type: api
+  doc_id: apis/federated-kb-options
+  aliases:
+   - "federatedkboptions"
+ "generatestubarticle":
+  entity_type: api
+  doc_id: apis/generate-stub-article
+  aliases:
+   - "generatestubarticle"
+ "hierarchyscopeconfig":
+  entity_type: api
+  doc_id: apis/hierarchy-scope-config
+  aliases:
+   - "hierarchyscopeconfig"
+ "inboundmessage":
+  entity_type: api
+  doc_id: apis/inbound-message
+  aliases:
+   - "inboundmessage"
+ "initproject":
+  entity_type: api
+  doc_id: apis/init-project
+  aliases:
+   - "initproject"
+ "kbstoreoptions":
+  entity_type: api
+  doc_id: apis/kb-store-options
+  aliases:
+   - "kbstoreoptions"
+ "knowledgebaseoptions":
+  entity_type: api
+  doc_id: apis/knowledge-base-options
+  aliases:
+   - "knowledgebaseoptions"
+ "listversions":
+  entity_type: api
+  doc_id: apis/list-versions
+  aliases:
+   - "listversions"
+ "main":
+  entity_type: api
+  doc_id: apis/main
+  aliases:
+   - "main"
+ "mcpadapter":
+  entity_type: api
+  doc_id: apis/mcp-adapter
+  aliases:
+   - "mcpadapter"
+ "mcppluginconfig":
+  entity_type: api
+  doc_id: apis/mcp-plugin-config
+  aliases:
+   - "mcppluginconfig"
+ "mcpreconnectconfig":
+  entity_type: api
+  doc_id: apis/mcp-reconnect-config
+  aliases:
+   - "mcpreconnectconfig"
+ "mcpserverconfig":
+  entity_type: api
+  doc_id: apis/mcp-server-config
+  aliases:
+   - "mcpserverconfig"
+ "mcpsseserver":
+  entity_type: api
+  doc_id: apis/mcp-sse-server
+  aliases:
+   - "mcpsseserver"
+ "mcpstdioserver":
+  entity_type: api
+  doc_id: apis/mcp-stdio-server
+  aliases:
+   - "mcpstdioserver"
+ "namespaceddocument":
+  entity_type: api
+  doc_id: apis/namespaced-document
+  aliases:
+   - "namespaceddocument"
+ "namespacedindexentry":
+  entity_type: api
+  doc_id: apis/namespaced-index-entry
+  aliases:
+   - "namespacedindexentry"
+ "namespacedsearchresult":
+  entity_type: api
+  doc_id: apis/namespaced-search-result
+  aliases:
+   - "namespacedsearchresult"
+ "nliverdict":
+  entity_type: api
+  doc_id: apis/nli-verdict
+  aliases:
+   - "nliverdict"
+ "nliverifyfn":
+  entity_type: api
+  doc_id: apis/nli-verify-fn
+  aliases:
+   - "nliverifyfn"
+ "outboundmessage":
+  entity_type: api
+  doc_id: apis/outbound-message
+  aliases:
+   - "outboundmessage"
+ "ownershipscopeconfig":
+  entity_type: api
+  doc_id: apis/ownership-scope-config
+  aliases:
+   - "ownershipscopeconfig"
+ "peruserratelimiterconfig":
+  entity_type: api
+  doc_id: apis/per-user-rate-limiter-config
+  aliases:
+   - "peruserratelimiterconfig"
+ "permissiongrant":
+  entity_type: api
+  doc_id: apis/permission-grant
+  aliases:
+   - "permissiongrant"
+ "permissionresult":
+  entity_type: api
+  doc_id: apis/permission-result
+  aliases:
+   - "permissionresult"
+ "ratelimitstore":
+  entity_type: api
+  doc_id: apis/rate-limit-store
+  aliases:
+   - "ratelimitstore"
+ "remotesessionconfig":
+  entity_type: api
+  doc_id: apis/remote-session-config
+  aliases:
+   - "remotesessionconfig"
+ "remotesessionhandle":
+  entity_type: api
+  doc_id: apis/remote-session-handle
+  aliases:
+   - "remotesessionhandle"
+ "rollbacktoversion":
+  entity_type: api
+  doc_id: apis/rollback-to-version
+  aliases:
+   - "rollbacktoversion"
+ "routehandler":
+  entity_type: api
+  doc_id: apis/route-handler
+  aliases:
+   - "routehandler"
+ "searchtool":
+  entity_type: api
+  doc_id: apis/search-tool
+  aliases:
+   - "searchtool"
+ "segmentresult":
+  entity_type: api
+  doc_id: apis/segment-result
+  aliases:
+   - "segmentresult"
+ "serializethread":
+  entity_type: api
+  doc_id: apis/serialize-thread
+  aliases:
+   - "serializethread"
+ "serverconfig":
+  entity_type: api
+  doc_id: apis/server-config
+  aliases:
+   - "serverconfig"
+ "serverhandle":
+  entity_type: api
+  doc_id: apis/server-handle
+  aliases:
+   - "serverhandle"
+ "serverstreamevent":
+  entity_type: api
+  doc_id: apis/server-stream-event
+  aliases:
+   - "serverstreamevent"
+ "sessionadapter":
+  entity_type: api
+  doc_id: apis/session-adapter
+  aliases:
+   - "sessionadapter"
+ "sessionmemorystrategy":
+  entity_type: api
+  doc_id: apis/session-memory-strategy
+  aliases:
+   - "sessionmemorystrategy"
+ "sessionsconfig":
+  entity_type: api
+  doc_id: apis/sessions-config
+  aliases:
+   - "sessionsconfig"
+ "slackchannel":
+  entity_type: api
+  doc_id: apis/slack-channel
+  aliases:
+   - "slackchannel"
+ "stepresult":
+  entity_type: api
+  doc_id: apis/step-result
+  aliases:
+   - "stepresult"
+ "suspendreason":
+  entity_type: api
+  doc_id: apis/suspend-reason
+  aliases:
+   - "suspendreason"
+ "suspendresolution":
+  entity_type: api
+  doc_id: apis/suspend-resolution
+  aliases:
+   - "suspendresolution"
+ "systemawarescope":
+  entity_type: api
+  doc_id: apis/system-aware-scope
+  aliases:
+   - "systemawarescope"
+ "systemawarescopeconfig":
+  entity_type: api
+  doc_id: apis/system-aware-scope-config
+  aliases:
+   - "systemawarescopeconfig"
+ "telegramchannel":
+  entity_type: api
+  doc_id: apis/telegram-channel
+  aliases:
+   - "telegramchannel"
+ "tenantscopeconfig":
+  entity_type: api
+  doc_id: apis/tenant-scope-config
+  aliases:
+   - "tenantscopeconfig"
+ "tfidfsearchpluginoptions":
+  entity_type: api
+  doc_id: apis/tf-idf-search-plugin-options
+  aliases:
+   - "tfidfsearchpluginoptions"
+ "toolcall":
+  entity_type: api
+  doc_id: apis/tool-call
+  aliases:
+   - "toolcall"
+ "validationresult":
+  entity_type: api
+  doc_id: apis/validation-result
+  aliases:
+   - "validationresult"
+ "writewithversioning":
+  entity_type: api
+  doc_id: apis/write-with-versioning
+  aliases:
+   - "writewithversioning"
+ "12 factor agents":
+  entity_type: concept
+  doc_id: concepts/12-factor-agents
+  aliases:
+   - "12 factor agents"
+ "agent loop":
+  entity_type: concept
+  doc_id: concepts/agent-loop
+  aliases:
+   - "agent loop"
+ "auto-fixer":
+  entity_type: concept
+  doc_id: concepts/auto-fixer
+  aliases:
+   - "auto-fixer"
+ "clean article":
+  entity_type: concept
+  doc_id: concepts/clean-article
+  aliases:
+   - "clean article"
+ "cross-kb federation":
+  entity_type: concept
+  doc_id: concepts/cross-kb-federation
+  aliases:
+   - "cross-kb federation"
+ "daemon mode":
+  entity_type: concept
+  doc_id: concepts/daemon-mode
+  aliases:
+   - "daemon mode"
+ "diff algorithm":
+  entity_type: concept
+  doc_id: concepts/diff-algorithm
+  aliases:
+   - "diff algorithm"
+ "execution sandbox":
+  entity_type: concept
+  doc_id: concepts/execution-sandbox
+  aliases:
+   - "execution sandbox"
+ "kb grounding adapter":
+  entity_type: concept
+  doc_id: concepts/kb-grounding-adapter
+  aliases:
+   - "kb grounding adapter"
+ "knowledge base namespacing":
+  entity_type: concept
+  doc_id: concepts/knowledge-base-namespacing
+  aliases:
+   - "knowledge base namespacing"
+ "llm call retry":
+  entity_type: concept
+  doc_id: concepts/llm-call-retry
+  aliases:
+   - "llm call retry"
+ "multi-turn conversation":
+  entity_type: concept
+  doc_id: concepts/multi-turn-conversation
+  aliases:
+   - "multi-turn conversation"
+ "natural language inference (nli)":
+  entity_type: concept
+  doc_id: concepts/natural-language-inference-nli
+  aliases:
+   - "natural language inference (nli)"
+ "openapi rest api tool":
+  entity_type: concept
+  doc_id: concepts/open-api-rest-api-tool
+  aliases:
+   - "openapi rest api tool"
+ "output continuation":
+  entity_type: concept
+  doc_id: concepts/output-continuation
+  aliases:
+   - "output continuation"
+ "persistent sessions":
+  entity_type: concept
+  doc_id: concepts/persistent-sessions
+  aliases:
+   - "persistent sessions"
+ "proactive scheduling":
+  entity_type: concept
+  doc_id: concepts/proactive-scheduling
+  aliases:
+   - "proactive scheduling"
+ "project structure":
+  entity_type: concept
+  doc_id: concepts/project-structure
+  aliases:
+   - "project structure"
+ "response grounding":
+  entity_type: concept
+  doc_id: concepts/response-grounding
+  aliases:
+   - "response grounding"
+ "session resume":
+  entity_type: concept
+  doc_id: concepts/session-resume
+  aliases:
+   - "session resume"
+ "source hash manifest":
+  entity_type: concept
+  doc_id: concepts/source-hash-manifest
+  aliases:
+   - "source hash manifest"
+ "source path overlap ratio":
+  entity_type: concept
+  doc_id: concepts/source-path-overlap-ratio
+  aliases:
+   - "source path overlap ratio"
+ "standing orders":
+  entity_type: concept
+  doc_id: concepts/standing-orders
+  aliases:
+   - "standing orders"
+ "stateless reducer pattern":
+  entity_type: concept
+  doc_id: concepts/stateless-reducer-pattern
+  aliases:
+   - "stateless reducer pattern"
+ "system prompts":
+  entity_type: concept
+  doc_id: concepts/system-prompts
+  aliases:
+   - "system prompts"
+ "thundering herd":
+  entity_type: concept
+  doc_id: concepts/thundering-herd
+  aliases:
+   - "thundering herd"
+ "tool context":
+  entity_type: concept
+  doc_id: concepts/tool-context
+  aliases:
+   - "tool context"
+ "tool looping":
+  entity_type: concept
+  doc_id: concepts/tool-looping
+  aliases:
+   - "tool looping"
+ "vision capability":
+  entity_type: concept
+  doc_id: concepts/vision-capability
+  aliases:
+   - "vision capability"
+ "websocket transport":
+  entity_type: concept
+  doc_id: concepts/web-socket-transport
+  aliases:
+   - "websocket transport"
+ "deploying a yaaf agent as an http api":
+  entity_type: guide
+  doc_id: guides/deploying-a-yaaf-agent-as-an-http-api
+  aliases:
+   - "deploying a yaaf agent as an http api"
+ "getting started":
+  entity_type: guide
+  doc_id: guides/getting-started
+  aliases:
+   - "getting started"
+ "scaffolding a new yaaf project":
+  entity_type: guide
+  doc_id: guides/scaffolding-a-new-yaaf-project
+  aliases:
+   - "scaffolding a new yaaf project"
+ "multilayergroundingplugin":
+  entity_type: plugin
+  doc_id: plugins/multi-layer-grounding-plugin
+  aliases:
+   - "multilayergroundingplugin"
+ "agent delegation subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/agent-delegation-subsystem
+  aliases:
+   - "agent delegation subsystem"
+ "agent mailbox system":
+  entity_type: subsystem
+  doc_id: subsystems/agent-mailbox-system
+  aliases:
+   - "agent mailbox system"
+ "agent personality system":
+  entity_type: subsystem
+  doc_id: subsystems/agent-personality-system
+  aliases:
+   - "agent personality system"
+ "audit logging system":
+  entity_type: subsystem
+  doc_id: subsystems/audit-logging-system
+  aliases:
+   - "audit logging system"
+ "doctor tools":
+  entity_type: subsystem
+  doc_id: subsystems/doctor-tools
+  aliases:
+   - "doctor tools"
+ "error handling":
+  entity_type: subsystem
+  doc_id: subsystems/error-handling
+  aliases:
+   - "error handling"
+ "error handling system":
+  entity_type: subsystem
+  doc_id: subsystems/error-handling-system
+  aliases:
+   - "error handling system"
+ "framework utilities":
+  entity_type: subsystem
+  doc_id: subsystems/framework-utilities
+  aliases:
+   - "framework utilities"
+ "hooks system":
+  entity_type: subsystem
+  doc_id: subsystems/hooks-system
+  aliases:
+   - "hooks system"
+ "iam":
+  entity_type: subsystem
+  doc_id: subsystems/iam
+  aliases:
+   - "iam"
+ "iam (identity and access management)":
+  entity_type: subsystem
+  doc_id: subsystems/iam-identity-and-access-management
+  aliases:
+   - "iam (identity and access management)"
+ "kb compilation pipeline":
+  entity_type: subsystem
+  doc_id: subsystems/kb-compilation-pipeline
+  aliases:
+   - "kb compilation pipeline"
+ "knowledge base compilation system":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-base-compilation-system
+  aliases:
+   - "knowledge base compilation system"
+ "knowledge ingestion":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-ingestion
+  aliases:
+   - "knowledge ingestion"
+ "knowledge linter":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-linter
+  aliases:
+   - "knowledge linter"
+ "knowledge ontology":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-ontology
+  aliases:
+   - "knowledge ontology"
+ "knowledge utils frontmatter":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-utils-frontmatter
+  aliases:
+   - "knowledge utils frontmatter"
+ "knowledge versioning":
+  entity_type: subsystem
+  doc_id: subsystems/knowledge-versioning
+  aliases:
+   - "knowledge versioning"
+ "linter system":
+  entity_type: subsystem
+  doc_id: subsystems/linter-system
+  aliases:
+   - "linter system"
+ "llm integration":
+  entity_type: subsystem
+  doc_id: subsystems/llm-integration
+  aliases:
+   - "llm integration"
+ "llm system":
+  entity_type: subsystem
+  doc_id: subsystems/llm-system
+  aliases:
+   - "llm system"
+ "model specs registry":
+  entity_type: subsystem
+  doc_id: subsystems/model-specs-registry
+  aliases:
+   - "model specs registry"
+ "plugin management":
+  entity_type: subsystem
+  doc_id: subsystems/plugin-management
+  aliases:
+   - "plugin management"
+ "prompt management":
+  entity_type: subsystem
+  doc_id: subsystems/prompt-management
+  aliases:
+   - "prompt management"
+ "rate limiting system":
+  entity_type: subsystem
+  doc_id: subsystems/rate-limiting-system
+  aliases:
+   - "rate limiting system"
+ "retry system":
+  entity_type: subsystem
+  doc_id: subsystems/retry-system
+  aliases:
+   - "retry system"
+ "runtime":
+  entity_type: subsystem
+  doc_id: subsystems/runtime
+  aliases:
+   - "runtime"
+ "sandbox worker":
+  entity_type: subsystem
+  doc_id: subsystems/sandbox-worker
+  aliases:
+   - "sandbox worker"
+ "security":
+  entity_type: subsystem
+  doc_id: subsystems/security
+  aliases:
+   - "security"
+ "security subsystem":
+  entity_type: subsystem
+  doc_id: subsystems/security-subsystem
+  aliases:
+   - "security subsystem"
+ "query loop":
+  entity_type: concept
+  doc_id: concepts/query-loop
+  aliases:
+   - "query loop"
+ "extractorplan":
+  entity_type: concept
+  doc_id: concepts/extractor-plan
+  aliases:
+   - "extractorplan"
+ "checkandacquire":
+  entity_type: api
+  doc_id: apis/check-and-acquire
+  aliases:
+   - "checkandacquire"
+ "task management system":
+  entity_type: subsystem
+  doc_id: subsystems/task-management-system
+  aliases:
+   - "task management system"
+ "candidate new concept":
+  entity_type: concept
+  doc_id: concepts/candidate-new-concept
+  aliases:
+   - "candidate new concept"
+ "external gateway":
+  entity_type: concept
+  doc_id: concepts/external-gateway
+  aliases:
+   - "external gateway"
+ "model context protocol (mcp)":
+  entity_type: concept
+  doc_id: concepts/model-context-protocol-mcp
+  aliases:
+   - "model context protocol (mcp)"
+ "resolveoptions":
+  entity_type: api
+  doc_id: apis/resolve-options
+  aliases:
+   - "resolveoptions"
+ "porter2 stemmer":
+  entity_type: concept
+  doc_id: concepts/porter2-stemmer
+  aliases:
+   - "porter2 stemmer"
+ "timestamp":
+  entity_type: concept
+  doc_id: concepts/timestamp
+  aliases:
+   - "timestamp"
+ "resource usage tracking":
+  entity_type: concept
+  doc_id: concepts/resource-usage-tracking
+  aliases:
+   - "resource usage tracking"
+ "sandboxviolation":
+  entity_type: api
+  doc_id: apis/sandbox-violation
+  aliases:
+   - "sandboxviolation"
+ "setanalytics":
+  entity_type: api
+  doc_id: apis/set-analytics
+  aliases:
+   - "setanalytics"
+ "crash recovery checkpoint":
+  entity_type: concept
+  doc_id: concepts/crash-recovery-checkpoint
+  aliases:
+   - "crash recovery checkpoint"
+ "candidate new concepts":
+  entity_type: concept
+  doc_id: concepts/candidate-new-concepts
+  aliases:
+   - "candidate new concepts"
+ "static sections":
+  entity_type: concept
+  doc_id: concepts/static-sections
+  aliases:
+   - "static sections"
+ "dynamic sections":
+  entity_type: concept
+  doc_id: concepts/dynamic-sections
+  aliases:
+   - "dynamic sections"
+ "boundary marker":
+  entity_type: concept
+  doc_id: concepts/boundary-marker
+  aliases:
+   - "boundary marker"
+ "prompt caching":
+  entity_type: concept
+  doc_id: concepts/prompt-caching
+  aliases:
+   - "prompt caching"
+ "maxversions":
+  entity_type: concept
+  doc_id: concepts/max-versions
+  aliases:
+   - "maxversions"
+ "store system":
+  entity_type: subsystem
+  doc_id: subsystems/store-system
+  aliases:
+   - "store system"
+ "synthesizer":
+  entity_type: subsystem
+  doc_id: subsystems/synthesizer
+  aliases:
+   - "synthesizer"
+ "identity":
+  entity_type: concept
+  doc_id: concepts/identity
+  aliases:
+   - "identity"
+ "tf-idf search":
+  entity_type: concept
+  doc_id: concepts/tf-idf-search
+  aliases:
+   - "tf-idf search"
+ "domain context":
+  entity_type: concept
+  doc_id: concepts/domain-context
+  aliases:
+   - "domain context"
+ "authoring rules":
+  entity_type: concept
+  doc_id: concepts/authoring-rules
+  aliases:
+   - "authoring rules"
+ "encyclopedic style":
+  entity_type: concept
+  doc_id: concepts/encyclopedic-style
+  aliases:
+   - "encyclopedic style"
+ "no hallucination":
+  entity_type: concept
+  doc_id: concepts/no-hallucination
+  aliases:
+   - "no hallucination"
+ "existing article content":
+  entity_type: concept
+  doc_id: concepts/existing-article-content
+  aliases:
+   - "existing article content"
+ "source texts":
+  entity_type: concept
+  doc_id: concepts/source-texts
+  aliases:
+   - "source texts"
+ "output contract":
+  entity_type: concept
+  doc_id: concepts/output-contract
+  aliases:
+   - "output contract"
+ "markdown document":
+  entity_type: concept
+  doc_id: concepts/markdown-document
+  aliases:
+   - "markdown document"
+ "llm authoring step":
+  entity_type: concept
+  doc_id: concepts/llm-authoring-step
+  aliases:
+   - "llm authoring step"
+ "synthesis model":
+  entity_type: concept
+  doc_id: concepts/synthesis-model
+  aliases:
+   - "synthesis model"
+
+# ── Budget ────────────────────────────────────────────────────────────────
+budget:
+  text_document_tokens: 6000
+  image_tokens: 1200
+  max_images_per_fetch: 3
+
+# ── Compiler Model Config ─────────────────────────────────────────────────
+compiler:
+  extraction_model: gemini-2.5-flash-preview-05-20
+  synthesis_model: gemini-2.5-flash-preview-05-20
+  analysis_model: gemini-2.5-flash-preview-05-20

@@ -26,6 +26,36 @@ export type ImageRef = {
   sizeBytes: number;
 };
 
+// ── Source trust ─────────────────────────────────────────────────────────────
+
+/**
+ * C4/A1 — Source trust classification.
+ *
+ * Represents how much credibility to assign to a source document during
+ * grounding and synthesis. Trust influences the compiled article's
+ * `compiled_from_quality` frontmatter field and the grounding score weighting.
+ *
+ * | Level         | Description                                      |
+ * |---------------|--------------------------------------------------|
+ * | academic      | Peer-reviewed paper, ArXiv preprint, conference  |
+ * | documentation | Official library/product docs, RFCs, specs       |
+ * | web           | Blog post, news article, web-clipped content     |
+ * | unknown       | Default — provenance not determined              |
+ */
+export type SourceTrustLevel = "academic" | "documentation" | "web" | "unknown";
+
+/**
+ * Score multipliers applied to the grounding score based on source trust.
+ * A `web`-only article grounding at 0.9 becomes 0.9 × 0.75 = 0.675.
+ * This prevents a single confident but untrustworthy source from passing grounding.
+ */
+export const SOURCE_TRUST_WEIGHTS: Record<SourceTrustLevel, number> = {
+  academic:      1.00,   // Full weight — peer-reviewed
+  documentation: 0.90,   // High weight — official primary source
+  web:           0.75,   // Reduced — unvetted secondary source
+  unknown:       0.80,   // Slight penalty until classified
+};
+
 // ── Ingester result ───────────────────────────────────────────────────────────
 
 /**
@@ -56,6 +86,21 @@ export type IngestedContent = {
    * For local files this is the file path; for clipped URLs it's the original URL.
    */
   sourceUrl?: string;
+  /**
+   * C4/A1: Source trust level — how credible is this source?
+   *
+   * Set by the ingester based on what it knows at ingest time:
+   * - PDFs in `papers/` or `arxiv/` directories → 'academic'
+   * - URL-clipped web content → 'web'
+   * - Markdown files in `docs/` directories → 'documentation'
+   * - Everything else → 'unknown'
+   *
+   * Consumers may override this (e.g., the user can set
+   * `source_trust: academic` in the raw file's frontmatter).
+   *
+   * Default: 'unknown'
+   */
+  sourceTrust?: SourceTrustLevel;
 };
 
 // ── Ingester interface ────────────────────────────────────────────────────────

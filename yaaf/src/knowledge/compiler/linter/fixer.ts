@@ -53,13 +53,25 @@ export async function applyFixes(
       continue;
     }
 
-    // Apply all fixes for this file in sequence
-    let modified = content;
+    // Apply all fixes for this file in sequence.
+    // CRITICAL: Separate frontmatter from body. Text replacements (especially
+    // UNLINKED_MENTION → adds [[wikilinks]]) must only apply to the BODY,
+    // never to frontmatter YAML. Inserting wikilinks into summary/search_terms
+    // fields corrupts the YAML structure.
+    const fmEndMatch = content.match(/^---\n[\s\S]*?\n---\n/);
+    const fmPart = fmEndMatch ? fmEndMatch[0] : "";
+    let bodyPart = fmEndMatch ? content.slice(fmPart.length) : content;
+
     for (const issue of docIssues) {
       if (!issue.fix) continue;
       const { findText, replaceWith, firstOccurrenceOnly } = issue.fix;
 
-      if (!modified.includes(findText)) {
+      // For MISSING_REQUIRED_FIELD fixes that target "\n---" (frontmatter insertion),
+      // we need to apply to the full content including frontmatter
+      const isFrontmatterFix = issue.code === "MISSING_REQUIRED_FIELD";
+      const targetText = isFrontmatterFix ? (fmPart + bodyPart) : bodyPart;
+
+      if (!targetText.includes(findText)) {
         skipped.push({
           issue,
           reason: `Target text "${findText.slice(0, 40)}" not found (may already be fixed)`,
@@ -67,21 +79,48 @@ export async function applyFixes(
         continue;
       }
 
-      if (firstOccurrenceOnly) {
-        // M2: String.replace(string, string) interprets $ sequences in replaceWith
-        // ($&=matched, $1=group, $$=literal-$, $`=before, $'=after).
-        // A default value of "$100" would be mangled to the matched text.
-        // Pass a replacer function to suppress all $ interpolation.
-        const idx = modified.indexOf(findText);
-        if (idx !== -1) {
-          modified = modified.slice(0, idx) + replaceWith + modified.slice(idx + findText.length);
+      if (isFrontmatterFix) {
+        // Apply to the full content (frontmatter fix)
+        const full = fmPart + bodyPart;
+        if (firstOccurrenceOnly) {
+          const idx = full.indexOf(findText);
+          if (idx !== -1) {
+            const updated = full.slice(0, idx) + replaceWith + full.slice(idx + findText.length);
+            const newFmEnd = updated.match(/^---\n[\s\S]*?\n---\n/);
+            if (newFmEnd) {
+              // Re-split so future body fixes apply correctly
+              bodyPart = updated.slice(newFmEnd[0].length);
+            }
+          }
         }
       } else {
-        modified = modified.split(findText).join(replaceWith);
+        // Apply to body only — this prevents wikilinks from being inserted
+        // into frontmatter fields like summary, search_terms, etc.
+        if (firstOccurrenceOnly) {
+          // Use bodyOffset when available — this is the exact position in the
+          // body that the check verified is NOT inside a wikilink/code/link.
+          // Without this, indexOf finds the first occurrence which may be
+          // inside a protected zone (e.g. [Linter](../...) → [[[Linter]]])
+          const offset = issue.fix.bodyOffset;
+          let idx: number;
+          if (offset !== undefined && bodyPart.slice(offset, offset + findText.length) === findText) {
+            idx = offset;
+          } else {
+            idx = bodyPart.indexOf(findText);
+          }
+          if (idx !== -1) {
+            bodyPart = bodyPart.slice(0, idx) + replaceWith + bodyPart.slice(idx + findText.length);
+          }
+        } else {
+          bodyPart = bodyPart.split(findText).join(replaceWith);
+        }
       }
 
       fixed.push({ docId, code: issue.code, description: issue.message });
     }
+
+    // Reassemble the full file
+    const modified = fmPart + bodyPart;
 
     // Write the file only if changes were made
     // M1: plain writeFile() risks a half-written compiled article on crash.

@@ -1,69 +1,77 @@
 ---
 title: Agent Summarization
+summary: The core concept of generating periodic, concise progress summaries for sub-agents to provide real-time status updates.
+primary_files:
+ - src/agents/agentSummary.ts
 entity_type: concept
-summary: A pattern for generating periodic, short progress updates from an agent's message history for UI display.
+search_terms:
+ - sub-agent progress updates
+ - real-time agent status
+ - how to monitor worker agents
+ - periodic task summary
+ - background agent monitoring
+ - YAAF worker status
+ - agent progress reporting
+ - summarize agent history
+ - displaying agent activity
+ - coordinator-worker pattern
+ - UI updates for agents
+ - get agent progress
 stub: false
-compiled_at: 2026-04-16T14:12:48.724Z
+compiled_at: 2026-04-24T17:51:57.099Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/agentSummary.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/agentSummary.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
----
-title: "Agent Summarization"
-entity_type: "concept"
-summary: "A pattern for generating periodic, short progress updates from an agent's message history for UI display."
-related_subsystems:
-  - "Agents"
-
 ## What It Is
-Agent Summarization is a background process in YAAF used to provide visibility into the progress of sub-agents or workers. When a coordinator agent spawns worker agents for long-running tasks, the framework uses this pattern to generate brief, human-readable updates (typically 3-5 words) based on the agent's current message history. 
 
-This concept solves the problem of "black box" execution by providing real-time status updates—such as "Reading config.json" or "Fixing null check"—to a user interface without requiring the UI to process or display the entire raw message log.
+Agent Summarization is a YAAF pattern for generating periodic, concise progress summaries for sub-agents, often referred to as workers [Source 1]. In architectures where a primary agent (a "coordinator") spawns multiple worker agents to perform tasks, it can be difficult to track the real-time status of each worker. Agent Summarization solves this by using a lightweight, background process to periodically inspect a worker's message history and generate a short, human-readable summary of its current activity [Source 1].
+
+These summaries are typically 3-5 words long, such as "Reading config.json" or "Fixing null check," making them ideal for display in a user interface to provide users with at-a-glance progress updates without interrupting the agent's primary task [Source 1].
 
 ## How It Works in YAAF
-The summarization process is implemented as a non-overlapping periodic loop. It is initiated via the `startAgentSummarization` function, which monitors an agent's message history and invokes a specialized LLM to produce the summary.
 
-Key characteristics of the implementation include:
-*   **Model Selection**: Summarization typically utilizes a "small and fast" model rather than the agent's primary reasoning model to minimize latency and token costs.
-*   **Non-Overlapping Execution**: The framework ensures that each summarization request completes before the next one is scheduled, preventing a backlog of requests if the model response time exceeds the interval.
-*   **State Management**: The process returns a `SummarizationHandle` which allows the parent process to stop the loop or retrieve the `lastSummary` generated.
-*   **Thresholds**: To avoid redundant processing, the framework can be configured with a minimum message count (`minMessages`) that must be reached before the first summary is attempted.
+The mechanism is initiated by calling the `startAgentSummarization` function, which sets up a recurring background task for a specific agent [Source 1]. This function returns a `SummarizationHandle` object containing `stop()` and `lastSummary()` methods to control the process and retrieve the latest summary.
+
+The summarization loop is non-overlapping, meaning a new summary generation will not begin until the previous one has completed. This prevents multiple summarization requests from queuing up if the model response is slow [Source 1].
+
+The process is configured via an `AgentSummarizationConfig` object, which specifies [Source 1]:
+*   **`agentId`**: A unique identifier for the agent being monitored.
+*   **`model`**: A small and fast language model, distinct from the agent's main operational model, to ensure summarization is a low-cost operation.
+*   **`getMessages`**: A callback function that provides the summarization process with access to the target agent's current message history.
+*   **`onSummary`**: A callback function that is invoked with the generated summary text, allowing developers to push the update to a UI or [Logging System](../subsystems/logging-system.md).
+*   **`intervalMs`**: The time in milliseconds between summarization attempts. The default is 30,000 ms (30 seconds).
+*   **`minMessages`**: The minimum number of messages that must exist in the agent's history before the first summary is generated. The default is 3.
 
 ## Configuration
-Developers configure summarization by passing an `AgentSummarizationConfig` object to the `startAgentSummarization` function.
 
-```ts
-export type AgentSummarizationConfig = {
-  /** Unique agent identifier */
-  agentId: string
-  /** A small/fast model for generating summaries (not the main model) */
-  model: ChatModel
-  /** Function that returns the agent's current message history */
-  getMessages: () => Array<{ role: string; content: string }>
-  /** Called with the summary text when generated */
-  onSummary: (summary: string) => void
-  /** Interval between summaries in ms. Default: 30_000 (30s). */
-  intervalMs?: number
-  /** Minimum messages before generating a summary. Default: 3. */
-  minMessages?: number
-}
-```
+A developer enables Agent Summarization by importing `startAgentSummarization` and calling it with a configuration object. The returned handle should be stored so the summarization loop can be stopped [when](../apis/when.md) the agent's task is complete [Source 1].
 
-### Example Implementation
-The following example demonstrates how to attach summarization to a worker agent:
+```typescript
+import { startAgentSummarization } from 'yaaf';
+import { smallFastModel } from './models';
+import { workerAgent } from './worker';
 
-```ts
+// Start summarization for a worker agent
 const summaryHandle = startAgentSummarization({
   agentId: 'worker-1',
   model: smallFastModel,
-  getMessages: () => worker.messages,
-  onSummary: (text) => updateUI(`Worker 1: ${text}`),
+  getMessages: () => workerAgent.messages,
+  onSummary: (text) => {
+    // Example: Update a UI component with the latest status
+    console.log(`Worker 1 Status: ${text}`);
+  },
+  intervalMs: 15000, // Check every 15 seconds
 });
 
-// Later, when the agent task is complete:
+// ... worker agent runs and does its work ...
+
+// When the agent's task is finished, stop the summarization loop
+// to clean up resources.
 summaryHandle.stop();
 ```
 
 ## Sources
-* `src/agents/agentSummary.ts`
+[Source 1] src/agents/agentSummary.ts

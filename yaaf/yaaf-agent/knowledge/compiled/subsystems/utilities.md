@@ -1,45 +1,46 @@
 ---
-title: Utilities Subsystem
+title: Utilities
 entity_type: subsystem
-summary: A collection of shared helper functions and logic used across the YAAF framework for common tasks like token counting and string manipulation.
+summary: A collection of general-purpose utility functions and helpers used across the YAAF framework.
 primary_files:
-  - src/utils/tokens.ts
+ - src/knowledge/utils/concurrency.js
 exports:
-  - estimateTokens
-  - estimateMessageTokens
-  - estimateConversationTokens
-  - exceedsBudget
+ - pAllSettled
+search_terms:
+ - promise helpers
+ - concurrent operations
+ - asynchronous utilities
+ - Promise.allSettled alternative
+ - framework helpers
+ - shared functions
+ - how to run promises in parallel
+ - pAllSettled function
+ - common code library
+ - YAAF helper functions
 stub: false
-compiled_at: 2026-04-16T14:40:08.666Z
+compiled_at: 2026-04-24T18:21:17.181Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/utils/tokens.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/store/tfidfSearch.ts
+compiled_from_quality: unknown
+confidence: 0.8
 ---
 
 ## Purpose
-The Utilities Subsystem provides foundational logic and helper functions required by multiple components within the YAAF framework. Its primary role is to offer lightweight, provider-agnostic implementations for common tasks that do not warrant their own dedicated subsystem. A critical responsibility of this subsystem is managing LLM context constraints through token estimation heuristics.
+
+The Utilities subsystem provides a collection of common, reusable functions that support various components across the YAAF framework. Its primary purpose is to centralize shared logic, such as managing asynchronous operations, to prevent code duplication and promote consistent implementation patterns.
 
 ## Architecture
-The subsystem is structured as a collection of stateless utility modules. It is designed to be dependency-light, avoiding heavy tokenizer libraries to ensure compatibility across various TypeScript runtimes. The logic is primarily functional, taking raw data (strings or message objects) and returning calculated metrics or transformed outputs.
+
+The subsystem is structured as a library of helper modules, with each module focusing on a specific domain of functionality. Based on available source code, one of the key modules is dedicated to concurrency management. The primary file identified within this subsystem is `src/knowledge/utils/concurrency.js`, which contains utilities for handling asynchronous tasks [Source 1].
+
+## Integration Points
+
+Other subsystems within YAAF consume functions from the Utilities subsystem to perform common tasks. For example, the `TfIdfSearchPlugin`, a component of the [Knowledge Store](../apis/knowledge-store.md), imports and utilizes the `pAllSettled` function from the concurrency module to manage its internal operations [Source 1]. This indicates that components dealing with parallel or asynchronous processing rely on this subsystem.
 
 ## Key APIs
-The current implementation focuses on token management and budget validation:
 
-### Token Estimation
-These functions use a character-ratio heuristic of approximately four characters per token for English text and code. The estimation is intentionally conservative, rounding up to ensure the framework does not inadvertently exceed provider context limits.
-
-*   `estimateTokens(text: string): number`: Returns an estimated token count for a raw string. It overestimates by ~10-15% for code and ~5-10% for prose.
-*   `estimateMessageTokens(message: object): number`: Estimates the token count for a structured message object (containing roles and content), accounting for the JSON overhead inherent in tool-use and structured communication.
-*   `estimateConversationTokens(messages: Array<object>): number`: Calculates the cumulative token count for an entire message history.
-
-### Budget Validation
-*   `exceedsBudget(text: string, budgetTokens: number): boolean`: A performance-optimized check that determines if a string exceeds a specific token limit without necessarily returning the full count.
-
-## Logic and Heuristics
-The token utilities rely on the following internal logic:
-*   **Heuristic Ratio**: ~4 characters per token.
-*   **Safety Margin**: The system is designed to overestimate rather than underestimate. This prevents "context window exceeded" errors from LLM providers.
-*   **Rounding**: All calculations round up to the nearest integer.
+- **`pAllSettled`**: A function for managing concurrent promise execution. It is exported from the `src/knowledge/utils/concurrency.js` module [Source 1].
 
 ## Sources
-* `src/utils/tokens.ts`
+
+[Source 1]: src/knowledge/store/tfidfSearch.ts

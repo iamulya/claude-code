@@ -49,6 +49,8 @@
 
 import type { ChatMessage, ChatResult } from "../agents/runner.js";
 import type { LLMHookResult } from "../hooks.js";
+import { splitSentences } from "../knowledge/utils/sentences.js";
+
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -642,14 +644,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-/** Split text into sentences */
-function splitSentences(text: string): string[] {
-  // Split on sentence-ending punctuation followed by whitespace or end of string
-  return text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
+// 8.3 fix: splitSentences imported from shared knowledge/utils/sentences.ts
+// (abbreviation-aware — handles Dr., 3.5, U.S.A. etc. without false splits)
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 

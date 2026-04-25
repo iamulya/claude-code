@@ -14,8 +14,10 @@
 import type { LLMCallFn } from "./llmClient.js";
 import type { ConceptRegistry } from "../ontology/index.js";
 import type { KBOntology } from "../ontology/index.js";
+import { DiscoveryResponseSchema } from "./schemas.js";
 import { readFile, readdir, stat } from "fs/promises";
 import { join, relative } from "path";
+import { randomBytes } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -137,9 +139,15 @@ export async function discoverGaps(
     emit({ type: "discovery:analyzing", batch: i + 1, totalBatches });
 
     const batch = batches[i]!;
+    const batchDelimiter = `===DISCOVERY_BATCH_${randomBytes(6).toString("hex")}===`;
     const batchSummaries = batch
       .map((a) => `### ${a.title} (${a.docId})\n${a.body.slice(0, 500)}...`)
       .join("\n\n");
+    // 2.4 fix: fence article summaries with a random delimiter so that a compiled
+    // article whose body starts with injection instructions cannot break out of the
+    // article section to hijack the discovery LLM.
+    const fencedBatch = `${batchDelimiter}\n${batchSummaries}\n${batchDelimiter}`;
+
 
     try {
       const response = await llm({
@@ -165,9 +173,10 @@ Rules:
 ${articleIndex}
 
 ## Batch ${i + 1} of ${totalBatches} — Articles to analyze:
-${batchSummaries}
+${fencedBatch}
 
 Identify missing articles and weak connections for this batch.`,
+
         temperature: 0.3,
         maxTokens: 2048,
       });
@@ -328,31 +337,29 @@ function parseDiscoveryResponse(
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { missingArticles: [], weakConnections: [] };
 
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      missingArticles?: Array<{ title?: string; entityType?: string; reason?: string }>;
-      weakConnections?: Array<{ fromDocId?: string; toDocId?: string; reason?: string }>;
-    };
+    // Sprint 1b: Validate LLM output with DiscoveryResponseSchema
+    const result = DiscoveryResponseSchema.safeParse(JSON.parse(jsonMatch[0]));
+    if (!result.success) return { missingArticles: [], weakConnections: [] };
 
+    const parsed = result.data;
     const docIds = new Set(articles.map((a) => a.docId));
 
-    const missingArticles: DiscoverySuggestion[] = (parsed.missingArticles ?? [])
-      .filter((m) => m.title && m.entityType && m.reason)
+    const missingArticles: DiscoverySuggestion[] = parsed.missingArticles
       .map((m) => ({
-        title: m.title!,
-        entityType: m.entityType!,
-        reason: m.reason!,
+        title: m.title,
+        entityType: m.entityType,
+        reason: m.reason,
         mentionCount: 0,
       }));
 
-    const weakConnections: DiscoveryConnection[] = (parsed.weakConnections ?? [])
+    const weakConnections: DiscoveryConnection[] = parsed.weakConnections
       .filter(
-        (c) =>
-          c.fromDocId && c.toDocId && c.reason && docIds.has(c.fromDocId) && docIds.has(c.toDocId),
+        (c) => docIds.has(c.fromDocId) && docIds.has(c.toDocId),
       )
       .map((c) => ({
-        fromDocId: c.fromDocId!,
-        toDocId: c.toDocId!,
-        reason: c.reason!,
+        fromDocId: c.fromDocId,
+        toDocId: c.toDocId,
+        reason: c.reason,
       }));
 
     return { missingArticles, weakConnections };

@@ -1,40 +1,48 @@
 ---
 title: Agent Composition
+summary: The pattern of building complex agents by combining simpler, specialized agents, often by wrapping them as tools.
+relationships:
+ - [object Object]
+ - [object Object]
 entity_type: concept
-summary: The fundamental pattern of nesting agents by treating one agent as a tool for another, enabling hierarchical multi-agent systems.
-stub: false
-compiled_at: 2026-04-16T14:37:36.997Z
-compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/agentTool.ts
-confidence: 0.95
----
-
----
-title: "Agent Composition"
-entity_type: "concept"
-summary: "The fundamental pattern of nesting agents by treating one agent as a tool for another, enabling hierarchical multi-agent systems."
 related_subsystems:
-  - "tools"
-  - "agents"
+ - agents
+ - tools
+search_terms:
+ - multi-agent systems
+ - hierarchical agents
+ - parent agent child agent
+ - agent as a tool
+ - wrapping an agent as a tool
+ - how to combine agents
+ - specialist agents
+ - coordinator agent
+ - agent composition pattern
+ - YAAF agent hierarchy
+ - invoke one agent from another
+ - agentTool function
+ - agentTools function
+stub: false
+compiled_at: 2026-04-24T17:51:10.287Z
+compiled_from:
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/agentTool.ts
+compiled_from_quality: unknown
+confidence: 0.9
+---
 
 ## What It Is
-Agent Composition is the primary architectural pattern in YAAF for building multi-agent systems. It allows a developer to treat an entire agent (a "child" or "specialist") as a standard tool that can be invoked by another agent (a "parent" or "coordinator"). 
 
-This pattern solves the complexity of monolithic agent design by enabling a hierarchical structure. Instead of a single agent attempting to handle every task and context, a coordinator agent can delegate specific sub-tasks to specialized agents. The parent agent remains in control of the high-level logic, receiving the child agent's final output as a tool result.
+Agent Composition is a design pattern in YAAF for building complex systems by combining multiple, simpler agents. It is described as the framework's "fundamental composition primitive for [Multi-Agent Systems](./multi-agent-systems.md)" [Source 1].
+
+This pattern establishes a hierarchical relationship where a "parent" or "coordinator" agent delegates specific tasks to "child" or "specialist" agents. The parent agent treats each child agent as a standard tool. It invokes the child, provides input, and receives the child's final output as a tool result, remaining in control of the overall [workflow](./workflow.md) [Source 1]. This allows developers to create modular, specialized agents (e.g., for research, coding, or data analysis) and orchestrate them with a higher-level agent that understands how to use their capabilities to solve a larger problem.
 
 ## How It Works in YAAF
-In YAAF, composition is achieved through the `agentTool` primitive. This function wraps an `AgentRunner` or any `WorkflowStep` into a `Tool` object. 
 
-When the parent agent decides to use the tool:
-1. The parent LLM generates a tool call containing a query.
-2. The `agentTool` wrapper passes this query to the child agent as a user message.
-3. The child agent executes its own internal logic (which may include its own tools or even further nested agents).
-4. The child agent's final response is captured and returned to the parent agent as the tool's output.
+The primary mechanism for agent composition in YAAF is the `agentTool` function. This function wraps any agent that implements the `WorkflowStep` interface (such as an `AgentRunner`) and exposes it as a `Tool` that another agent can use [Source 1].
 
-The framework also provides a bulk utility, `agentTools`, which allows developers to create multiple agent-based tools simultaneously from a registry of named agents.
+[when](../apis/when.md) the parent agent decides to use the agent-tool, it invokes it with a set of arguments, which by default includes a `query` string. This `query` is then passed to the wrapped child agent as a new user message, initiating its execution. The child agent runs its own independent loop, potentially using its own model and [Tools](../subsystems/tools.md), until it produces a final response. This final response is captured and returned to the parent agent as the result of the tool call [Source 1].
 
-## Configuration
-Agent composition is configured via the `AgentToolConfig` object. This allows developers to define how the parent perceives and interacts with the child agent.
+The following example demonstrates a `coordinator` agent using a `researcher` agent that has been wrapped as a tool:
 
 ```typescript
 const researcher = new AgentRunner({
@@ -47,34 +55,44 @@ const researcher = new AgentRunner({
 const researchTool = agentTool(researcher, {
   name: 'research',
   description: 'Research a topic using web search and URL reading',
-  maxResultChars: 50000,
-  concurrent: true,
-  // Optional: Override the default { query: string } input schema
-  inputSchema: {
-    type: 'object',
-    properties: {
-      topic: { type: 'string' },
-      depth: { type: 'string', enum: ['shallow', 'deep'] }
-    },
-    required: ['topic']
-  }
 });
 
 const coordinator = new AgentRunner({
   model: myModel,
-  tools: [researchTool],
+  tools: [researchTool, writeTool, reviewTool],
   systemPrompt: 'You coordinate writing tasks. Use research for facts.',
 });
 ```
+[Source 1]
 
-### Key Configuration Fields
-*   **name**: The identifier the parent agent uses to call the tool.
-*   **description**: Critical for the parent LLM to understand when the specialist agent should be utilized.
-*   **maxResultChars**: Limits the length of the child agent's output to prevent context window overflow in the parent (default: 50,000).
-*   **inputSchema**: Defines the structure of the data the parent must provide. By default, this is `{ query: string }`.
-*   **transformResult**: An optional hook to post-process the child agent's output (e.g., summarization or JSON extraction) before it is handed back to the parent.
+YAAF also provides a convenience function, `agentTools`, to create multiple agent-tools from a registry of named agents. This simplifies the setup for coordinator agents that manage several specialists [Source 1].
 
-## See Also
-*   [[AgentRunner]]
-*   [[Tool]]
-*   [[WorkflowStep]]
+```typescript
+const tools = agentTools({
+  research: { agent: researcher, description: 'Research a topic' },
+  code: { agent: coder, description: 'Write or fix code' },
+  review: { agent: reviewer, description: 'Review code quality' },
+});
+
+const coordinator = new AgentRunner({
+  model: myModel,
+  tools: [...tools, ...directTools],
+  systemPrompt: 'You coordinate tasks between specialists.',
+});
+```
+[Source 1]
+
+## Configuration
+
+The behavior of an agent-tool is configured via the `AgentToolConfig` object passed to the `agentTool` function. Key options include:
+
+*   **`name`**: The name the parent agent will use to invoke the tool.
+*   **`description`**: A detailed description provided to the parent agent's [LLM](./llm.md) to help it decide when to use this tool. Specificity is encouraged (e.g., "Research a topic using web search" is better than "Call an agent") [Source 1].
+*   **`maxResultChars`**: The maximum length of the result string returned by the child agent before it is truncated. The default is 50,000 characters [Source 1].
+*   **`concurrent`**: A boolean indicating if the agent-tool can run concurrently with other tools. This defaults to `true` as agent invocations are typically self-contained [Source 1].
+*   **`inputSchema`**: Defines a custom input structure for the tool, overriding the default `{ query: string }`. This is useful for child agents that expect structured input [Source 1].
+*   **`transformResult`**: An optional function to process the child agent's raw output before it is returned to the parent. This can be used for summarization, data extraction, or formatting [Source 1].
+
+## Sources
+
+[Source 1] `src/tools/agentTool.ts`

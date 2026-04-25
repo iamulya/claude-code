@@ -56,6 +56,9 @@ import type { Tool } from "../tools/tool.js";
 import type { McpAdapter, McpServerInfo, PluginCapability } from "../plugin/types.js";
 import { PluginBase } from "../plugin/base.js";
 import { readFile, writeFile } from "node:fs/promises";
+import { Logger } from "../utils/logger.js";
+
+const logger = new Logger("mcp");
 
 // ── Config types ──────────────────────────────────────────────────────────────
 
@@ -370,7 +373,7 @@ export class McpPlugin extends PluginBase implements McpAdapter {
           const rawName = mcpTool.name;
           const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
           if (!safeName) {
-            console.warn(
+            logger.warn(
               `[McpPlugin] Skipping tool with empty/invalid name from "${serverCfg.name}": "${rawName}"`,
             );
             continue;
@@ -436,12 +439,12 @@ export class McpPlugin extends PluginBase implements McpAdapter {
           this._scheduleReconnectWatcher(serverCfg.name, sdk);
         }
       } catch (err) {
-        console.warn(`[McpPlugin] Failed to connect to server "${serverCfg.name}":`, err);
+        logger.warn(`[McpPlugin] Failed to connect to server "${serverCfg.name}": ${err instanceof Error ? err.message : String(err)}`);
         // Increment failure count (or start at 1 for a new server)
         const prev = this.serverStates.get(serverCfg.name);
         const connectFailures = (prev?.connectFailures ?? 0) + 1;
         if (connectFailures >= this.config.maxConnectFailures) {
-          console.warn(
+          logger.warn(
             `[McpPlugin] Circuit open for "${serverCfg.name}" after ${connectFailures} consecutive failures.`,
           );
           // M3: Persist circuit trip state
@@ -574,7 +577,7 @@ export class McpPlugin extends PluginBase implements McpAdapter {
             (0.8 + 0.4 * Math.random()); // ±20% jitter
 
           if (attemptCount >= reconnectCfg.maxAttempts) {
-            console.warn(
+            logger.warn(
               `[McpPlugin] SSE "${serverName}" reconnect exhausted after ${attemptCount} attempts. Circuit open.`,
             );
             current.connectFailures = cfg.maxConnectFailures;
@@ -610,9 +613,8 @@ export class McpPlugin extends PluginBase implements McpAdapter {
             scheduleCheck(0); // reset attempt counter on success
             void mcpTools; // tools list acknowledged; in future could re-register
           } catch (err) {
-            console.warn(
-              `[McpPlugin] SSE "${serverName}" reconnect attempt ${attemptCount + 1} failed:`,
-              err,
+            logger.warn(
+              `[McpPlugin] SSE "${serverName}" reconnect attempt ${attemptCount + 1} failed: ${err instanceof Error ? err.message : String(err)}`,
             );
             scheduleCheck(attemptCount + 1);
           }
@@ -641,7 +643,7 @@ export class McpPlugin extends PluginBase implements McpAdapter {
         try {
           await state.client.disconnect();
         } catch {
-          console.warn(`[McpPlugin] Error disconnecting from "${name}"`);
+          logger.warn(`[McpPlugin] Error disconnecting from "${name}"`);
         }
       }
     }
@@ -763,7 +765,7 @@ export class McpPlugin extends PluginBase implements McpAdapter {
         const isLocal =
           url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
         if (!isLocal && !mergedHeaders["Authorization"]) {
-          console.warn(
+          logger.warn(
             `[McpPlugin] SSE server "${cfg.name}" at ${cfg.url} has no auth configured. ` +
               "Set auth.token or headers.Authorization, or set requireAuthForRemote: false to suppress this warning.",
           );
@@ -823,7 +825,7 @@ function sanitizeMcpSchema(
   const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
   for (const key of Object.keys(raw)) {
     if (DANGEROUS_KEYS.has(key)) {
-      console.warn(`[McpPlugin] Rejecting tool schema containing dangerous key: "${key}"`);
+      logger.warn(`[McpPlugin] Rejecting tool schema containing dangerous key: "${key}"`);
       return {};
     }
   }

@@ -1,95 +1,139 @@
 ---
+title: LintCode
+entity_type: api
+summary: Defines the specific codes for different types of linting issues found in knowledge base articles.
 export_name: LintCode
 source_file: src/knowledge/compiler/linter/types.ts
 category: type
-summary: A union type defining the set of error, warning, and info codes used by the Knowledge Base Linter.
-title: LintCode
-entity_type: api
+search_terms:
+ - linting error codes
+ - knowledge base validation
+ - article issue types
+ - broken link detection
+ - orphaned page check
+ - non-canonical link
+ - unlinked entity mention
+ - structural linting rules
+ - quality linting rules
+ - linking issue codes
+ - plugin lint rules
+ - how to identify KB problems
+ - list of lint issues
 stub: false
-compiled_at: 2026-04-16T14:25:41.284Z
+compiled_at: 2026-04-24T17:17:17.014Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/types.ts
-confidence: 0.98
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/linter/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/linter/types.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`LintCode` is a union type representing the unique identifiers for issues detected by the Knowledge Base Linter. Each code identifies a specific class of problem, ranging from structural errors that prevent compilation to quality warnings and informational suggestions. 
 
-The codes follow specific naming patterns:
-- Standard rules use `NOUN_VERB` or `ADJECTIVE_NOUN` patterns.
-- Plugin-defined rules use the `PLUGIN_<RuleId>` pattern.
+The `LintCode` type is a string literal type that enumerates all possible identifiers for issues detected by the YAAF knowledge base [Linter](../concepts/linter.md) [Source 2]. Each code represents a specific class of problem, allowing for programmatic identification and handling of different [Linting](../concepts/linting.md) issues [Source 2].
 
-## Signature / Constructor
+These codes are used as the `code` property within a `[[[[[[[[LintIssue]]]]]]]]` object. They are categorized into structural issues, linking issues, quality issues, and plugin-defined rules. The codes generally follow a naming convention of `NOUN_VERB` or `ADJECTIVE_NOUN` [Source 2].
+
+## Signature
+
+`LintCode` is a type alias for a set of string literals [Source 2].
 
 ```typescript
 export type LintCode =
-  // Structural issues (error severity)
-  | 'BROKEN_WIKILINK'
-  | 'MISSING_REQUIRED_FIELD'
-  | 'UNKNOWN_ENTITY_TYPE'
-  | 'MISSING_ENTITY_TYPE'
-  | 'INVALID_FIELD_VALUE'
-  // Linking issues (warning severity)
-  | 'ORPHANED_ARTICLE'
-  | 'NON_CANONICAL_WIKILINK'
-  | 'UNLINKED_MENTION'
-  | 'MISSING_RECIPROCAL_LINK'
-  // Quality issues (info/warning severity)
-  | 'STUB_WITH_SOURCES'
-  | 'LOW_ARTICLE_QUALITY'
-  | 'BROKEN_SOURCE_REF'
-  | 'DUPLICATE_CANDIDATE'
-  | 'CONTRADICTORY_CLAIMS'
+  // Structural issues (typically error severity)
+  | "BROKEN_WIKILINK"
+  | "MISSING_REQUIRED_FIELD"
+  | "UNKNOWN_ENTITY_TYPE"
+  | "MISSING_ENTITY_TYPE"
+  | "INVALID_FIELD_VALUE"
+  
+  // Linking issues (typically warning severity)
+  | "ORPHANED_ARTICLE"
+  | "NON_CANONICAL_WIKILINK"
+  | "UNLINKED_MENTION"
+  | "MISSING_RECIPROCAL_LINK"
+  
+  // Quality issues (typically info or warning severity)
+  | "STUB_WITH_SOURCES"
+  | "LOW_ARTICLE_QUALITY"
+  | "BROKEN_SOURCE_REF"
+  | "DUPLICATE_CANDIDATE"
+  | "CONTRADICTORY_CLAIMS"
+  
   // Plugin-defined rules
   | `PLUGIN_${string}`;
 ```
 
-## Members
+### Code Descriptions
 
-### Structural Issues (Error Severity)
-These codes represent critical failures in the article structure or metadata.
-- `BROKEN_WIKILINK`: A wikilink target was not found in the registry.
-- `MISSING_REQUIRED_FIELD`: A required frontmatter field is absent.
-- `UNKNOWN_ENTITY_TYPE`: The `entity_type` provided is not defined in the ontology.
-- `MISSING_ENTITY_TYPE`: The `entity_type` frontmatter field is missing entirely.
-- `INVALID_FIELD_VALUE`: A field contains an enum violation or type mismatch.
+The following table describes each lint code based on the source documentation [Source 2].
 
-### Linking Issues (Warning Severity)
-These codes represent problems with the connectivity of the knowledge graph.
-- `ORPHANED_ARTICLE`: No other articles link to this article.
-- `NON_CANONICAL_WIKILINK`: An alias was used in a wikilink instead of the canonical term.
-- `UNLINKED_MENTION`: A known entity is mentioned in the text without using a wikilink.
-- `MISSING_RECIPROCAL_LINK`: Article A links to B, but B does not link back to A for a relationship defined as reciprocal.
-
-### Quality Issues (Info/Warning Severity)
-These codes represent suggestions for improving content depth or consistency.
-- `STUB_WITH_SOURCES`: An article marked as a stub has enough source material to be expanded.
-- `LOW_ARTICLE_QUALITY`: The article body is very short but is not marked as a stub.
-- `BROKEN_SOURCE_REF`: The path in the `compiled_from` field does not exist on disk.
-- `DUPLICATE_CANDIDATE`: Two articles have very similar titles, suggesting a potential merge.
-- `CONTRADICTORY_CLAIMS`: Different articles make contradictory claims about the same entity.
-
-### Plugin Rules
-- `PLUGIN_${string}`: Custom rules defined by external plugins.
+| Category | Code | Description |
+| --- | --- | --- |
+| **Structural** | `BROKEN_WIKILINK` | A `wikilink` target was not found in the knowledge base registry. |
+| | `MISSING_REQUIRED_FIELD` | A required [Frontmatter](../concepts/frontmatter.md) field is absent from an article. |
+| | `UNKNOWN_ENTITY_TYPE` | The `entity_type` field has a value that is not a known [Entity Type](../concepts/entity-type.md). |
+| | `MISSING_ENTITY_TYPE` | The `entity_type` frontmatter field is missing entirely. |
+| | `INVALID_FIELD_VALUE` | A frontmatter field has a value that violates its type constraints (e.g., wrong enum value). |
+| **Linking** | `ORPHANED_ARTICLE` | No other article contains a wikilink pointing to this one. |
+| | `NON_CANONICAL_WIKILINK` | A wikilink uses an alias (`alias`) instead of the target's canonical title. |
+| | `UNLINKED_MENTION` | The text mentions a known knowledge base entity by name, but does not use a `wikilink`. |
+| | `MISSING_RECIPROCAL_LINK` | Article A links to Article B, but B does not link back to A, for relationships that should be reciprocal. |
+| **Quality** | `STUB_WITH_SOURCES` | An article is marked as a stub but has available source material that could be used to expand it. |
+| | `LOW_ARTICLE_QUALITY` | The article body is very short and is not explicitly marked as a stub. |
+| | `BROKEN_SOURCE_REF` | The `compiled_from` path in an article's metadata points to a file that does not exist. |
+| | `DUPLICATE_CANDIDATE` | Two or more articles have very similar titles, suggesting they might be duplicates. |
+| | `CONTRADICTORY_CLAIMS` | Two or more articles make contradictory statements about the same entity. |
+| **Plugin** | `PLUGIN_${string}` | A pattern for custom linting rules defined by plugins. The rule ID follows the `PLUGIN_` prefix. |
 
 ## Examples
 
-### Filtering Lint Issues
-This example demonstrates how to filter a list of issues to find only broken links.
+### Using a LintCode in a LintIssue
+
+`LintCode` is a required property of the `LintIssue` type. This example shows a `LintIssue` for a broken wikilink.
 
 ```typescript
-import { LintIssue, LintCode } from './types';
+import type { LintIssue, LintCode } from 'yaaf';
 
-function getBrokenLinks(issues: LintIssue[]): LintIssue[] {
-  return issues.filter(issue => issue.code === 'BROKEN_WIKILINK');
-}
+const brokenLinkIssue: LintIssue = {
+  code: 'BROKEN_WIKILINK',
+  message: "Wikilink 'NonExistentArticle' could not be resolved.",
+  severity: 'error',
+  docId: 'article-about-something',
+  relatedTarget: 'NonExistentArticle',
+  suggestion: 'Check if "NonExistentArticle" exists or correct the link.',
+  autoFixable: false,
+};
 ```
 
-### Handling Plugin Codes
-This example shows how to identify if a code originated from a plugin.
+### Handling Different LintCodes
+
+A function or a switch statement can be used to process lint issues based on their `LintCode`.
 
 ```typescript
-function isPluginIssue(code: LintCode): boolean {
-  return code.startsWith('PLUGIN_');
+import type { LintIssue, LintCode } from 'yaaf';
+
+function getIssuePriority(code: LintCode): number {
+  switch (code) {
+    case 'BROKEN_WIKILINK':
+    case 'MISSING_REQUIRED_FIELD':
+      return 1; // Highest priority
+    case 'ORPHANED_ARTICLE':
+    case 'NON_CANONICAL_WIKILINK':
+      return 2; // Medium priority
+    case 'LOW_ARTICLE_QUALITY':
+      return 3; // Low priority
+    default:
+      return 4; // Lowest priority
+  }
 }
+
+const issue: LintIssue = { /* ... */ code: 'ORPHANED_ARTICLE' /* ... */ };
+const priority = getIssuePriority(issue.code);
+console.log(`Issue priority: ${priority}`); // Output: Issue priority: 2
 ```
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/linter/index.ts
+[Source 2]: src/knowledge/compiler/linter/types.ts

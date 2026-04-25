@@ -1,66 +1,66 @@
 ---
 title: Knowledge Linter
 entity_type: subsystem
-summary: A subsystem responsible for validating the integrity, structure, and relationships of the compiled knowledge base articles.
+summary: The Knowledge Linter subsystem is responsible for reading, parsing, and preparing compiled knowledge articles for validation and further processing.
 primary_files:
-  - src/knowledge/compiler/linter/reader.ts
+ - src/knowledge/compiler/linter/reader.ts
 exports:
-  - readCompiledArticles
-  - parseCompiledArticle
-  - ParsedCompiledArticle
+ - ParsedCompiledArticle
+ - readCompiledArticles
+ - parseCompiledArticle
+search_terms:
+ - validate knowledge base
+ - check compiled articles
+ - parse markdown frontmatter
+ - read KB files
+ - knowledge base quality control
+ - linting markdown files
+ - how to read compiled knowledge
+ - frontmatter parsing utility
+ - KB file reader
+ - article validation process
+ - load compiled markdown
+ - extract YAML from markdown
 stub: false
-compiled_at: 2026-04-16T14:25:28.063Z
+compiled_at: 2026-04-25T00:29:07.603Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/reader.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/linter/reader.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Purpose
-The Knowledge Linter is a quality assurance subsystem within the YAAF knowledge compilation pipeline. Its primary purpose is to validate the integrity, structure, and cross-references of compiled markdown articles. By analyzing the output of the synthesis process, the linter ensures that the knowledge base remains consistent and that all articles adhere to the required schema and ontological constraints.
+
+The Knowledge Linter subsystem serves as the initial stage of the overall [Knowledge Base](./knowledge-base.md) validation process, commonly known as the [Linter](../concepts/linter.md). Its primary responsibility is to read compiled knowledge articles from the file system, parse their contents into distinct frontmatter and body sections, and structure this data for consumption by subsequent linting rules and validation checks [Source 1]. This subsystem effectively bridges the gap between the on-disk representation of compiled knowledge and the in-memory objects required for quality assurance and analysis.
 
 ## Architecture
-The Knowledge Linter is designed with a clear separation between I/O operations and validation logic.
 
-### I/O Layer (Reader)
-The reader component, implemented in `src/knowledge/compiler/linter/reader.ts`, serves as the entry point for the linting process. It is responsible for:
-- Interfacing with the file system to locate compiled markdown files.
-- Parsing raw markdown to separate YAML frontmatter from the content body.
-- Normalizing article data into a standard `ParsedCompiledArticle` format.
+The subsystem's architecture is centered around file I/O and parsing operations. It is designed to process a batch of articles efficiently based on a provided registry [Source 1].
 
-### Validation Logic
-While the reader handles I/O, the remaining modules in the subsystem are designed as pure functions. These modules consume the normalized representations provided by the reader to perform various checks, such as link integrity, frontmatter schema validation, and relationship mapping.
+The core components are:
+- **File Reader**: The `readCompiledArticles` function takes a [Concept Registry](./concept-registry.md) and the path to the compiled knowledge directory. It iterates through the concepts in the registry, constructs the full file path for each article, and reads its raw content asynchronously using Node.js's `fs/promises` module [Source 1].
+- **Parser**: The `parseCompiledArticle` function takes the raw string content of a file and separates it into its constituent parts. It leverages a shared utility, `parseYamlFrontmatter`, to parse the YAML frontmatter block into a JavaScript object [Source 1].
+- **Data Structure**: The output of the parsing process is the [ParsedCompiledArticle](../apis/parsed-compiled-article.md) type. This object encapsulates the article's `docId`, its absolute `filePath`, the parsed `frontmatter` as a key-value record, and the remaining markdown `body` as a string [Source 1].
+- **Error Handling**: The subsystem is designed to be resilient. If an article referenced in the registry cannot be read from the disk (e.g., due to file permissions or it being deleted), it is skipped, and an optional `onSkip` callback is invoked to log a warning without halting the entire process [Source 1].
 
-### Concept Registry Integration
-The linter utilizes a `ConceptRegistry` to determine the scope of the validation. It uses the registry to identify which articles are expected to exist and to verify that the compiled output matches the intended ontology.
+## Integration Points
+
+The Knowledge Linter subsystem integrates with several other parts of the YAAF framework:
+
+- **[Concept Registry](./concept-registry.md)**: This subsystem is a primary consumer of the [Concept Registry](./concept-registry.md). It uses the registry as the source of truth for which compiled articles exist and need to be read and validated [Source 1].
+- **[Frontmatter Parsing Subsystem](./frontmatter-parsing-subsystem.md)**: It relies on the shared `parseYamlFrontmatter` utility for the low-level task of parsing YAML from the markdown files, making it a client of the [Frontmatter Parsing Subsystem](./frontmatter-parsing-subsystem.md) [Source 1].
+- **Linter Rule Engine**: The array of [ParsedCompiledArticle](../apis/parsed-compiled-article.md) objects produced by this subsystem is the direct input for the main linter engine, which applies various validation rules to the frontmatter and body of each article.
 
 ## Key APIs
 
-### readCompiledArticles
-This asynchronous function serves as the primary data gatherer for the linter. It iterates through the articles referenced in a `ConceptRegistry`, reads them from the specified directory, and returns an array of parsed articles.
-```typescript
-export async function readCompiledArticles(
-  registry: ConceptRegistry,
-  compiledDir: string,
-  onSkip?: (docId: string, reason: string) => void,
-): Promise<ParsedCompiledArticle[]>
-```
+- **[readCompiledArticles](../apis/read-compiled-articles.md)**: The main entry point function. It orchestrates the process of reading all compiled articles listed in a [Concept Registry](./concept-registry.md) from a specified directory and returns a promise that resolves to an array of [ParsedCompiledArticle](../apis/parsed-compiled-article.md) objects [Source 1].
+- **[parseCompiledArticle](../apis/parse-compiled-article.md)**: A utility function that parses the raw string content of a single compiled article into a [ParsedCompiledArticle](../apis/parsed-compiled-article.md) object [Source 1].
+- **[ParsedCompiledArticle](../apis/parsed-compiled-article.md)**: A type definition that represents a successfully read and parsed article, containing its `docId`, `filePath`, `frontmatter` object, and `body` string [Source 1].
 
-### parseCompiledArticle
-A utility function used to decompose a raw markdown string into its constituent parts. It utilizes a minimal YAML parser to extract frontmatter metadata.
-```typescript
-export function parseCompiledArticle(
-  docId: string,
-  filePath: string,
-  raw: string,
-): ParsedCompiledArticle
-```
+## Extension Points
 
-### ParsedCompiledArticle
-The standard data structure used throughout the linting process to represent an article's state.
-- `docId`: The relative identifier for the document (e.g., `concepts/attention-mechanism`).
-- `filePath`: The absolute path to the source file on disk.
-- `frontmatter`: A key-value record of the metadata defined at the top of the article.
-- `body`: The markdown content following the frontmatter block.
+The primary extension point is the `onSkip` callback function that can be provided to [readCompiledArticles](../apis/read-compiled-articles.md). This allows developers to inject custom logic for handling and reporting cases where a compiled article fails to be read from the disk [Source 1].
 
 ## Sources
-- `src/knowledge/compiler/linter/reader.ts`
+
+[Source 1]: src/knowledge/compiler/linter/reader.ts

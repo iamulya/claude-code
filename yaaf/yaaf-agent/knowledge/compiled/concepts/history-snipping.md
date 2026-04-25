@@ -1,71 +1,74 @@
 ---
-summary: A cheap, rule-based pre-compaction optimization that removes low-value content like old tool results and duplicates.
 title: History Snipping
 entity_type: concept
-stub: false
-compiled_at: 2026-04-16T14:17:08.457Z
-compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/historySnip.ts
-confidence: 1
----
-
----
-title: History Snipping
-entity_type: concept
-summary: A cheap, rule-based pre-compaction optimization that removes low-value content like old tool results and duplicates.
+summary: A cheap pre-compaction optimization that removes known-low-value content from conversation history before full LLM-based compaction.
 related_subsystems:
-  - context
+ - Context Management
+search_terms:
+ - pre-compaction optimization
+ - reduce context size
+ - remove old tool results
+ - conversation history cleanup
+ - token saving strategy
+ - micro-compaction
+ - deduplicate tool outputs
+ - how to make compaction cheaper
+ - managing large tool outputs
+ - context window management
+ - YAAF history optimization
+ - snipHistory function
+stub: false
+compiled_at: 2026-04-24T17:55:41.872Z
+compiled_from:
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/historySnip.ts
+compiled_from_quality: unknown
+confidence: 0.95
+---
 
 ## What It Is
-History Snipping is a rule-based optimization technique used in YAAF to reduce the size of conversation history before more expensive operations, such as LLM-based compaction, are performed. It serves as a "pre-pass" that identifies and removes or replaces high-volume, low-value content—such as old tool outputs or redundant data—with minimal computational overhead.
 
-The primary goal of History Snipping is to make the context management process faster and more cost-effective by removing obvious noise before an LLM is tasked with summarizing the remaining history.
+History Snipping is a performance optimization technique in YAAF that serves as a pre-pass before a full, [LLM](./llm.md)-based [Context Compaction](./context-compaction.md) [Source 1]. It is a computationally inexpensive process designed to remove "obvious noise" and known low-value content from an agent's conversation history. The primary goal is to make the subsequent, more expensive compaction step cheaper and faster by reducing the amount of data the LLM needs to process [Source 1].
+
+This technique is not a replacement for full context compaction but rather a preparatory step. It targets specific types of content for removal, such as old [tool results](./tool-results.md), duplicate file reads, large tool outputs that have already been summarized, and empty or no-op tool results [Source 1].
 
 ## How It Works in YAAF
-History Snipping operates as a synchronous, $O(n)$ operation that does not require LLM calls. It evaluates the message history against a set of heuristic rules to identify candidates for removal or replacement.
 
-The framework provides two primary mechanisms for snipping:
+History Snipping is implemented primarily through the `snipHistory` function, which performs a single, linear-time (O(n)) pass over the message history without making any LLM calls [Source 1].
 
-1.  **General Snipping (`snipHistory`)**: This process targets tool results based on their age, size, and relevance. It identifies tool outputs that are:
-    *   **Old**: Beyond a specific turn count from the current message.
-    *   **Large**: Exceeding a minimum token threshold.
-    *   **Non-Recent**: Not among the most recent set of tool interactions.
-    *   **Non-Exempt**: Not produced by tools explicitly marked to be preserved.
-2.  **Deduplication (`deduplicateToolResults`)**: This process identifies consecutive identical tool results (e.g., multiple identical file reads). It preserves the most recent occurrence and replaces earlier duplicates with a placeholder.
+The `snipHistory` function identifies and removes tool results based on a set of configurable criteria:
+1.  **Age**: The tool result must be older than a specified number of turns (`maxToolResultAge`) from the end of the conversation.
+2.  **Size**: The result's content must exceed a minimum token count (`minSnipTokens`).
+3.  **Recency**: The result must not be one of the most recent tool results, a number defined by `keepRecent`.
+4.  **Exemption**: The tool that produced the result must not be on an exemption list (`exemptTools`) [Source 1].
 
-When content is snipped, it is typically replaced with a short placeholder string (e.g., `[Old tool result cleared]`), which preserves the structure of the conversation while freeing up the context window.
+[when](../apis/when.md) a tool result is snipped, its content is replaced with a short placeholder string. The function returns the modified message list, an estimate of the tokens saved, and a count of the items removed [Source 1].
+
+A related function, `deduplicateToolResults`, specifically targets consecutive, identical tool results (e.g., repeated calls to `cat file.ts`). It keeps only the last occurrence and replaces the earlier, duplicate ones with a placeholder [Source 1].
 
 ## Configuration
-Developers can configure the behavior of the snipping engine through the `SnipConfig` object. This allows for fine-tuning what content is considered "low-value" based on the specific needs of the agent.
+
+History Snipping is configured by passing a `SnipConfig` object to the `snipHistory` function. The available options allow developers to tune the snipping behavior [Source 1].
 
 ```typescript
-import { snipHistory, SnipConfig } from './context/historySnip';
+const result = snipHistory(messages, { 
+  maxOldToolResults: 10, 
+  maxToolResultAge: 20 
+});
 
-const config: SnipConfig = {
-  maxOldToolResults: 10,      // Keep at most 10 old tool results
-  maxToolResultAge: 20,       // Snip results older than 20 turns
-  minSnipTokens: 100,         // Only snip results larger than 100 tokens
-  keepRecent: 5,              // Never snip the 5 most recent tool results
-  placeholderText: "[Content removed to save space]",
-  exemptTools: ['critical_search'] // Never snip results from this tool
-};
-
-const result = snipHistory(messages, config);
-
-console.log(`Freed approximately ${result.tokensFreed} tokens.`);
-console.log(`Removed ${result.itemsRemoved} items.`);
+// result.snipped — cleaned messages
+// result.tokensFreed — estimated tokens saved
+// result.itemsRemoved — number of items removed
 ```
 
-### Configuration Fields
-| Field | Description | Default |
-| :--- | :--- | :--- |
-| `maxOldToolResults` | Maximum number of old tool results to retain in history. | 15 |
-| `maxToolResultAge` | Turn count threshold; results older than this are eligible for snipping. | 20 |
-| `placeholderText` | The text that replaces snipped content. | `[Old tool result cleared]` |
-| `minSnipTokens` | Minimum estimated token length for a result to be eligible for snipping. | 100 |
-| `keepRecent` | Number of recent tool results to protect from snipping regardless of age. | 5 |
-| `exemptTools` | Array of tool names that should never be snipped. | `[]` |
+The `SnipConfig` object includes the following parameters:
 
-## See Also
-*   `snipHistory`
-*   `deduplicateToolResults`
+*   `maxOldToolResults`: The maximum number of old tool results to retain. Default is 15.
+*   `maxToolResultAge`: Tool results older than this many turns are eligible for snipping. Default is 20.
+*   `placeholderText`: The string used to replace snipped content. Default is `"[Old tool result cleared]"`.
+*   `minSnipTokens`: A tool result must have at least this many tokens to be considered for snipping. Default is 100.
+*   `keepRecent`: The number of most recent tool results to always keep, regardless of other criteria. Default is 5.
+*   `exemptTools`: An array of tool names whose results will never be snipped [Source 1].
+
+## Sources
+
+[Source 1]: src/context/historySnip.ts

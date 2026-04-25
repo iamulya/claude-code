@@ -37,6 +37,10 @@ import * as httpModule from "http";
 import * as httpsModule from "https";
 import * as netModule from "net";
 import { Worker } from "worker_threads";
+import { Logger } from "./utils/logger.js";
+import { OsSandboxManager, type OsSandboxConfig } from "./sandbox/os/index.js";
+
+const logger = new Logger("sandbox");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,18 +67,45 @@ export type SandboxConfig = {
   /**
    * When true, outbound network access is restricted.
    *
-   * **IMPORTANT — C2 limitation:** This guard inspects tool *arguments* for
-   * URL patterns before execution. It does NOT intercept actual `fetch()` or
-   * `http.request()` calls from tool code. Tools that construct URLs
-   * dynamically inside their `call()` function bypass this check.
+   * **Network blocking operates at two levels:**
    *
-   * For true network isolation, run tools in a separate subprocess with
-   * network namespace restrictions, or use `sandboxFetch` to intercept
-   * runtime fetch calls within the tool execution context.
+   * 1. **Argument scanning** (`checkForUrls`): Inspects tool arguments for
+   *    URL patterns before execution.
+   * 2. **Runtime interception** (ALS-based): Intercepts `globalThis.fetch`,
+   *    `http.request`, `https.request`, and `net.connect` during tool
+   *    execution. Tools that construct URLs dynamically inside their
+   *    `call()` function are caught by this layer.
+   *
+   * When combined with `allowedNetworkDomains`, only requests to those
+   * domains are permitted — all others are blocked.
    *
    * Default: false.
    */
   blockNetwork?: boolean;
+
+  /**
+   * Domains that are permitted when `blockNetwork` is true.
+   *
+   * When set, URLs targeting these domains pass through both argument
+   * scanning and runtime interception. All other domains are blocked.
+   * Domain matching is case-insensitive and supports:
+   * - Exact match: `"api.openai.com"` matches `api.openai.com` only
+   * - Dot-prefix wildcard: `".example.com"` matches `sub.example.com`
+   * - Star wildcard: `"*.example.com"` matches `sub.example.com`
+   *
+   * Has no effect when `blockNetwork` is false.
+   *
+   * @example
+   * ```ts
+   * const sandbox = new Sandbox({
+   *   blockNetwork: true,
+   *   allowedNetworkDomains: ['api.openai.com', '*.anthropic.com'],
+   * });
+   * // fetch("https://api.openai.com/v1/chat") → allowed
+   * // fetch("https://evil.com") → blocked
+   * ```
+   */
+  allowedNetworkDomains?: string[];
 
   /**
    * Optional fetch interceptor for runtime network blocking.
@@ -183,6 +214,36 @@ export type SandboxConfig = {
    * ```
    */
   sandboxBackend?: SandboxExternalBackend;
+
+  /**
+   * OS-level sandbox configuration for shell-executing tools.
+   *
+   * When set, the Sandbox can wrap shell commands with kernel-enforced
+   * restrictions (filesystem, network, process isolation) via `bwrap`
+   * (Linux), `sandbox-exec` (macOS), or Docker/Podman (cross-platform).
+   *
+   * This layer is complementary to the application-level sandbox:
+   * - **Application-level** (this Sandbox): argument scanning, fetch
+   *   interception, timeout enforcement, ALS-based network blocking.
+   * - **OS-level** (OsSandboxManager): kernel-enforced filesystem and
+   *   network restrictions on spawned child processes.
+   *
+   * @example
+   * ```ts
+   * const sandbox = new Sandbox({
+   *   allowedPaths: [projectDir],
+   *   blockNetwork: true,
+   *   osSandbox: {
+   *     projectDir,
+   *     allowedDomains: ['api.openai.com', 'registry.npmjs.org'],
+   *   },
+   * });
+   *
+   * // Wrap shell commands with OS-level isolation
+   * const wrapped = await sandbox.wrapShellCommand('npm install');
+   * ```
+   */
+  osSandbox?: OsSandboxConfig;
 };
 
 /**
@@ -415,6 +476,7 @@ export class Sandbox {
   private readonly allowedPaths: string[];
   private readonly blockedPaths: string[];
   private readonly blockNetwork: boolean;
+  private readonly allowedNetworkDomains: string[];
   private readonly sandboxFetch?: typeof globalThis.fetch;
   private readonly pathValidator?: (toolName: string, resolvedPath: string) => boolean;
   private readonly onViolation?: (v: SandboxViolation) => void;
@@ -439,8 +501,10 @@ export class Sandbox {
   private static readonly _fetchALS = new AsyncLocalStorage<{
     blockedFetch: typeof globalThis.fetch;
     toolName: string;
+    allowedDomains?: string[];
   }>();
   private static _fetchProxyInstalled = false;
+  private static _originalFetch: typeof globalThis.fetch = globalThis.fetch;
 
   /**
    * Install a one-time globalThis.fetch proxy that delegates to the
@@ -451,7 +515,8 @@ export class Sandbox {
     if (Sandbox._fetchProxyInstalled) return;
     Sandbox._fetchProxyInstalled = true;
 
-    const originalFetch = globalThis.fetch;
+    Sandbox._originalFetch = globalThis.fetch;
+    const originalFetch = Sandbox._originalFetch;
     globalThis.fetch = function sandboxFetchProxy(
       input: string | URL | Request,
       init?: RequestInit,
@@ -492,6 +557,14 @@ export class Sandbox {
       return function sandboxHttpProxy(this: unknown, ...args: Parameters<T>): ReturnType<T> {
         const ctx = Sandbox._fetchALS.getStore();
         if (ctx) {
+          // Check domain allowlist: extract host from request arguments
+          if (ctx.allowedDomains && ctx.allowedDomains.length > 0) {
+            const host = Sandbox.extractHostFromHttpArgs(args as unknown[]);
+            if (host && Sandbox.isDomainInList(host, ctx.allowedDomains)) {
+              return (original as unknown as (...a: unknown[]) => ReturnType<T>)(...args);
+            }
+          }
+
           const err = new SandboxError(
             { type: "network", toolName: ctx.toolName, detail: `${label} blocked by sandbox` },
             `Network access blocked for tool "${ctx.toolName}" (${label}).`,
@@ -500,10 +573,10 @@ export class Sandbox {
           // so callers using the callback form get a proper error event.
           const { EventEmitter } = require("events") as typeof import("events");
           const fake = new EventEmitter() as ReturnType<T>;
-          process.nextTick(() => (fake as EventEmitter).emit("error", err));
+          process.nextTick(() => (fake as unknown as InstanceType<typeof EventEmitter>).emit("error", err));
           return fake;
         }
-        return (original as (...a: unknown[]) => ReturnType<T>)(...args);
+        return (original as unknown as (...a: unknown[]) => ReturnType<T>)(...args);
       } as T;
     }
 
@@ -528,7 +601,7 @@ export class Sandbox {
         enumerable: true,
       });
     } catch {
-      console.warn(
+      logger.warn(
         "[yaaf/sandbox] Could not intercept http.request — module exports are non-configurable. " +
           "Network blocking via blockNetwork:true is limited to globalThis.fetch. " +
           "Use OS-level isolation for complete network blocking.",
@@ -551,7 +624,7 @@ export class Sandbox {
         enumerable: true,
       });
     } catch {
-      console.warn(
+      logger.warn(
         "[yaaf/sandbox] Could not intercept https.request — module exports are non-configurable.",
       );
     }
@@ -583,6 +656,14 @@ export class Sandbox {
       return function sandboxNetProxy(this: unknown, ...args: Parameters<T>): ReturnType<T> {
         const ctx = Sandbox._fetchALS.getStore();
         if (ctx) {
+          // Check domain allowlist: extract host from net.connect arguments
+          if (ctx.allowedDomains && ctx.allowedDomains.length > 0) {
+            const host = Sandbox.extractHostFromNetArgs(args as unknown[]);
+            if (host && Sandbox.isDomainInList(host, ctx.allowedDomains)) {
+              return (original as unknown as (...a: unknown[]) => ReturnType<T>)(...args);
+            }
+          }
+
           const err = new SandboxError(
             { type: "network", toolName: ctx.toolName, detail: `${label} blocked by sandbox` },
             `Network access blocked for tool "${ctx.toolName}" (${label}).`,
@@ -590,10 +671,10 @@ export class Sandbox {
           // Return a fake Socket-like EventEmitter that immediately emits 'error'
           const { EventEmitter } = require("events") as typeof import("events");
           const fake = new EventEmitter() as ReturnType<T>;
-          process.nextTick(() => (fake as EventEmitter).emit("error", err));
+          process.nextTick(() => (fake as unknown as InstanceType<typeof EventEmitter>).emit("error", err));
           return fake;
         }
-        return (original as (...a: unknown[]) => ReturnType<T>)(...args);
+        return (original as unknown as (...a: unknown[]) => ReturnType<T>)(...args);
       } as T;
     }
 
@@ -613,11 +694,67 @@ export class Sandbox {
         enumerable: true,
       });
     } catch {
-      console.warn(
+      logger.warn(
         "[yaaf/sandbox] Could not intercept net.createConnection — module exports are non-configurable. " +
           "TCP/WebSocket bypass is not blocked. Use OS-level isolation for complete network blocking.",
       );
     }
+  }
+
+  /**
+   * Static domain match — used by the proxy closures which can't reference `this`.
+   * Same logic as isDomainAllowed but operates on a provided list.
+   */
+  private static isDomainInList(domain: string, allowedDomains: string[]): boolean {
+    const d = domain.toLowerCase();
+    for (const pattern of allowedDomains) {
+      if (pattern === d) return true;
+      if (pattern.startsWith(".") && (d.endsWith(pattern) || d === pattern.slice(1))) return true;
+      if (pattern.startsWith("*.") && (d.endsWith(pattern.slice(1)) || d === pattern.slice(2))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Extract hostname from http.request / https.request arguments.
+   * Handles both (url, options) and (options) call signatures.
+   */
+  private static extractHostFromHttpArgs(args: unknown[]): string | undefined {
+    for (const arg of args) {
+      if (typeof arg === "string") {
+        return Sandbox.extractHostFromUrl(arg);
+      }
+      if (arg instanceof URL) {
+        return arg.hostname;
+      }
+      if (arg && typeof arg === "object" && "hostname" in arg) {
+        return (arg as { hostname?: string }).hostname?.toLowerCase();
+      }
+      if (arg && typeof arg === "object" && "host" in arg) {
+        const host = (arg as { host?: string }).host;
+        if (host) return host.split(":")[0]?.toLowerCase();
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Extract hostname from net.connect / net.createConnection arguments.
+   * Handles (port, host), (options), and (path) call signatures.
+   */
+  private static extractHostFromNetArgs(args: unknown[]): string | undefined {
+    // net.connect(port, host, callback)
+    if (typeof args[0] === "number" && typeof args[1] === "string") {
+      return args[1].toLowerCase();
+    }
+    // net.connect(options)
+    if (args[0] && typeof args[0] === "object") {
+      const opts = args[0] as { host?: string; path?: string };
+      if (opts.host) return opts.host.toLowerCase();
+      // Unix socket — allow (no network domain to check)
+      if (opts.path) return undefined;
+    }
+    return undefined;
   }
 
   constructor(config: SandboxConfig = {}) {
@@ -625,12 +762,14 @@ export class Sandbox {
     this.allowedPaths = (config.allowedPaths ?? []).map((p) => path.resolve(p));
     this.blockedPaths = (config.blockedPaths ?? []).map((p) => path.resolve(p));
     this.blockNetwork = config.blockNetwork ?? false;
+    this.allowedNetworkDomains = (config.allowedNetworkDomains ?? []).map((d) => d.toLowerCase());
     this.sandboxFetch = config.sandboxFetch;
     this.pathValidator = config.pathValidator;
     this.onViolation = config.onViolation;
     this.debug = config.debug ?? false;
     this._sandboxRuntime = config.sandboxRuntime ?? "inline";
     this._sandboxBackend = config.sandboxBackend;
+    this._osSandboxConfig = config.osSandbox;
   }
 
   /**
@@ -644,6 +783,103 @@ export class Sandbox {
    */
   setBackend(backend: SandboxExternalBackend): void {
     this._sandboxBackend = backend;
+  }
+
+  // ── OS-Level Sandbox Integration ─────────────────────────────────────────
+
+  private _osSandboxConfig?: OsSandboxConfig;
+  private _osSandbox?: OsSandboxManager;
+
+  /**
+   * Get the OS-level sandbox manager (lazy initialization).
+   * Returns undefined if osSandbox config is not set.
+   */
+  getOsSandbox(): OsSandboxManager | undefined {
+    if (!this._osSandboxConfig) return undefined;
+    if (!this._osSandbox) {
+      this._osSandbox = new OsSandboxManager(this._osSandboxConfig);
+    }
+    return this._osSandbox;
+  }
+
+  /**
+   * Wrap a shell command with OS-level sandbox restrictions.
+   *
+   * This is the primary integration point for tools that execute shell
+   * commands via `child_process.exec()` or similar. The returned command
+   * string includes the sandbox wrapper (bwrap, sandbox-exec, or docker)
+   * and is ready for direct execution.
+   *
+   * If OS sandbox is not configured or not available, returns the original
+   * command unchanged.
+   *
+   * @param command - The raw shell command to execute.
+   * @param shell - The shell to use. Default: '/bin/sh'.
+   * @returns The wrapped (or original) command string.
+   *
+   * @example
+   * ```ts
+   * const wrapped = await sandbox.wrapShellCommand('git status');
+   * // On macOS: "sandbox-exec -p '(version 1)...' /bin/sh -c 'git status'"
+   * // On Linux: "bwrap --ro-bind / / --bind /project /project ... /bin/sh -c 'git status'"
+   * // No sandbox: "git status"
+   * ```
+   */
+  async wrapShellCommand(command: string, shell = "/bin/sh"): Promise<string> {
+    const osSandbox = this.getOsSandbox();
+    if (!osSandbox) return command;
+    return osSandbox.wrapCommand(command, shell);
+  }
+
+  /**
+   * Check if OS-level sandboxing is available on this system.
+   * Returns false if osSandbox config is not set.
+   */
+  async isOsSandboxAvailable(): Promise<boolean> {
+    const osSandbox = this.getOsSandbox();
+    if (!osSandbox) return false;
+    return osSandbox.isAvailable();
+  }
+
+  /**
+   * Create an OS-sandboxed version of an exec function.
+   *
+   * This is the key integration method: any exec function passed through
+   * here will automatically wrap every command with the OS-level sandbox
+   * (bwrap, sandbox-exec, docker) before execution.
+   *
+   * Usage — plug into ToolContext.exec:
+   * ```ts
+   * const ctx: ToolContext = {
+   *   exec: sandbox.createSandboxedExec(rawExecFn),
+   *   // ...
+   * };
+   * ```
+   *
+   * If OS sandbox is not configured, returns the original exec function
+   * unchanged (transparent passthrough).
+   */
+  createSandboxedExec(
+    originalExec: (command: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>,
+  ): (command: string) => Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const osSandbox = this.getOsSandbox();
+    if (!osSandbox) return originalExec;
+
+    return async (command: string) => {
+      const wrappedCommand = await osSandbox.wrapCommand(command);
+      return originalExec(wrappedCommand);
+    };
+  }
+
+  /**
+   * Dispose the sandbox and release resources.
+   * Stops the domain-filtering proxy if started.
+   */
+  async dispose(): Promise<void> {
+    if (this._osSandbox) {
+      await this._osSandbox.dispose();
+      this._osSandbox = undefined;
+    }
   }
 
   // ── Private fields ───────────────────────────────────────────────────────
@@ -741,9 +977,30 @@ export class Sandbox {
       if (this.blockNetwork) {
         Sandbox.installFetchProxy();
 
+        // Capture for closure
+        const allowedDomains = this.allowedNetworkDomains;
+        const isDomainAllowed = this.isDomainAllowed.bind(this);
+        const originalFetch = Sandbox._originalFetch;
+
         const blockedFetch: typeof globalThis.fetch =
           this.sandboxFetch ??
-          (async (_input: string | URL | Request, _init?: RequestInit) => {
+          (async (input: string | URL | Request, init?: RequestInit) => {
+            // Check if the URL's domain is in the allowlist
+            if (allowedDomains.length > 0) {
+              let urlStr: string | undefined;
+              if (typeof input === "string") urlStr = input;
+              else if (input instanceof URL) urlStr = input.toString();
+              else if (input instanceof Request) urlStr = input.url;
+
+              if (urlStr) {
+                const host = Sandbox.extractHostFromUrl(urlStr);
+                if (host && isDomainAllowed(host)) {
+                  // Domain is allowed — pass through to real fetch
+                  return originalFetch(input, init);
+                }
+              }
+            }
+
             throw new SandboxError(
               { type: "network", toolName, detail: "Network access blocked by sandbox" },
               `Network access blocked for tool "${toolName}"`,
@@ -763,8 +1020,9 @@ export class Sandbox {
         Sandbox.installHttpProxy();
         Sandbox.installNetProxy();
 
-        const value = await Sandbox._fetchALS.run({ blockedFetch, toolName }, () =>
-          this.withTimeout(toolName, fn(args), this.timeoutMs, timeoutAbort),
+        const value = await Sandbox._fetchALS.run(
+          { blockedFetch, toolName, allowedDomains },
+          () => this.withTimeout(toolName, fn(args), this.timeoutMs, timeoutAbort),
         );
         const durationMs = Date.now() - start;
         this.totalDurationMs += durationMs;
@@ -899,7 +1157,7 @@ export class Sandbox {
       // Quick sanity check — must produce a parseable expression
       new Function(`return (${fnSrc})`); // throws SyntaxError if not parseable
     } catch (e) {
-      console.warn(
+      logger.warn(
         `[yaaf/sandbox] executeInWorker: fn.toString() is not serializable for tool "${toolName}". ` +
           `Falling back to inline mode. ` +
           `(This usually means the function is minified or uses native bindings.) ` +
@@ -909,8 +1167,13 @@ export class Sandbox {
       return this.execute(toolName, args, fn);
     }
 
-    // Construct path to sandbox.worker.js (compiled output mirrors src structure)
-    const workerPath = new URL("./sandbox.worker.js", import.meta.url);
+    // Construct path to sandbox.worker — try .js first (production), then .ts (vitest/dev)
+    const jsPath = new URL("./sandbox.worker.js", import.meta.url);
+    const tsPath = new URL("./sandbox.worker.ts", import.meta.url);
+    const { existsSync } = await import("fs");
+    const { fileURLToPath } = await import("url");
+    const useTs = !existsSync(fileURLToPath(jsPath)) && existsSync(fileURLToPath(tsPath));
+    const workerPath = useTs ? tsPath : jsPath;
 
     return new Promise<SandboxResult<T>>((resolve, reject) => {
       const id = `${toolName}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -919,7 +1182,12 @@ export class Sandbox {
       let timer: ReturnType<typeof setTimeout> | null = null;
 
       const worker = new Worker(workerPath, {
-        workerData: { blockNetwork: this.blockNetwork },
+        workerData: {
+          blockNetwork: this.blockNetwork,
+          allowedNetworkDomains: this.allowedNetworkDomains,
+        },
+        // Enable TypeScript strip-types for .ts worker files (Node v25+)
+        ...(useTs ? { execArgv: ["--experimental-strip-types"] } : {}),
       });
 
       const cleanup = (terminate = true) => {
@@ -944,7 +1212,23 @@ export class Sandbox {
         );
       }, this.timeoutMs);
 
-      worker.on("message", (msg: { id: string; ok: boolean; result?: unknown; error?: string }) => {
+      worker.on("message", (msg: { type?: string; id?: string; ok?: boolean; result?: unknown; error?: string }) => {
+        // Wait for 'ready' signal before posting the function
+        if (msg.type === "ready") {
+          // Serialize only the plain args (strip non-serializable non-enumerable keys)
+          const serializableArgs: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(args)) {
+            try {
+              JSON.stringify(v);
+              serializableArgs[k] = v;
+            } catch {
+              // Skip non-serializable values — worker can't receive them
+            }
+          }
+          worker.postMessage({ id, fnSrc, args: serializableArgs });
+          return;
+        }
+
         if (msg.id !== id || settled) return;
         settled = true;
         cleanup(false); // Worker will exit naturally after posting its response
@@ -974,19 +1258,6 @@ export class Sandbox {
         cleanup(false);
         reject(new Error(`Worker exited unexpectedly with code ${code} for tool "${toolName}"`));
       });
-
-      // Serialize only the plain args (strip non-serializable non-enumerable keys)
-      const serializableArgs: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(args)) {
-        try {
-          JSON.stringify(v);
-          serializableArgs[k] = v;
-        } catch {
-          // Skip non-serializable values — worker can't receive them
-        }
-      }
-
-      worker.postMessage({ id, fnSrc, args: serializableArgs });
     });
   }
 
@@ -1030,18 +1301,65 @@ export class Sandbox {
   }
 
   /**
+   * Check if a domain is in the allowed list.
+   * Supports exact match, dot-prefix (.example.com), and star wildcard (*.example.com).
+   */
+  private isDomainAllowed(domain: string): boolean {
+    if (this.allowedNetworkDomains.length === 0) return false;
+    const d = domain.toLowerCase();
+    for (const pattern of this.allowedNetworkDomains) {
+      if (pattern === d) return true;
+      if (pattern.startsWith(".") && (d.endsWith(pattern) || d === pattern.slice(1))) return true;
+      if (pattern.startsWith("*.") && (d.endsWith(pattern.slice(1)) || d === pattern.slice(2))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Extract the hostname from a URL string.
+   * Returns undefined if parsing fails.
+   */
+  private static extractHostFromUrl(urlStr: string): string | undefined {
+    try {
+      const url = new URL(urlStr);
+      return url.hostname;
+    } catch {
+      // Try adding a scheme if bare domain
+      try {
+        const url = new URL("https://" + urlStr);
+        return url.hostname;
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  /**
    * Check argument values for URLs when network blocking is enabled.
-   * This replaces the unsafe global fetch patching that could break concurrent code.
-   * Returns an error message if a URL is found, null otherwise.
+   * URLs matching `allowedNetworkDomains` are permitted.
+   * Returns an error message if a blocked URL is found, null otherwise.
    */
   private checkForUrls(args: Record<string, unknown>, toolName: string): string | null {
-    const urlPatterns = /https?:\/\/[^\s"']+/i;
+    const urlPattern = /https?:\/\/[^\s"']+/gi;
     const urlKeys = ["url", "uri", "endpoint", "href", "link", "baseUrl", "apiUrl"];
+    const allowedDomains = this.allowedNetworkDomains;
+    const isDomainAllowed = this.isDomainAllowed.bind(this);
 
     function check(value: unknown, key?: string): string | null {
       if (typeof value === "string") {
         const isUrlKey = key && urlKeys.includes(key);
-        if (isUrlKey || urlPatterns.test(value)) {
+        // Check for URL patterns in the string
+        const matches = value.match(urlPattern);
+        if (matches) {
+          for (const match of matches) {
+            const host = Sandbox.extractHostFromUrl(match);
+            if (host && isDomainAllowed(host)) continue; // allowed domain
+            return `Network access blocked for tool "${toolName}": URL detected in args (${key ?? "value"})`;
+          }
+        } else if (isUrlKey) {
+          // Key suggests URL but value doesn't match pattern — still check
+          const host = Sandbox.extractHostFromUrl(value);
+          if (host && isDomainAllowed(host)) return null;
           return `Network access blocked for tool "${toolName}": URL detected in args (${key ?? "value"})`;
         }
       }
@@ -1083,23 +1401,48 @@ export class Sandbox {
   }
 }
 
-/** Permissive sandbox — only adds timeout protection. */
+/** Permissive sandbox — only adds timeout protection. No OS-level isolation. */
 export function timeoutSandbox(timeoutMs = 30_000): Sandbox {
   return new Sandbox({ timeoutMs });
 }
 
 /**
- * Strict sandbox — restricts to a single directory, blocks network.
+ * Strict sandbox — full kernel-enforced isolation.
  *
- * ⚠️ NETWORK BLOCKING LIMITATION: `blockNetwork: true` intercepts the injected
- * `__sandboxFetch` function and scans tool arguments for URL patterns. It does NOT
- * intercept calls to `node:http`, `node:https`, `axios`, `undici`, `got`, or any
- * other HTTP library that bypasses `globalThis.fetch`. For true network isolation,
- * use OS-level restrictions (network namespaces, seccomp, iptables) in addition
- * to this sandbox.
+ * Provides the maximum security posture with both application-level and
+ * kernel-level enforcement enabled by default:
+ *
+ * **Application-level (defense-in-depth):**
+ * - Path argument scanning before execution
+ * - Credential path blocklist (~/.ssh, ~/.aws, etc.)
+ * - `blockNetwork: true` + `allowedNetworkDomains` for fetch()
+ * - Timeouts and violation observability
+ *
+ * **Kernel-level (primary enforcement):**
+ * - OS sandbox (sandbox-exec on macOS, bwrap on Linux)
+ * - Filesystem writes restricted to `rootDir` only
+ * - Network restricted to `allowedDomains` via domain proxy
+ * - Child process isolation (spawned processes inherit restrictions)
+ *
+ * If the OS sandbox backend is unavailable (Windows, missing bwrap),
+ * falls back silently to application-level protections only.
+ *
+ * @param rootDir - The only directory tools may write to.
+ * @param opts - Optional overrides.
  */
-export function strictSandbox(rootDir: string, timeoutMs = 15_000): Sandbox {
+export function strictSandbox(
+  rootDir: string,
+  opts: {
+    timeoutMs?: number;
+    /** Domains tools may access. Empty array = block all network. */
+    allowedNetworkDomains?: string[];
+    /** If true, throw when no OS sandbox is available. Default: false. */
+    failIfUnavailable?: boolean;
+  } = {},
+): Sandbox {
+  const { timeoutMs = 15_000, allowedNetworkDomains, failIfUnavailable = false } = opts;
   const homedir = os.homedir();
+
   return new Sandbox({
     timeoutMs,
     allowedPaths: [rootDir],
@@ -1138,19 +1481,53 @@ export function strictSandbox(rootDir: string, timeoutMs = 15_000): Sandbox {
       path.join(homedir, "Library", "Keychains"),
     ],
     blockNetwork: true,
+    allowedNetworkDomains,
+    // Kernel-enforced isolation — primary enforcement layer
+    osSandbox: {
+      projectDir: rootDir,
+      blockNetwork: !allowedNetworkDomains || allowedNetworkDomains.length === 0,
+      allowedDomains: allowedNetworkDomains,
+      failIfUnavailable,
+    },
   });
 }
 
 /**
- * Project sandbox — restrict to project directory with reasonable timeout.
- * Does NOT block network (most tools legitimately need it).
+ * Project sandbox — kernel-enforced project isolation with network access.
  *
- * ⚠️ If you add `blockNetwork: true` to the returned sandbox, see the
- * network-blocking limitation described on `strictSandbox` — only
- * `__sandboxFetch` and argument scanning are intercepted, not native HTTP.
+ * Restricts filesystem writes to the project directory. Network is allowed
+ * by default (most tools legitimately need it). Use `allowedNetworkDomains`
+ * to restrict to specific domains.
+ *
+ * **Application-level (defense-in-depth):**
+ * - Path argument scanning before execution
+ * - Credential path blocklist (~/.ssh, ~/.aws, etc.)
+ * - Timeouts and violation observability
+ *
+ * **Kernel-level (primary enforcement):**
+ * - OS sandbox (sandbox-exec on macOS, bwrap on Linux)
+ * - Filesystem writes restricted to `projectDir` only
+ * - Domain proxy for network filtering (when `allowedNetworkDomains` is set)
+ *
+ * If the OS sandbox backend is unavailable (Windows, missing bwrap),
+ * falls back silently to application-level protections only.
+ *
+ * @param projectDir - The project directory. Defaults to `process.cwd()`.
+ * @param opts - Optional overrides.
  */
-export function projectSandbox(projectDir = process.cwd(), timeoutMs = 30_000): Sandbox {
+export function projectSandbox(
+  projectDir = process.cwd(),
+  opts: {
+    timeoutMs?: number;
+    /** Domains tools may access. Undefined = allow all network. */
+    allowedNetworkDomains?: string[];
+    /** If true, throw when no OS sandbox is available. Default: false. */
+    failIfUnavailable?: boolean;
+  } = {},
+): Sandbox {
+  const { timeoutMs = 30_000, allowedNetworkDomains, failIfUnavailable = false } = opts;
   const homedir = os.homedir();
+
   return new Sandbox({
     timeoutMs,
     allowedPaths: [projectDir],
@@ -1172,6 +1549,15 @@ export function projectSandbox(projectDir = process.cwd(), timeoutMs = 30_000): 
       // macOS Keychain
       path.join(homedir, "Library", "Keychains"),
     ],
+    // Network blocking only if domains are explicitly restricted
+    blockNetwork: !!allowedNetworkDomains,
+    allowedNetworkDomains,
+    // Kernel-enforced isolation — primary enforcement layer
+    osSandbox: {
+      projectDir,
+      allowedDomains: allowedNetworkDomains,
+      failIfUnavailable,
+    },
   });
 }
 
@@ -1345,7 +1731,7 @@ export function createSandboxTool<TArgs extends Record<string, unknown> = Record
       if (mode === "strict") {
         throw new Error(message);
       } else {
-        console.warn(message);
+        logger.warn(message);
       }
     }
   }

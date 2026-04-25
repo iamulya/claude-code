@@ -32,6 +32,7 @@ import type {
   PluginCapability,
   PluginHost,
 } from "../../plugin/types.js";
+import { estimateTokens } from "../../utils/tokens.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -302,10 +303,11 @@ export class KnowledgeBase implements ToolProvider, ContextProvider {
 
   /**
    * Rough token count for budget enforcement.
-   * Uses the 4 chars ≈ 1 token heuristic (same as estimateTokens).
+   * H5/M10: Uses CJK-aware estimateTokens (utils/tokens.ts) instead of the
+   * naive `length / 4` heuristic. CJK text uses ~1.5 chars/token vs ~4 for Latin.
    */
   private estimateTokenCount(text: string): number {
-    return Math.ceil(text.length / 4);
+    return estimateTokens(text);
   }
 
   // ── Direct access API ─────────────────────────────────────────────────────

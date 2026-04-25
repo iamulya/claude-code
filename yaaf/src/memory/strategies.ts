@@ -51,6 +51,7 @@
 import type { MemoryStore, MemoryHeader, MemoryType, MemoryEntry } from "./memoryStore.js";
 import { MEMORY_TYPES } from "./memoryStore.js";
 import { MemoryRelevanceEngine, type RelevanceQueryFn, type RelevantMemory } from "./relevance.js";
+import { TopicExtractionSchema } from "../schemas.js";
 
 // ── W7-01 Helper: Memory Sanitizer ─────────────────────────────────────────────────────
 
@@ -577,28 +578,21 @@ export class TopicFileExtractor implements MemoryExtractionStrategy {
         signal: ctx.signal,
       });
 
-      const entries = JSON.parse(result) as Array<{
-        name: string;
-        description: string;
-        type: string;
-        content: string;
-      }>;
+      const entries = JSON.parse(result);
+
+      // Sprint 0b: Validate LLM extraction output with Zod schema.
+      // The schema enforces valid types ('user'|'feedback'|'project'|'reference'),
+      // non-empty name/content, and max lengths — replacing the manual VALID_TYPES check.
+      const parsed = TopicExtractionSchema.safeParse(entries);
+      if (!parsed.success) {
+        console.warn(
+          `[yaaf/topic-file] LLM returned invalid extraction output: ${parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+        );
+        return { extracted: false };
+      }
 
       let saved = 0;
-      for (const entry of entries) {
-        // Validate LLM-returned type against the MEMORY_TYPES allowlist.
-        // The TypeScript `as {..., type: MemoryType}` cast is compile-time only.
-        // The runtime value comes from JSON.parse() which trusts the LLM output.
-        // An LLM returning type: "__proto__" or "system" would produce invalid
-        // YAML frontmatter or, in future schema variants, a path traversal.
-        const VALID_TYPES = new Set(["user", "feedback", "project", "reference"]);
-        if (!VALID_TYPES.has(entry.type)) {
-          console.warn(
-            `[yaaf/topic-file] Skipping entry "${entry.name}" with unrecognized type: "${entry.type}". ` +
-              `Valid types: ${[...VALID_TYPES].join(", ")}.`,
-          );
-          continue;
-        }
+      for (const entry of parsed.data) {
         await this.store.save({
           name: entry.name,
           description: entry.description,

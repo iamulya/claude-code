@@ -1,105 +1,153 @@
 ---
-summary: A class that uses an LLM to select the most relevant memories from a store based on a user query.
+title: MemoryRelevanceEngine
+entity_type: api
+summary: Selects the most relevant memories from a memory store for a given user query using an LLM.
 export_name: MemoryRelevanceEngine
 source_file: src/memory/relevance.ts
 category: class
-title: MemoryRelevanceEngine
-entity_type: api
+search_terms:
+ - find relevant memories
+ - memory selection
+ - context optimization
+ - LLM-based memory retrieval
+ - how to select memories for prompt
+ - reduce context window size
+ - relevance filtering
+ - agent memory access
+ - dynamic context injection
+ - query-based memory lookup
+ - RelevanceQueryFn
+ - memory store search
+ - lean context
 stub: false
-compiled_at: 2026-04-16T14:29:56.289Z
+compiled_at: 2026-04-24T17:21:32.797Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/memory/relevance.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/relevance.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-The `MemoryRelevanceEngine` is a utility designed to manage context window efficiency by filtering a large corpus of memories down to a relevant subset for a specific user query. Instead of injecting all available memories into an LLM prompt, the engine performs a two-step selection process:
 
-1.  **Index Scanning**: It loads a central index (`MEMORY.md`) and scans the headers (name and description from frontmatter) of all available memory files.
-2.  **LLM Selection**: It uses a fast LLM (such as Claude 3.5 Sonnet) to analyze the headers and select a maximum of five relevant memories.
+The `[[[[[[[[Memory]]]]]]]]RelevanceEngine` is a class responsible for selecting the most relevant memories from a Memory store based on a user's query [Source 1]. It uses a Language Learning Model ([LLM](../concepts/llm.md)) to perform this selection, ensuring that the agent's context remains lean while still providing access to a potentially large number of memories [Source 1].
 
-This architecture allows an agent to have access to hundreds of memories while keeping the primary conversation context lean. The selection step is optimized for performance, typically adding approximately 200ms of latency.
+The design follows a specific process [Source 1]:
+1. It always loads the `MEMORY.md` file (the memory index) into the [System Prompt](../concepts/system-prompt.md).
+2. It scans the headers (name and description from [Frontmatter](../concepts/frontmatter.md)) of all available memory files.
+3. It queries a fast LLM (e.g., Claude Sonnet) to choose five or fewer relevant memories based on the headers and the user query.
+4. It injects only the content of these selected memories as attachments for the current processing turn.
 
-## Signature / Constructor
+This approach is a trade-off that adds a small amount of latency (approximately 200ms) and cost per query to keep the primary [Context Window](../concepts/context-window.md) small and focused, which can improve performance and reduce costs for the main [LLM Call](../concepts/llm-call.md) [Source 1].
 
-### RelevanceQueryFn
-The engine requires a provider-agnostic LLM adapter function to perform the selection.
+## Constructor
+
+The `MemoryRelevanceEngine` is instantiated with a `RelevanceQueryFn`, which is a function that wraps an LLM call. This design keeps the framework model-agnostic by allowing the consumer to inject their own LLM adapter [Source 1].
+
+```typescript
+import type { RelevanceQueryFn } from 'yaaf';
+
+export class MemoryRelevanceEngine {
+  constructor(queryFn: RelevanceQueryFn);
+}
+```
+
+### `RelevanceQueryFn`
+
+This is the function signature for the LLM call used by the engine [Source 1].
 
 ```typescript
 export type RelevanceQueryFn = (params: {
-  system: string
-  userMessage: string
-  maxTokens: number
-  signal?: AbortSignal
-}) => Promise<string>
-```
-
-### Constructor
-```typescript
-export class MemoryRelevanceEngine {
-  constructor(queryFn: RelevanceQueryFn)
-}
-```
-
-### Supporting Types
-```typescript
-export type RelevantMemory = {
-  path: string
-  mtimeMs: number
-  filename: string
-}
+  system: string;
+  userMessage: string;
+  maxTokens: number;
+  signal?: AbortSignal;
+}) => Promise<string>;
 ```
 
 ## Methods & Properties
 
-### findRelevant()
-The primary method for identifying which memories should be attached to the current turn.
+### `findRelevant`
 
-**Signature:**
+This method executes the relevance search. It takes a user query, a list of all available memory headers, and an optional `AbortSignal`, and returns a promise that resolves to an array of `RelevantMemory` objects [Source 1].
+
 ```typescript
-async findRelevant(
+import type { MemoryHeader } from 'yaaf';
+import type { RelevantMemory } from 'yaaf';
+
+public async findRelevant(
   query: string,
-  headers: MemoryHeader[],
+  allHeaders: MemoryHeader[],
   signal?: AbortSignal
-): Promise<RelevantMemory[]>
+): Promise<RelevantMemory[]>;
 ```
 
-**Parameters:**
-- `query`: The user's input string or the current task description.
-- `headers`: An array of `MemoryHeader` objects representing the available memory files.
-- `signal`: An optional `AbortSignal` to cancel the LLM request.
+#### Related Types
 
-**Returns:**
-A promise resolving to an array of `RelevantMemory` objects, limited to a maximum of five entries.
+**`RelevantMemory`**
+
+An object representing a memory that has been selected as relevant [Source 1].
+
+```typescript
+export type RelevantMemory = {
+  path: string;
+  mtimeMs: number;
+  filename: string;
+};
+```
+
+**`MemoryHeader`**
+
+An object containing the metadata from a memory file's frontmatter. The `MemoryRelevanceEngine` uses this information to make its selection [Source 1].
+
+```typescript
+// Defined in src/memory/memoryStore.ts
+export type MemoryHeader = {
+  name: string;
+  description: string;
+  path: string;
+  mtimeMs: number;
+  filename: string;
+};
+```
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to initialize the engine with a custom LLM caller and find relevant memories.
+The following example demonstrates how to instantiate the `MemoryRelevanceEngine` with a custom LLM call function and then use it to find relevant memories [Source 1].
 
 ```typescript
 import { MemoryRelevanceEngine } from 'yaaf';
+import type { MemoryHeader } from 'yaaf';
 
-// Initialize the engine with an LLM adapter
+// Assume `callSonnet` is a function that calls the Claude Sonnet model.
+// Assume `allHeaders` is an array of MemoryHeader objects from a MemoryStore.
+
 const engine = new MemoryRelevanceEngine(async ({ system, userMessage, maxTokens }) => {
-  // Example using a hypothetical LLM client
-  const response = await callSonnet({ 
-    system, 
-    messages: [{ role: 'user', content: userMessage }], 
-    maxTokens 
+  const response = await callSonnet({
+    system,
+    messages: [{ role: 'user', content: userMessage }],
+    maxTokens
   });
   return response.text;
 });
 
-// Find relevant memories for a specific query
+const signal = new AbortController().signal;
+
 const memories = await engine.findRelevant(
   'How do I configure the build system?',
-  allHeaders
+  allHeaders,
+  signal,
 );
 
-console.log(`Found ${memories.length} relevant memories.`);
+console.log(memories);
+// [
+//   {
+//     path: 'path/to/build-config.md',
+//     mtimeMs: 1678886400000,
+//     filename: 'build-config.md'
+//   }
+// ]
 ```
 
-## See Also
-- `MemoryStore` (The storage layer providing the headers)
-- `MemoryHeader` (The metadata structure for memory files)
+## Sources
+
+[Source 1]: src/memory/relevance.ts

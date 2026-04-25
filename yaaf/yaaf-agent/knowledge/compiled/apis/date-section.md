@@ -1,73 +1,94 @@
 ---
-summary: Generates a dynamic date and time section for the system prompt.
+title: dateSection
+entity_type: api
+summary: A factory function to create a prompt section that includes the current timestamp.
 export_name: dateSection
 source_file: src/prompt/systemPrompt.ts
 category: function
-title: dateSection
-entity_type: api
+search_terms:
+ - add timestamp to prompt
+ - current date in system prompt
+ - dynamic prompt section
+ - time-sensitive prompts
+ - how to include current time
+ - system prompt builder helper
+ - prompt section factory
+ - turn-specific information
+ - session start date
+ - volatile prompt data
+ - dateSection factory
+ - temporal context for LLM
 stub: false
-compiled_at: 2026-04-16T14:32:27.431Z
+compiled_at: 2026-04-24T17:00:36.931Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/prompt/systemPrompt.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-The `dateSection` function is a utility used to generate a dynamic date and time component for an agent's system prompt. It ensures that the LLM has access to the current temporal context, which is essential for tasks involving scheduling, relative time calculations, or time-sensitive data retrieval.
 
-In the YAAF prompt architecture, `dateSection` is classified as a dynamic section. Because it is recomputed frequently to maintain accuracy, it is typically placed after the dynamic boundary in a `SystemPromptBuilder` to avoid invalidating static prompt caches. This function mirrors the session-start date functionality found in the framework's internal `getSessionStartDate` utility.
+The `dateSection` function is a convenience factory for creating a [System Prompt](../concepts/system-prompt.md) section that contains the current date and time [Source 1]. This section is configured as a dynamic, `turn`-cached section, meaning its content is re-evaluated every time the system prompt is built. This ensures the [LLM](../concepts/llm.md) always has the most up-to-date timestamp, which is useful for tasks requiring temporal awareness [Source 2].
+
+This factory provides a standardized way to include time-sensitive information without manually writing the date logic. According to the source code, its behavior mirrors the session-start date feature from an internal `getSessionStartDate()` function [Source 2]. It is typically used with `SystemPromptBuilder` or the `fromSections` factory to compose a complete system prompt [Source 1].
 
 ## Signature
+
+The function takes no arguments and returns a configuration object representing a prompt section that can be consumed by a `SystemPromptBuilder`.
+
 ```typescript
-export function dateSection(): {
-  name: string;
-  fn: () => string;
-  cache: 'turn' | 'session' | 'none';
-  priority?: number;
-}
+export function dateSection(): { /* Prompt Section Object */ };
 ```
 
-### Parameters
-This function does not take any parameters.
-
-### Return Value
-Returns a section configuration object compatible with the `SystemPromptBuilder`. This object includes a function that, when executed, returns a string representation of the current date and time.
+The returned object contains the necessary properties (like name, content function, and cache mode) for the prompt builder to correctly integrate the dynamic timestamp.
 
 ## Examples
 
-### Basic Usage with SystemPromptBuilder
-This example demonstrates how to manually add a date section to a custom prompt builder.
+The most common use case is to combine `dateSection` with other section factories using the `fromSections` helper to quickly assemble a `SystemPromptBuilder`.
 
 ```typescript
-import { SystemPromptBuilder, dateSection } from 'yaaf';
+import {
+  fromSections,
+  identitySection,
+  rulesSection,
+  dateSection,
+  envSection,
+} from 'yaaf';
 
-const builder = new SystemPromptBuilder()
-  .addStatic('identity', () => 'You are a helpful assistant.')
-  .addDynamic(
-    'current_time', 
-    dateSection(), 
-    'Provides the agent with the current date for time-sensitive tasks'
-  );
+// Assemble a SystemPromptBuilder from pre-configured sections
+const customBuilder = fromSections([
+  identitySection('You are a security auditor.'),
+  dateSection(), // Adds the dynamic timestamp section
+  envSection({ REGION: 'us-east-1', ENVIRONMENT: 'staging' }),
+  rulesSection([
+    'Always check for SQL injection',
+    'Flag hardcoded credentials',
+  ]),
+]);
 
-const systemPrompt = await builder.build();
+// When built, the prompt will include the current time
+const prompt = await customBuilder.build();
+
+/*
+Example prompt output might include:
+
+You are a security auditor.
+Current time: 2023-10-27T10:00:00.000Z
+... other sections ...
+*/
 ```
-
-### Integration in Agent Configuration
-The `dateSection` is often used indirectly via the `defaultPromptBuilder`, but it can be explicitly provided to an agent's prompt provider.
-
-```typescript
-const agent = new Agent({
-  systemPromptProvider: async () => {
-    const builder = new SystemPromptBuilder()
-      .addSection(dateSection());
-    return builder.build();
-  },
-  // ... other config
-});
-```
+[Source 1]
 
 ## See Also
-- `SystemPromptBuilder`
-- `envSection`
-- `identitySection`
-- `defaultPromptBuilder`
+
+- `SystemPromptBuilder`: The primary class for composing system prompts from sections.
+- `fromSections`: A factory function to create a `SystemPromptBuilder` from an array of sections.
+- `identitySection`: A factory for creating the agent's identity or persona section.
+- `rulesSection`: A factory for creating a section detailing the agent's operational rules.
+- `envSection`: A factory for creating a section with environment details like CWD and OS.
+
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/prompts.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts

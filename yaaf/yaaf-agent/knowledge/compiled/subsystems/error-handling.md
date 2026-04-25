@@ -1,68 +1,60 @@
 ---
+summary: Provides standardized error classes and utilities for handling common errors across the YAAF framework, such as API connection issues and abort signals.
+primary_files:
+ - src/errors.js
 title: Error Handling
 entity_type: subsystem
-summary: Unified error management system providing structured, typed errors across all YAAF subsystems.
-primary_files:
-  - src/errors.ts
 exports:
-  - YAAFError
-  - ErrorCode
-  - classifyAPIError
-  - parseRetryAfterHeader
+ - APIConnectionError
+ - AbortError
+ - classifyAPIError
+search_terms:
+ - exception handling
+ - custom error types
+ - YAAF exceptions
+ - how to handle API errors
+ - network connection error
+ - request aborted
+ - operation cancelled
+ - classify API exceptions
+ - framework error classes
+ - standardized exceptions
+ - graceful failure
+ - error management
 stub: false
-compiled_at: 2026-04-16T14:17:52.144Z
+compiled_at: 2026-04-25T00:28:13.814Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/errors.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/models/openai.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Purpose
-The Error Handling subsystem provides a unified, structured, and typed hierarchy for managing failures across the YAAF framework. It ensures that errors originating from disparate sources—such as LLM providers, tool execution environments, or internal state management—are normalized into a consistent format. This allows developers to implement robust retry logic, diagnostic logging, and graceful degradation.
+
+The Error Handling subsystem provides a set of standardized, custom error classes and utility functions for consistent error management throughout the YAAF framework. It addresses common failure scenarios encountered when interacting with external services, particularly LLM provider APIs. By defining specific error types for issues like network connection failures and aborted operations, it allows other subsystems to implement more robust and specific error-handling logic, such as retries or graceful degradation [Source 1].
 
 ## Architecture
-The subsystem is built around a centralized error hierarchy designed for machine readability and developer ergonomics.
 
-### The YAAFError Base Class
-All framework-specific errors extend the `YAAFError` class. This common inheritance allows for a single `catch` block to handle any framework-related failure. Every `YAAFError` instance carries:
-- **code**: A machine-readable `ErrorCode` string.
-- **retryable**: A boolean flag indicating if the operation can be safely retried.
-- **provider**: An optional string identifying the external service (e.g., OpenAI, Anthropic) that triggered the error.
+The subsystem is composed of custom `Error` subclasses and helper functions that encapsulate common failure modes. While the source material does not detail the internal implementation, the primary components can be identified by their usage in other parts of the framework [Source 1].
 
-### Error Classification
-The subsystem defines a specific set of error codes via the `ErrorCode` type to categorize failures:
-- **Infrastructure**: `API_CONNECTION_ERROR`, `API_ERROR`, `ABORT`.
-- **Limits & Permissions**: `RATE_LIMIT`, `OVERLOADED`, `AUTH_ERROR`, `PERMISSION_DENIED`.
-- **Execution**: `TOOL_EXECUTION_ERROR`, `SANDBOX_VIOLATION`, `CONTEXT_OVERFLOW`.
-- **Internal**: `RETRY_EXHAUSTED`, `COMPACTION_ERROR`, `UNKNOWN`.
+- **`APIConnectionError`**: An `Error` subclass representing failures related to network communication with an external API. This could include DNS issues, timeouts, or other problems preventing a successful HTTP request.
+- **`AbortError`**: An `Error` subclass used to indicate that an asynchronous operation was deliberately cancelled, typically through an `AbortSignal`.
+- **`classifyAPIError`**: A utility function designed to inspect a generic error object (e.g., one caught from a `fetch` call) and convert it into a more specific, standardized YAAF error instance like `APIConnectionError`.
 
 ## Integration Points
-The Error Handling subsystem is utilized by several other framework components:
-- **Model Adapters**: Use classification utilities to map raw HTTP responses to typed errors.
-- **Retry Logic**: Inspects the `retryable` flag and `retryAfterMs` properties to determine backoff strategies.
-- **Tool Host**: Wraps external code execution failures in `TOOL_EXECUTION_ERROR` or `SANDBOX_VIOLATION`.
+
+The Error Handling subsystem is primarily consumed by components that perform network requests to external services.
+
+- **[LLM Adapters](./llm-adapters.md)**: The `OpenAIChatModel`, a component of the [LLM Adapters](./llm-adapters.md) subsystem, directly imports and utilizes `APIConnectionError`, `AbortError`, and `classifyAPIError` to manage failures during API calls to OpenAI-compatible endpoints [Source 1]. This allows the model adapter to distinguish between different types of failures and handle them appropriately.
 
 ## Key APIs
 
-### YAAFError
-The base class for all errors within the framework. Subclasses (such as `RateLimitError`) may add domain-specific fields like `retryAfterMs`.
+The main public interface for this subsystem includes the following error classes and functions:
 
-```typescript
-try {
-  await model.complete(params);
-} catch (err) {
-  if (err instanceof YAAFError) {
-    console.log(`${err.code}: ${err.message} [retryable=${err.retryable}]`);
-  }
-}
-```
+- [APIConnectionError](../apis/api-connection-error.md): Thrown when there is a problem connecting to or communicating with an external API.
+- [AbortError](../apis/abort-error.md): Thrown when an operation is cancelled via an `AbortSignal`.
+- [classifyAPIError](../apis/classify-api-error.md): A utility function for converting generic network errors into specific YAAF error types.
 
-### classifyAPIError()
-A utility function used primarily by model adapters to convert raw HTTP response data (status codes, body content, and headers) into the appropriate `YAAFError` subclass.
+## Sources
 
-### parseRetryAfterHeader()
-A helper function that parses the standard `Retry-After` HTTP header. It supports both delay-seconds and HTTP-date formats, returning the delay in milliseconds.
-
-## Extension Points
-Developers can extend the error system by:
-1. **Creating Subclasses**: Extending `YAAFError` to define new error types for custom plugins or tools.
-2. **Custom Classification**: Implementing custom logic around `classifyAPIError` to handle proprietary error formats from niche LLM providers.
+[Source 1] src/models/openai.ts

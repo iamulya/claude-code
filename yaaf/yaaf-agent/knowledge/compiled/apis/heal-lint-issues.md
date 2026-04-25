@@ -1,29 +1,47 @@
 ---
 title: healLintIssues
-entity_type: api
-summary: The primary function for executing LLM-powered repairs on a knowledge base lint report.
+summary: Runs the LLM-powered Linter Heal Mode on a given lint report.
 export_name: healLintIssues
 source_file: src/knowledge/compiler/heal.ts
 category: function
+entity_type: api
+search_terms:
+ - linter heal mode
+ - auto-fix lint errors
+ - LLM-powered code repair
+ - fix broken wikilinks
+ - expand stub articles
+ - improve article quality automatically
+ - add crosslinks to orphaned articles
+ - knowledge base self-healing
+ - lint report healing
+ - programmatic lint fixes
+ - C1 Linter Heal Mode
+ - how to use --heal flag
 stub: false
-compiled_at: 2026-04-16T14:23:17.147Z
+compiled_at: 2026-04-24T17:11:00.743Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/heal.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/heal.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`healLintIssues` is the core implementation of the Knowledge Base "Heal Mode" (C1). It utilizes Large Language Models (LLMs) to perform non-trivial repairs on documentation that cannot be resolved through simple text replacement or deterministic logic. This function is typically invoked when the `--heal` flag is provided to the knowledge base compiler.
 
-The function addresses specific categories of linting issues:
-- **BROKEN_WIKILINK**: Resolves broken links by finding the best matching article or removing the link if no match exists.
-- **STUB_WITH_SOURCES**: Triggers the re-synthesis of a stub article into a full article using available source material.
-- **LOW_ARTICLE_QUALITY**: Requests the LLM to expand thin sections with more detail.
-- **ORPHANED_ARTICLE**: Identifies related articles and suggests cross-links to integrate the orphan into the knowledge graph.
+The `healLintIssues` function is the entry point for the YAAF [Knowledge Compiler](../subsystems/knowledge-compiler.md)'s "[Linter](../concepts/linter.md) [Heal](../concepts/heal.md) Mode" [Source 1]. This mode uses an [LLM](../concepts/llm.md) to programmatically repair complex [Linting](../concepts/linting.md) issues that cannot be fixed with simple text replacement. It is an opt-in feature, typically activated via a `--heal` command-line flag in the compiler [Source 1].
 
-`healLintIssues` does not attempt to fix missing articles where no source material exists or contradictory claims, as these are deferred to human review or discovery processes.
+Heal mode is designed to address specific categories of content and structural problems [Source 1]:
 
-## Signature / Constructor
+*   **`BROKEN_WIKILINK`**: The LLM attempts to find the best-matching valid article for a broken link or removes the link if no suitable target exists.
+*   **`STUB_WITH_SOURCES`**: Triggers a re-synthesis of a stub article into a full article using its associated source material.
+*   **`LOW_ARTICLE_QUALITY`**: Instructs the LLM to expand sections that are too brief or lack sufficient detail.
+*   **`ORPHANED_ARTICLE`**: Identifies related articles within the knowledge base and suggests adding crosslinks to integrate the orphaned content.
+
+Certain issues are explicitly outside the scope of heal mode and are deferred to other processes, such as human review. These include missing articles (where no source material is available) and contradictory claims between articles [Source 1].
+
+## Signature
+
+The function takes an [LLM Client](../concepts/llm-client.md), a lint report, and other contextual information, and returns a promise that resolves to a `HealResult` object detailing the actions taken [Source 1].
 
 ```typescript
 export async function healLintIssues(
@@ -31,97 +49,91 @@ export async function healLintIssues(
   report: LintReport,
   compiledDir: string,
   registry: ConceptRegistry,
-  options: HealOptions = {}
-): Promise<HealResult>
+  options?: HealOptions
+): Promise<HealResult>;
 ```
 
-### HealOptions
+### Parameters
+
+*   `llm: LLMCallFn`: An LLM client function used to perform the healing operations [Source 1].
+*   `report: LintReport`: The lint report object containing the issues to be addressed [Source 1].
+*   `compiledDir: string`: The path to the directory containing the compiled knowledge base articles [Source 1].
+*   `registry: ConceptRegistry`: The [Concept Registry](../subsystems/concept-registry.md), providing context about the knowledge base structure [Source 1].
+*   `options?: HealOptions`: Optional configuration for the healing process [Source 1].
+
+### Configuration (`HealOptions`)
+
+The `options` object allows for customizing the behavior of the heal process [Source 1].
+
 ```typescript
 export type HealOptions = {
   /** Maximum LLM calls per heal run. Default: 20 */
-  maxCalls?: number
+  maxCalls?: number;
   /** Only report what would be healed — don't write changes. Default: false */
-  dryRun?: boolean
+  dryRun?: boolean;
   /** Progress callback */
-  onProgress?: (event: HealProgressEvent) => void
-}
+  onProgress?: (event: HealProgressEvent) => void;
+};
 ```
 
-## Methods & Properties
+### Return Value (`HealResult`)
 
-### Parameters
-- **llm**: An `LLMCallFn` used to interact with the language model for repair tasks.
-- **report**: A `LintReport` containing the issues identified during the linting phase.
-- **compiledDir**: The file system path to the directory containing the compiled knowledge base articles.
-- **registry**: The `ConceptRegistry` containing the current ontology and article mappings.
-- **options**: Configuration for the heal operation, including limits and dry-run settings.
+The function returns a `HealResult` object summarizing the outcome [Source 1].
 
-### Return Type: HealResult
-The function returns a promise that resolves to a `HealResult` object:
 ```typescript
 export type HealResult = {
   /** Number of issues successfully healed */
-  healed: number
+  healed: number;
   /** Number of issues skipped (no action possible) */
-  skipped: number
+  skipped: number;
   /** Number of LLM calls made */
-  llmCalls: number
+  llmCalls: number;
   /** Per-issue details */
-  details: HealDetail[]
+  details: HealDetail[];
   /** Total elapsed time (ms) */
-  durationMs: number
-}
-```
+  durationMs: number;
+};
 
-### HealDetail
-Each entry in the `details` array provides the outcome for a specific issue:
-```typescript
 export type HealDetail = {
-  docId: string
-  code: string
-  action: 'healed' | 'skipped' | 'failed'
-  message: string
-}
+  docId: string;
+  code: string;
+  action: "healed" | "skipped" | "failed";
+  message: string;
+};
 ```
 
 ## Events
 
-### HealProgressEvent
-The `onProgress` callback in `HealOptions` receives events to track the start and progress of the healing operation:
-```typescript
-export type HealProgressEvent =
-  | { type: 'heal:start'; totalIssues: number; healable: number }
-```
+If an `onProgress` callback is provided in the `HealOptions`, `healLintIssues` will emit progress events during its execution [Source 1].
+
+*   **`heal:start`**: Fired once at the beginning of the process.
+    *   **Payload**: `{ type: "heal:start"; totalIssues: number; healable: number }`
 
 ## Examples
 
-### Basic Usage
-This example demonstrates running the heal function on a pre-existing lint report.
+The following example demonstrates how to run the linter and then pass its report to `healLintIssues` for automated repair [Source 1].
 
 ```typescript
-const llm = makeKBLLMClient();
-const lintReport = await compiler.lint();
-const healResult = await healLintIssues(
-  llm, 
-  lintReport, 
-  './dist/knowledge', 
-  registry
-);
+import { makeKBLLMClient } from './llmClient';
+import { compiler } from './compiler'; // Assuming a compiler instance
+import { healLintIssues } from './heal';
+import { registry } from './ontology'; // Assuming a registry instance
 
-console.log(`Successfully healed ${healResult.healed} issues.`);
+async function runHeal() {
+  const llm = makeKBLLMClient();
+  const compiledDir = './compiled';
+
+  // 1. Run the linter to get a report
+  const lintReport = await compiler.lint();
+
+  // 2. Pass the report to the heal function
+  const healResult = await healLintIssues(llm, lintReport, compiledDir, registry);
+
+  console.log(`Healed ${healResult.healed} issues.`);
+  console.log(healResult.details);
+}
 ```
 
-### Dry Run with Progress Tracking
-This example shows how to preview changes and monitor progress without modifying the source files.
+## Sources
 
-```typescript
-const healResult = await healLintIssues(llm, report, compiledDir, registry, {
-  dryRun: true,
-  maxCalls: 10,
-  onProgress: (event) => {
-    if (event.type === 'heal:start') {
-      console.log(`Starting heal: ${event.healable}/${event.totalIssues} issues are repairable.`);
-    }
-  }
-});
-```
+[Source 1] `src/knowledge/compiler/heal.ts`

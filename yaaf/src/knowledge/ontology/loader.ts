@@ -2,17 +2,25 @@
  * Ontology YAML Parser
  *
  * Loads and validates `ontology.yaml` from the KB root directory.
- * Uses a zero-dependency minimal YAML parser that handles the specific
- * subset of YAML used in ontology files (no anchors, no multi-document,
- * no complex types — just nested mappings, sequences, and scalars).
+ * Uses the `yaml` library (spec-compliant YAML 1.2 parser) to parse
+ * the ontology file, then validates and hydrates the result into a
+ * strongly-typed `KBOntology`.
  *
  * The parser produces a validated `KBOntology` with human-readable
  * errors for any structural problem. The compiler will not start
  * until the ontology passes validation.
+ *
+ * ## Change history
+ *
+ * Sprint 0a: Replaced ~425 LOC hand-rolled YAML parser with `yaml` library.
+ * Eliminates findings H1 (block scalar), H13 (tab indent), H14 (escaped quotes),
+ * M4 (flow mappings), and gains anchors/aliases, multi-doc, full escape sequences,
+ * and YAML 1.2 compliance for free.
  */
 
 import { readFile, writeFile, access } from "fs/promises";
 import { join } from "path";
+import { parse as parseYamlLib } from "yaml";
 import type {
   KBOntology,
   EntityTypeSchema,
@@ -53,423 +61,24 @@ const DEFAULT_BUDGET: KBBudgetConfig = {
   maxImagesPerFetch: 3,
 };
 
-// ── Minimal YAML parser (hardened) ─────────────────────────────────────────
+// ── YAML parsing ─────────────────────────────────────────────────────────────
 
 /**
- * Pre-pass: collapse block scalar indicators (`|` and `>`) into single-line
- * quoted values so the main tokenizer (which is line-by-line) doesn't need
- * to handle multi-line values.
+ * Parse a YAML string into a plain JavaScript object using the spec-compliant
+ * `yaml` library. Configured with strict mode and core schema to prevent
+ * type coercion surprises (e.g., "yes" → true in YAML 1.1).
  *
- * Example input:
- *   description: |
- *     Line one.
- *     Line two.
- * Output:
- *   description: "Line one. Line two."
- */
-function collapseBlockScalars(raw: string): string {
-  const lines = raw.split("\n");
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i]!;
-    const trimmed = line.trimEnd();
-    // Detect block scalar: `key: |` or `key: >`
-    const blockMatch = trimmed.match(/^([ \t]*\S[^:]*:\s*)(\||>)\s*$/);
-    if (blockMatch) {
-      // P1-2: baseIndent = leading whitespace of the KEY line (not the full match group).
-      // blockMatch[1] includes the key text itself, so its length != key indentation.
-      const baseIndent = line.length - line.trimStart().length;
-      const isFolded = blockMatch[2] === ">";
-      const bodyLines: string[] = [];
-      i++;
-      // Collect subsequent lines that are more indented than the key
-      while (i < lines.length) {
-        const bodyLine = lines[i]!;
-        const bodyIndent = bodyLine.length - bodyLine.trimStart().length;
-        if (bodyLine.trim() === "" || bodyIndent > baseIndent) {
-          bodyLines.push(bodyLine.trimStart());
-          i++;
-        } else {
-          break;
-        }
-      }
-      // P2-5: literal scalars (|) preserve internal newlines.
-      // We flatten to single-line by joining with space (both folded and literal
-      // become single-line YAML values when quoted — newlines are collapsed to spaces).
-      const joined = isFolded
-        ? bodyLines.join(" ").trim()          // folded (>): lines already joined with space
-        : bodyLines.join("\n").trim();        // literal (|): newlines preserved, then flattened below
-      // Flatten newlines to space for embedding in a double-quoted single-line YAML value
-      const flattened = joined.replace(/\n/g, " ");
-      // Rewrite as a double-quoted single-line value (escape inner double-quotes)
-      const keyPart = trimmed.slice(0, trimmed.lastIndexOf(blockMatch[2]!));
-      out.push(`${keyPart}"${flattened.replace(/"/g, "'")}"`);
-      continue;
-    }
-    out.push(line);
-    i++;
-  }
-  return out.join("\n");
-}
-
-/**
- * Parses the minimal YAML subset used in ontology.yaml.
- *
- * Handles:
- *  - Block mappings (key: value)
- *  - Block sequences (- item)
- *  - Single-quoted and double-quoted strings (with escape sequences)
- *  - Flow sequences [a, b, c]      (Bug 3 fix)
- *  - Block scalars | and >         (Bug 4 fix, via collapseBlockScalars)
- *  - Strings, numbers, booleans, null
- *  - Inline comments outside quotes (Bug 2 fix)
- *  - Escaped quotes in double-quoted strings (W-5 fix)
- *
- * No longer mis-parses:
- *  - description: "URL: https://foo.com"  (Bug 1 fix: quote-aware colon split)
- *  - description: "hex #ff0000"           (Bug 2 fix: quote-aware comment strip)
- *  - description: "He said \"hello\""     (W-5 fix: escaped quote tracking)
- *  - Tab indentation throws clearly       (Bug 5 fix)
- *
- * Does NOT handle:
- *  - YAML anchors/aliases (&anchor, *alias)
- *  - Multiple documents (---)
- *  - Flow mappings {key: value}
- *  - \xNN and \uNNNN hex escapes
+ * @throws {Error} If the YAML is syntactically invalid
  */
 function parseYaml(raw: string): unknown {
-  // Bug 4 fix: collapse block scalars before tokenizing
-  raw = collapseBlockScalars(raw);
-
-  const lines = raw
-    .split("\n")
-    .map((line, i) => ({ raw: line, num: i + 1 }))
-    .filter((l) => {
-      const trimmed = l.raw.trimStart();
-      return trimmed !== "" && !trimmed.startsWith("#");
-    });
-
-  // ── Quote-aware helpers ────────────────────────────────────────────────────
-
-  /**
-   * Find the index of `needle` in `s`, but ONLY when outside of single/double quotes.
-   * Returns -1 if not found outside quotes.
-   *
-   * W-5 fix: properly handles escaped quotes:
-   *   - Double-quoted: backslash-escaped quotes (\" ) don't toggle state
-   *   - Single-quoted: doubled single quotes ('')  don't toggle state
-   */
-  function indexOutsideQuotes(s: string, needle: string): number {
-    let inSingle = false;
-    let inDouble = false;
-    for (let i = 0; i <= s.length - needle.length; i++) {
-      const ch = s[i]!;
-      // W-5: Skip escaped quotes inside double-quoted strings
-      if (inDouble && ch === "\\" && i + 1 < s.length) {
-        i++; // skip the escaped character entirely
-        continue;
-      }
-      // W-5: Skip doubled single quotes ('') inside single-quoted strings
-      if (inSingle && ch === "'" && s[i + 1] === "'") {
-        i++; // skip the second quote
-        continue;
-      }
-      if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
-      if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
-      if (!inSingle && !inDouble && s.startsWith(needle, i)) return i;
-    }
-    return -1;
-  }
-
-  /** Strip a trailing inline comment that appears outside of quotes. */
-  function stripComment(s: string): string {
-    const idx = indexOutsideQuotes(s, " #");
-    return idx > 0 ? s.slice(0, idx).trim() : s.trim();
-  }
-
-  /**
-   * Remove surrounding matching single or double quotes from a string.
-   *
-   * P2-2: Full YAML 1.1 escape sequence support.
-   *
-   * Double-quoted strings process escape sequences:
-   *   \n, \t, \r, \\, \", \0, \a (bell), \b (backspace),
-   *   \e (escape), \v, \/, \  (space), \_ (NBSP)
-   *
-   * Single-quoted strings only escape '' → ' (YAML spec).
-   *
-   * Deliberately omits \xNN and \uNNNN hex escapes — ontology files
-   * don't use them, and supporting them requires a more complex parser.
-   * Unknown escape sequences in double-quoted strings are preserved
-   * as literal backslash+char (safe fallback).
-   */
-  function unquote(s: string): string {
-    if (s.length >= 2) {
-      const open = s[0];
-      const close = s[s.length - 1];
-      if (open === '"' && close === '"') {
-        // Double-quoted: process escape sequences
-        return s.slice(1, -1).replace(/\\(.)/g, (_, ch: string) => {
-          switch (ch) {
-            case 'n': return '\n';
-            case 't': return '\t';
-            case 'r': return '\r';
-            case '\\': return '\\';
-            case '"': return '"';
-            case '0': return '\0';
-            case 'a': return '\x07'; // bell
-            case 'b': return '\b';
-            case 'e': return '\x1B'; // escape
-            case 'v': return '\v';
-            case '/': return '/';
-            case ' ': return ' ';
-            case '_': return '\xA0'; // non-breaking space
-            default: return '\\' + ch; // unknown escape: preserve literal
-          }
-        });
-      }
-      if (open === "'" && close === "'") {
-        // Single-quoted: only escape is '' → ' (YAML spec)
-        return s.slice(1, -1).replace(/''/g, "'");
-      }
-    }
-    return s;
-  }
-
-  // Parse into an intermediate token stream
-  interface YamlLine {
-    indent: number;
-    key?: string;
-    value?: string;
-    isSeqItem: boolean;
-    num: number;
-  }
-
-  const tokens: YamlLine[] = lines.map((l) => {
-    const rawLine = l.raw;
-
-    // Bug 5 fix: reject tab-indented lines immediately with a clear error
-    const leadingWhitespace = rawLine.match(/^([ \t]*)/)?.[1] ?? "";
-    if (leadingWhitespace.includes("\t")) {
-      throw new Error(
-        `YAML parse error on line ${l.num}: Tab characters are not allowed in YAML indentation. ` +
-        `Replace tabs with spaces.`,
-      );
-    }
-
-    const indent = rawLine.length - rawLine.trimStart().length;
-    const trimmed = rawLine.trimStart();
-    const isSeqItem = trimmed.startsWith("- ") || trimmed === "-";
-    // W-6: Clearer sequence item content extraction
-    // Bare "-" (no value) → slice 1 to get empty string
-    // "- value" → slice 2 to skip "- " prefix
-    const content = isSeqItem ? trimmed.slice(trimmed === "-" ? 1 : 2) : trimmed;
-
-    // Detect quoted key-only: "key": or 'key':
-    const quotedKeyOnlyMatch = !isSeqItem
-      ? (content.match(/^"([^"]+)":\s*$/) ?? content.match(/^'([^']+)':\s*$/))
-      : null;
-    const isKeyOnly =
-      !quotedKeyOnlyMatch &&
-      content.endsWith(":") &&
-      !content.startsWith('"') &&
-      !content.startsWith("'");
-
-    let key: string | undefined;
-    let value: string | undefined;
-
-    if (quotedKeyOnlyMatch) {
-      key = quotedKeyOnlyMatch[1]!.trim();
-    } else if (isKeyOnly && !isSeqItem) {
-      key = unquote(content.slice(0, -1).trim());
-    } else {
-      // Bug 1 fix: use quote-aware colon search instead of naive indexOf
-      const colonIdx = indexOutsideQuotes(content, ": ");
-      if (colonIdx > 0) {
-        key = unquote(content.slice(0, colonIdx).trim());
-        // P3-R1 fix: stripComment MUST run before unquote.
-        // For `"URL: https://foo.com # tag"`:
-        //   - unquote-first: strips quotes → `URL: https://foo.com # tag`
-        //     then stripComment sees ` # tag` as unquoted → corrupts value.
-        //   - stripComment-first: the string is still quoted → ` # tag` is
-        //     inside a quote → preserved correctly → then unquote strips outer quotes.
-        const rawValue = content.slice(colonIdx + 2).trim();
-        value = unquote(stripComment(rawValue));
-      } else if (isSeqItem) {
-        // Bug 2 fix applies here too: strip comment, then unquote
-        value = unquote(stripComment(content.trim()));
-      } else {
-        key = content.trim();
-      }
-    }
-
-    return { indent, key, value, isSeqItem, num: l.num };
+  return parseYamlLib(raw, {
+    strict: true,
+    schema: "core",
+    // Reject duplicate keys — the hand-rolled parser warned, this throws
+    uniqueKeys: true,
+    // Cap string length to prevent memory exhaustion from pathological input
+    maxAliasCount: 100,
   });
-
-  // W-3: Strict decimal number pattern.
-  // Rejects hex (0x1F), octal (0o17), binary (0b101), Infinity, and whitespace-only.
-  // Only matches valid JSON-style numbers: integers and decimals with optional exponent.
-  const STRICT_NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
-
-  // W-7: Maximum recursion depth to prevent stack overflow from pathological input
-  const MAX_DEPTH = 64;
-
-  // Recursive descent builder
-  function parseValue(raw: string): unknown {
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    if (raw === "null" || raw === "~") return null;
-    // Bug 3 fix: flow sequences [a, b, c] or ["a", "b"]
-    if (raw.startsWith("[") && raw.endsWith("]")) {
-      const inner = raw.slice(1, -1).trim();
-      if (inner === "") return [];
-      // Split on commas outside of quotes, with escape-aware tracking
-      const items: string[] = [];
-      let current = "";
-      let inSingle = false;
-      let inDouble = false;
-      for (let ci = 0; ci < inner.length; ci++) {
-        const ch = inner[ci]!;
-        // W-5: Skip escaped characters inside double-quoted strings
-        if (inDouble && ch === "\\" && ci + 1 < inner.length) {
-          current += ch + inner[ci + 1]!;
-          ci++;
-          continue;
-        }
-        if (ch === "'" && !inDouble) { inSingle = !inSingle; current += ch; continue; }
-        if (ch === '"' && !inSingle) { inDouble = !inDouble; current += ch; continue; }
-        if (ch === "," && !inSingle && !inDouble) {
-          // W-2: Use unquote() for proper escape processing instead of naive regex stripping
-          items.push(unquote(current.trim()));
-          current = "";
-        } else {
-          current += ch;
-        }
-      }
-      if (current.trim()) items.push(unquote(current.trim()));
-      return items.filter((s) => s !== "");
-    }
-    // W-3: Use strict decimal regex instead of Number() which coerces hex, Infinity, etc.
-    if (STRICT_NUMBER_RE.test(raw)) return Number(raw);
-    return raw;
-  }
-
-  function buildNode(idx: number, baseIndent: number, depth: number = 0): { value: unknown; nextIdx: number } {
-    // W-7: Guard against stack overflow from pathological nesting
-    if (depth >= MAX_DEPTH) {
-      throw new Error(
-        `YAML parse error: nesting depth exceeds ${MAX_DEPTH} levels. ` +
-        `This likely indicates a malformed or adversarial ontology file.`,
-      );
-    }
-    const token = tokens[idx]!;
-
-    // Peek ahead to determine if this is a mapping or sequence parent
-    const nextToken = tokens[idx + 1];
-    const childIndent = nextToken?.indent ?? -1;
-
-    if (childIndent > baseIndent && nextToken) {
-      if (nextToken.isSeqItem) {
-        // Build sequence
-        const arr: unknown[] = [];
-        let i = idx + 1;
-        while (i < tokens.length && tokens[i]!.indent === childIndent && tokens[i]!.isSeqItem) {
-          const t = tokens[i]!;
-          if (t.value !== undefined && (tokens[i + 1]?.indent ?? -1) <= childIndent) {
-            // Scalar sequence item
-            arr.push(parseValue(t.value));
-            i++;
-          } else {
-            // Object sequence item
-            const obj: Record<string, unknown> = {};
-            if (t.key && t.value !== undefined) {
-              obj[t.key] = parseValue(t.value);
-            } else if (t.key) {
-              const result = buildNode(i, t.indent, depth + 1);
-              obj[t.key] = result.value;
-              i = result.nextIdx;
-              continue;
-            }
-            i++;
-            while (i < tokens.length && tokens[i]!.indent > childIndent) {
-              const inner = tokens[i]!;
-              if (inner.key && inner.value !== undefined) {
-                obj[inner.key] = parseValue(inner.value);
-                i++;
-              } else if (inner.key) {
-                const result = buildNode(i, inner.indent, depth + 1);
-                obj[inner.key] = result.value;
-                i = result.nextIdx;
-              } else {
-                i++;
-              }
-            }
-            arr.push(obj);
-          }
-        }
-        return { value: arr, nextIdx: i };
-      } else {
-        // Build mapping
-        const obj: Record<string, unknown> = {};
-        const seenKeys = new Set<string>();
-        let i = idx + 1;
-        while (i < tokens.length && tokens[i]!.indent === childIndent) {
-          const t = tokens[i]!;
-          if (t.key) {
-            if (seenKeys.has(t.key)) {
-              console.warn(`YAML parse warning: duplicate key "${t.key}" at line ${t.num}; last value wins.`);
-            }
-            seenKeys.add(t.key);
-          }
-          if (t.key && t.value !== undefined) {
-            obj[t.key] = parseValue(t.value);
-            i++;
-          } else if (t.key) {
-            const result = buildNode(i, t.indent, depth + 1);
-            obj[t.key] = result.value;
-            i = result.nextIdx;
-          } else {
-            i++;
-          }
-        }
-        return { value: obj, nextIdx: i };
-      }
-    }
-
-    // Leaf node — current token has a scalar value
-    if (token.value !== undefined) {
-      return { value: parseValue(token.value), nextIdx: idx + 1 };
-    }
-
-    return { value: null, nextIdx: idx + 1 };
-  }
-
-  // Build root mapping
-  const root: Record<string, unknown> = {};
-  const seenRootKeys = new Set<string>();
-  let i = 0;
-  while (i < tokens.length) {
-    const t = tokens[i]!;
-    if (t.key) {
-      if (seenRootKeys.has(t.key)) {
-        console.warn(`YAML parse warning: duplicate key "${t.key}" at line ${t.num}; last value wins.`);
-      }
-      seenRootKeys.add(t.key);
-    }
-    if (t.key && t.value !== undefined) {
-      root[t.key] = parseValue(t.value);
-      i++;
-    } else if (t.key) {
-      const result = buildNode(i, t.indent);
-      root[t.key] = result.value;
-      i = result.nextIdx;
-    } else {
-      i++;
-    }
-  }
-
-  return root;
 }
 
 // ── Type coercers ────────────────────────────────────────────────────────────
@@ -532,10 +141,17 @@ function hydrateFrontmatterField(
     });
   }
 
+  // Parse missing_severity — controls whether a missing required field is an error or warning.
+  const missingSeverityRaw = asString(r["missing_severity"]);
+  const missingSeverity: "error" | "warning" | undefined =
+    missingSeverityRaw === "warning" ? "warning" :
+    missingSeverityRaw === "error" ? "error" : undefined;
+
   return {
     description: asString(r["description"]),
     type,
     required: asBoolean(r["required"], false),
+    missing_severity: missingSeverity,
     enum: enumValues.length > 0 ? enumValues : undefined,
     targetEntityType: asString(r["target_entity_type"]) || undefined,
     default: asString(r["default"]) || undefined,
@@ -593,6 +209,10 @@ function hydrateEntityType(
     articleStructure,
     linkableTo: asStringArray(r["linkable_to"]),
     indexable: asBoolean(r["indexable"], true),
+    // 1.1: optional staleness TTL — 0 or absent means no expiry
+    freshness_ttl_days: r["freshness_ttl_days"] != null
+      ? asNumber(r["freshness_ttl_days"], 0) || undefined
+      : undefined,
   };
 }
 
@@ -690,6 +310,23 @@ function hydrateOntology(raw: unknown): {
   const issues: OntologyValidationIssue[] = [];
   const r = asRecord(raw);
 
+  // M11: Detect unknown top-level keys (catches typos like "entitiy_types").
+  // In progressive mode these are info-level; in strict mode they're warnings.
+  const KNOWN_TOP_LEVEL_KEYS = new Set([
+    "domain", "entity_types", "relationship_types", "vocabulary",
+    "budget", "compiler", "schema_mode",
+  ]);
+  for (const key of Object.keys(r)) {
+    if (!KNOWN_TOP_LEVEL_KEYS.has(key)) {
+      issues.push({
+        severity: "warning",
+        path: key,
+        message: `Unknown top-level key "${key}" in ontology.yaml — will be ignored. ` +
+          `Did you mean one of: ${[...KNOWN_TOP_LEVEL_KEYS].join(", ")}?`,
+      });
+    }
+  }
+
   // Domain
   const domain = asString(r["domain"]);
   if (!domain) {
@@ -749,8 +386,10 @@ function hydrateOntology(raw: unknown): {
   }
 
   // Vocabulary
+  // ADR-012/Fix-12: Use Object.create(null) to prevent ALL prototype pollution.
+  // This eliminates the need for any denylist — there are no prototype keys to deny.
   const vocabRaw = asRecord(r["vocabulary"]);
-  const vocabulary: Record<string, VocabularyEntry> = {};
+  const vocabulary: Record<string, VocabularyEntry> = Object.create(null) as Record<string, VocabularyEntry>;
   for (const [term, entryRaw] of Object.entries(vocabRaw)) {
     vocabulary[term.toLowerCase()] = hydrateVocabularyEntry(entryRaw);
   }
@@ -889,6 +528,11 @@ function resolveInheritance(
     const linkSet = new Set([...parent.linkableTo, ...schema.linkableTo]);
     schema.linkableTo = [...linkSet];
 
+    // 1.1: inherit freshness TTL from parent when child doesn't specify its own
+    if (schema.freshness_ttl_days === undefined && parent.freshness_ttl_days !== undefined) {
+      schema.freshness_ttl_days = parent.freshness_ttl_days;
+    }
+
     // Mark abstract types as non-indexable
     if (typeName.startsWith("_")) {
       schema.indexable = false;
@@ -1019,10 +663,11 @@ export class OntologyLoader {
         vocabulary?: Record<string, { aliases: string[]; entityType?: string; docId?: string }>;
       };
       if (sidecar.vocabulary) {
+        // ADR-012/Fix-12: SIDECAR_KEY_DENYLIST removed — vocabulary uses
+        // Object.create(null) so no prototype keys exist to pollute.
         for (const [term, entry] of Object.entries(sidecar.vocabulary)) {
           const key = term.toLowerCase();
-          // R-6: Guard against prototype pollution from tampered sidecar
-          if (!key || key === "__proto__" || key === "constructor" || key === "prototype") continue;
+          if (!key) continue;
           // Only add entries not already in ontology.yaml (user edits take precedence)
           if (!ontology.vocabulary[key]) {
             ontology.vocabulary[key] = {
@@ -1033,6 +678,7 @@ export class OntologyLoader {
           }
         }
       }
+
     } catch {
       // Sidecar doesn't exist or is malformed — this is fine (first run or manual KB)
     }
@@ -1110,6 +756,9 @@ export function serializeOntology(ontology: KBOntology): string {
       lines.push(`     description: "${yamlEscape(field.description)}"`);
       lines.push(`     type: ${field.type}`);
       lines.push(`     required: ${field.required}`);
+      if (field.missing_severity) {
+        lines.push(`     missing_severity: ${field.missing_severity}`);
+      }
       if (field.enum) {
         lines.push(`     enum:`);
         for (const v of field.enum) lines.push(`      - ${v}`);

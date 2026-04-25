@@ -382,6 +382,13 @@ export async function initYAAFTelemetry(): Promise<ReturnType<MeterProvider["get
     const tracerProv = new BasicTracerProvider({ resource, spanProcessors: processors });
     trace.setGlobalTracerProvider(tracerProv);
     _tracerProvider = tracerProv;
+
+    // ── Sprint 0a: OpenLLMetry auto-instrumentations ──────────────────────
+    // These monkey-patch @google/genai and MCP SDK at import time to emit
+    // standardized OTel spans for every LLM call — prompts, completions,
+    // token counts, streaming chunks, tool calls — with zero manual code.
+    // Uses dynamic imports so YAAF works without OpenLLMetry installed.
+    await enableOpenLLMetryInstrumentations(tracerProv);
   }
 
   // ── Logs ─────────────────────────────────────────────────────────────────
@@ -433,6 +440,62 @@ export async function initYAAFTelemetry(): Promise<ReturnType<MeterProvider["get
   });
 
   return meterProv.getMeter(YAAF_METER_NAME, YAAF_VERSION);
+}
+
+// ── OpenLLMetry auto-instrumentation ──────────────────────────────────────────
+
+/**
+ * Enable OpenLLMetry auto-instrumentations for LLM provider SDKs.
+ *
+ * Sprint 0a: Registers instrumentations from @traceloop packages that
+ * automatically patch @google/genai and MCP SDK to emit OTel spans.
+ *
+ * **What gets auto-captured (zero manual code):**
+ * - `gen_ai.chat` — every Gemini generateContent call
+ * - `gen_ai.embeddings` — every embedding call
+ * - `gen_ai.content.prompt` / `gen_ai.content.completion` — full prompt/response text
+ * - `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` — token counts
+ * - `mcp.tool_call` — every MCP tool invocation
+ *
+ * **PII control:** Set `TRACELOOP_TRACE_CONTENT=false` to disable prompt/completion
+ * capture in production. Token counts and model metadata are always captured.
+ *
+ * Uses dynamic imports so YAAF works without OpenLLMetry installed.
+ */
+async function enableOpenLLMetryInstrumentations(
+  tracerProvider: BasicTracerProvider,
+): Promise<void> {
+  // Google Generative AI (Gemini) instrumentation
+  try {
+    const { GoogleGenerativeAIInstrumentation } = await import(
+      "@traceloop/instrumentation-google-generativeai" as string
+    );
+    const geminiInstr = new (GoogleGenerativeAIInstrumentation as new () => {
+      setTracerProvider(p: BasicTracerProvider): void;
+      enable(): void;
+    })();
+    geminiInstr.setTracerProvider(tracerProvider);
+    geminiInstr.enable();
+    log.info("OpenLLMetry: Google Generative AI instrumentation enabled");
+  } catch {
+    // @traceloop/instrumentation-google-generativeai not installed — skip silently
+  }
+
+  // MCP (Model Context Protocol) instrumentation
+  try {
+    const { MCPInstrumentation } = await import(
+      "@traceloop/instrumentation-mcp" as string
+    );
+    const mcpInstr = new (MCPInstrumentation as new () => {
+      setTracerProvider(p: BasicTracerProvider): void;
+      enable(): void;
+    })();
+    mcpInstr.setTracerProvider(tracerProvider);
+    mcpInstr.enable();
+    log.info("OpenLLMetry: MCP instrumentation enabled");
+  } catch {
+    // @traceloop/instrumentation-mcp not installed — skip silently
+  }
 }
 
 /**

@@ -1,72 +1,107 @@
 ---
+summary: Asynchronously lists all saved versions of an article, ordered from newest to oldest.
 export_name: listVersions
 source_file: src/knowledge/compiler/versioning.ts
 category: function
-summary: Retrieves a chronological list of all saved versions for a specific knowledge article.
 title: listVersions
 entity_type: api
+search_terms:
+ - get article history
+ - view previous versions
+ - list article backups
+ - version control for articles
+ - how to see old article content
+ - knowledge base versioning
+ - retrieve version list
+ - article rollback history
+ - find all versions of a document
+ - versioning API
+ - document history
+ - file version history
 stub: false
-compiled_at: 2026-04-16T14:27:34.692Z
+compiled_at: 2026-04-25T00:08:42.503Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/versioning.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/versioning.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`listVersions` is a utility function within the YAAF knowledge compiler's versioning system. It retrieves a history of previously saved versions for a specific article, allowing for auditing or identifying targets for restoration. 
 
-The function scans the specified versions directory for metadata associated with the article's path and returns an array of version descriptors sorted in descending chronological order (newest first). This is part of the framework's "Phase 1A" versioning strategy, designed to prevent data loss when an LLM produces a degraded or incorrect version of a knowledge article.
+The `listVersions` function is part of the YAAF knowledge base's article versioning system. It asynchronously retrieves a list of all previously saved versions for a specific compiled article. The versions are returned as an array of [ArticleVersion](./article-version.md) objects, sorted with the most recent version first.
 
-## Signature / Constructor
+This function is essential for inspecting the history of an article, which can be used to build user interfaces for version comparison, or to identify a specific version to restore using the `rollbackToVersion` function. The versioning system is designed to prevent data loss when an LLM generates a lower-quality or degraded version of an article [Source 1].
+
+## Signature
 
 ```typescript
 export async function listVersions(
   outputPath: string,
   versionsDir: string,
-): Promise<ArticleVersion[]>
+  compiledDir: string,
+): Promise<ArticleVersion[]>;
 ```
 
 ### Parameters
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `outputPath` | `string` | The file path to the current active version of the article. |
-| `versionsDir` | `string` | The directory where historical versions and metadata are stored. |
 
-### Return Type
-The function returns a `Promise` that resolves to an array of `ArticleVersion` objects:
+| Name          | Type     | Description                                                                                                                            |
+|---------------|----------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `outputPath`  | `string` | The full path to the compiled article file whose versions are to be listed.                                                            |
+| `versionsDir` | `string` | The path to the root directory where all article versions are stored (e.g., `.versions/`).                                             |
+| `compiledDir` | `string` | The path to the root directory where all compiled articles are stored (e.g., `compiled/`). This is required for correct path resolution. |
 
-```typescript
-export interface ArticleVersion {
-  hash: string;        // SHA-256 hash of the article content
-  timestamp: number;   // Unix timestamp of when the version was created
-  wordCount: number;   // Number of words in the article
-  sizeBytes: number;   // Size of the file in bytes
-}
-```
+### Returns
+
+A `Promise` that resolves to an array of [ArticleVersion](./article-version.md) objects, ordered from newest to oldest. Each object contains metadata about a specific version, such as its hash, timestamp, and size [Source 1].
 
 ## Examples
 
-### Retrieving Article History
-This example demonstrates how to list all available versions for a specific compiled article to display a history log.
+The following example demonstrates how to list the version history for a given article and print the details to the console.
 
 ```typescript
-import { listVersions } from 'yaaf/knowledge/compiler/versioning';
+import { listVersions } from 'yaaf';
+import * as path from 'path';
 
-async function printArticleHistory(articlePath: string, versionsPath: string) {
+const KB_ROOT = '/path/to/your/knowledge-base';
+const COMPILED_DIR = path.join(KB_ROOT, 'compiled');
+const VERSIONS_DIR = path.join(KB_ROOT, '.versions');
+
+async function showArticleHistory(articleRelativePath: string) {
+  const articleFullPath = path.join(COMPILED_DIR, articleRelativePath);
+
   try {
-    const versions = await listVersions(articlePath, versionsPath);
-    
-    console.log(`History for ${articlePath}:`);
-    versions.forEach((version) => {
-      const date = new Date(version.timestamp).toLocaleString();
-      console.log(`[${date}] Hash: ${version.hash.substring(0, 8)}... (${version.sizeBytes} bytes)`);
-    });
+    const versions = await listVersions(articleFullPath, VERSIONS_DIR, COMPILED_DIR);
+
+    if (versions.length === 0) {
+      console.log(`No previous versions found for ${articleRelativePath}`);
+      return;
+    }
+
+    console.log(`Version history for ${articleRelativePath} (newest first):`);
+    for (const version of versions) {
+      const versionDate = new Date(version.timestamp).toISOString();
+      console.log(
+        `- Date: ${versionDate}\n` +
+        `  Hash: ${version.hash}\n` +
+        `  Size: ${version.sizeBytes} bytes\n` +
+        `  Words: ${version.wordCount}`
+      );
+    }
   } catch (error) {
-    console.error('Failed to retrieve versions:', error);
+    console.error(`Error listing versions for ${articleRelativePath}:`, error);
   }
 }
+
+// Example usage:
+showArticleHistory('concepts/agent.md');
 ```
 
 ## See Also
-- `writeWithVersioning`
-- `rollbackToVersion`
+
+- [ArticleVersion](./article-version.md): The type definition for the objects returned by this function.
+- `writeWithVersioning`: The function used to save new article versions.
+- `rollbackToVersion`: The function used to restore an article to a previous version.
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/versioning.ts

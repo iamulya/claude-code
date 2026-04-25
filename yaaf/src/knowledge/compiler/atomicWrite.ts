@@ -10,7 +10,7 @@
  * is harmless and ignored.
  */
 
-import { writeFile, rename, unlink } from "fs/promises";
+import { writeFile, rename, unlink, copyFile } from "fs/promises";
 
 // A1 fix: monotonic counter to guarantee unique tmp filenames within one process.
 // PID alone is insufficient when two concurrent calls target the same path —
@@ -25,6 +25,11 @@ let _atomicSeq = 0;
  * The `{pid}-{seq}` suffix guarantees a unique tmp name per call within a process.
  * Cross-process: each process uses its own PID so no collision exists.
  *
+ * M1: If rename() fails with EXDEV (cross-device link — target and tmp are on
+ * different mount points), falls back to copyFile + unlink. This is NOT atomic
+ * but is the best we can do across mount points. Windows EPERM is retried once
+ * as it often indicates a transient file lock.
+ *
  * @throws if the write or rename fails (the tmp file is cleaned up on error)
  *
  * @example
@@ -37,7 +42,25 @@ export async function atomicWriteFile(targetPath: string, content: string): Prom
   const tmpPath = `${targetPath}.${process.pid}-${seq}.tmp`;
   try {
     await writeFile(tmpPath, content, "utf-8");
-    await rename(tmpPath, targetPath);
+    try {
+      await rename(tmpPath, targetPath);
+    } catch (renameErr) {
+      const code = (renameErr as NodeJS.ErrnoException).code;
+      if (code === "EXDEV") {
+        // M1: Cross-device link — rename impossible. Fall back to copy + unlink.
+        // This is NOT fully atomic (a crash between copy and unlink leaves a .tmp),
+        // but it's the best we can do without same-device guarantees.
+        await copyFile(tmpPath, targetPath);
+        try { await unlink(tmpPath); } catch { /* best-effort cleanup */ }
+      } else if (code === "EPERM" && process.platform === "win32") {
+        // M1: Windows EPERM — often a transient file lock from antivirus or indexer.
+        // Wait briefly and retry once.
+        await new Promise((r) => setTimeout(r, 50));
+        await rename(tmpPath, targetPath);
+      } else {
+        throw renameErr;
+      }
+    }
   } catch (err) {
     // Best-effort cleanup: remove the temp file so stale .tmp files don't accumulate
     try {

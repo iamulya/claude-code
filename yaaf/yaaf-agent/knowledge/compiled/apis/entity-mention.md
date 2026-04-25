@@ -1,42 +1,60 @@
 ---
+summary: Represents a detected mention of an entity within text.
+export_name: EntityMention
+source_file: src/knowledge/ontology/index.ts
+category: type
 title: EntityMention
 entity_type: api
-summary: Type representing a detected mention of an entity within source text, used during knowledge compilation.
-export_name: EntityMention
-source_file: src/knowledge/ontology/vocabulary.ts
-category: type
+search_terms:
+ - entity recognition
+ - named entity recognition
+ - NER result
+ - text entity detection
+ - find entities in text
+ - entity normalization
+ - vocabulary matching
+ - knowledge base entity
+ - ontology vocabulary
+ - what is an entity mention
+ - alias detection
+ - text span entity
 stub: false
-compiled_at: 2026-04-16T14:28:39.057Z
+compiled_at: 2026-04-24T17:04:29.177Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/ontology/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/ontology/index.ts
+compiled_from_quality: unknown
 confidence: 0.9
 ---
 
 ## Overview
-`EntityMention` is a TypeScript type used within the YAAF knowledge subsystem to represent a detected occurrence of an entity within source text. It is a core component of the framework's ontology layer, specifically utilized during the knowledge compilation phase to identify and track where entities—such as concepts, APIs, or guides—are referenced. This type is essential for the framework's ability to perform entity linking and generate automated cross-references.
 
-## Signature / Constructor
-`EntityMention` is defined in the vocabulary module and exported via the ontology barrel.
+The `EntityMention` type is a data structure that represents a specific occurrence of an entity found within a piece of text. It is a core component of the YAAF [Ontology](../concepts/ontology.md) and knowledge subsystem, used in processes like entity normalization and [Vocabulary](../concepts/vocabulary.md) management.
+
+[when](./when.md) text is processed to link it to a structured knowledge base, `EntityMention` serves as the object that captures the details of a detected entity, such as the text that was matched and its position. This type is often used as part of a larger result set, for example, within a `NormalizationResult`.
+
+## Signature
+
+`EntityMention` is exported as a TypeScript type. The source material provides its export signature from the main ontology barrel file but does not include its detailed property definitions [Source 1].
 
 ```typescript
-export type EntityMention = {
-  // Type definition details are managed within the vocabulary module
-};
+// Exported from: src/knowledge/ontology/index.ts
+
+export type {
+  // ...
+  EntityMention,
+  // ...
+} from "./vocabulary.js";
 ```
 
 ## Examples
-`EntityMention` objects are typically encountered when working with the knowledge compiler or vocabulary normalization utilities.
 
-```typescript
-import { EntityMention } from 'yaaf/knowledge';
+No code examples are available in the provided source material.
 
-/**
- * Example usage of EntityMention in a compilation workflow.
- */
-function processMentions(mentions: EntityMention[]) {
-  mentions.forEach(mention => {
-    // Logic for processing detected entity mentions
-    console.log('Processing entity mention');
-  });
-}
-```
+## See Also
+
+- `NormalizationResult`: A type that often contains a collection of `EntityMention` objects as the output of an entity normalization process.
+- `AliasIndex`: A data structure used for mapping different textual aliases to a canonical entity, which is a key part of finding entity mentions.
+
+## Sources
+
+[Source 1]: src/knowledge/ontology/index.ts

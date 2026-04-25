@@ -1,91 +1,116 @@
 ---
-title: StaticAnalysisResult
-entity_type: api
-summary: The output of the static analysis phase, containing identified entity mentions and registry matches.
+summary: Represents the output of the static (non-LLM) analysis pass, providing initial entity mentions and token estimates.
 export_name: StaticAnalysisResult
 source_file: src/knowledge/compiler/extractor/types.ts
 category: type
+belongs_to: subsystems/knowledge-compilation-system
+title: StaticAnalysisResult
+entity_type: api
+search_terms:
+ - pre-LLM analysis
+ - static knowledge extraction
+ - token count estimation
+ - entity mention detection
+ - vocabulary scan results
+ - knowledge compiler static pass
+ - how to estimate tokens before LLM call
+ - find existing entities in text
+ - directory-based entity type
+ - registry match
+ - non-LLM analysis
+ - initial source analysis
 stub: false
-compiled_at: 2026-04-16T14:23:04.875Z
+compiled_at: 2026-04-24T17:40:29.392Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/extractor/types.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/extractor/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/extractor/types.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`StaticAnalysisResult` is a TypeScript type representing the data produced during the initial, non-LLM phase of the Concept Extractor's workflow. This analysis is performed to identify known entities through vocabulary scanning and registry lookups before any generative models are invoked.
 
-The primary purposes of this result are to provide context for subsequent LLM prompts, identify existing knowledge base articles that may need updating, and estimate token usage to manage prompt window constraints.
+`StaticAnalysisResult` is a type that represents the data collected during the initial, static analysis phase of the knowledge compilation process [Source 2]. This phase runs before any calls to a Large Language Model ([LLM](../concepts/llm.md)) are made. Its purpose is to efficiently gather context about a source document, such as identifying mentions of known entities, estimating the document's size in tokens, and inferring potential [Entity Type](../concepts/entity-type.md)s from its file path [Source 2].
 
-## Signature / Constructor
+This preliminary analysis is a cost-saving and context-building measure. The token estimate helps manage LLM prompt sizes, while the identified entity mentions and registry matches provide valuable context for the subsequent LLM-powered extraction and synthesis steps [Source 2].
+
+## Signature
+
+`StaticAnalysisResult` is a TypeScript type alias with the following structure [Source 2]:
 
 ```typescript
 export type StaticAnalysisResult = {
-  /** Known entities mentioned in the source (from vocabulary scan) */
+  /** Known entities mentioned in the source (from [[[[[[[[Vocabulary]]]]]]]] scan) */
   entityMentions: Array<{
-    canonicalTerm: string
-    entityType?: string
-    docId?: string
-    count: number
-  }>
+    canonicalTerm: string;
+    entityType?: string;
+    docId?: string;
+    count: number;
+  }>;
 
   /** Registry entries that already have compiled articles for mentioned entities */
   registryMatches: Array<{
-    docId: string
-    canonicalTitle: string
-    entityType: string
-    confidence: number  // 0-1, based on title similarity + mention count
-  }>
+    docId: string;
+    canonicalTitle: string;
+    entityType: string;
+    confidence: number; // 0-1, based on title similarity + mention count
+  }>;
 
   /**
    * Entity type hint from directory convention.
    * e.g., raw/papers/ → 'research_paper', raw/tools/ → 'tool'
    */
-  directoryHint?: string
+  directoryHint?: string;
 
   /**
    * Approximate token count of the source text.
    * Used to decide how much to truncate for the LLM prompt.
    */
-  tokenEstimate: number
-}
+  tokenEstimate: number;
+};
 ```
 
-## Methods & Properties
-
 ### Properties
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `entityMentions` | `Array<Object>` | A collection of entities identified in the source text via a vocabulary scan. Each entry includes the `canonicalTerm`, the number of occurrences (`count`), and optionally the `entityType` and `docId`. |
-| `registryMatches` | `Array<Object>` | A list of existing articles in the knowledge base registry that match the identified entities. Includes a `confidence` score (0-1) based on title similarity and mention frequency. |
-| `directoryHint` | `string` (optional) | A suggested entity type derived from the source file's directory path (e.g., files in `raw/papers/` may be hinted as `research_paper`). |
-| `tokenEstimate` | `number` | An approximation of the source text's length in tokens, used to determine if truncation is necessary for LLM processing. |
+
+*   **`entityMentions`**: An array of objects, where each object represents a known concept from the knowledge base's Vocabulary that was found in the source text. It includes the canonical name of the concept, its Entity Type, its unique document ID (`docId`) if an article for it exists, and the number of times it was mentioned (`count`) [Source 2].
+*   **`registryMatches`**: An array of existing knowledge base articles that are likely related to the source document. The match is determined by factors like title similarity and the count of shared entity mentions. Each match includes the article's `docId`, title, entity type, and a confidence score between 0 and 1 [Source 2].
+*   **`directoryHint`**: An optional string that suggests an entity type based on the source file's directory path. For example, a file in a `raw/papers/` directory might receive a hint of `'research_paper'` [Source 2].
+*   **`tokenEstimate`**: A numerical approximation of the number of tokens in the source document. This is crucial for managing [Context Window](../concepts/context-window.md) limits and costs [when](./when.md) preparing prompts for an LLM [Source 2].
 
 ## Examples
 
-### Basic Usage
-This example demonstrates a typical `StaticAnalysisResult` object generated after scanning a source file about the Transformer architecture.
+Below is an example of a `StaticAnalysisResult` object that might be generated from analyzing a source file about FlashAttention located in a `papers` directory.
 
-```typescript
-const analysis: StaticAnalysisResult = {
-  entityMentions: [
+```json
+{
+  "entityMentions": [
     {
-      canonicalTerm: "Attention Mechanism",
-      entityType: "concept",
-      docId: "concepts/attention-mechanism",
-      count: 5
+      "canonicalTerm": "Transformer",
+      "entityType": "architecture",
+      "docId": "architectures/transformer",
+      "count": 12
+    },
+    {
+      "canonicalTerm": "Attention Mechanism",
+      "entityType": "concept",
+      "docId": "concepts/attention-mechanism",
+      "count": 8
     }
   ],
-  registryMatches: [
+  "registryMatches": [
     {
-      docId: "concepts/attention-mechanism",
-      canonicalTitle: "Attention Mechanism",
-      entityType: "concept",
-      confidence: 0.95
+      "docId": "concepts/attention-mechanism",
+      "canonicalTitle": "Attention Mechanism",
+      "entityType": "concept",
+      "confidence": 0.85
     }
   ],
-  directoryHint: "research_paper",
-  tokenEstimate: 1250
-};
+  "directoryHint": "research_paper",
+  "tokenEstimate": 4520
+}
 ```
+
+## Sources
+
+[Source 1]: src/knowledge/compiler/extractor/index.ts
+[Source 2]: src/knowledge/compiler/extractor/types.ts

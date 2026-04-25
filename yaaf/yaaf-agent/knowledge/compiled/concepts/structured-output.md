@@ -1,44 +1,66 @@
 ---
-summary: A mechanism to force LLMs to return JSON matching a specific schema instead of free-text, supporting both native provider features and prompt-based fallbacks.
 title: Structured Output
 entity_type: concept
+summary: A core YAAF concept enabling agents to return schema-enforced JSON responses instead of free-text, ensuring predictable and parsable results.
+primary_files:
+ - src/agents/structuredOutput.ts
 related_subsystems:
-  - agents
+ - agents
+search_terms:
+ - JSON output from LLM
+ - schema-enforced JSON
+ - force LLM to return JSON
+ - structured data from agent
+ - YAAF JSON schema
+ - parse JSON from model response
+ - OpenAI JSON mode
+ - Anthropic tool use for JSON
+ - Gemini JSON response
+ - Ollama JSON format
+ - post-hoc JSON validation
+ - structuredAgent vs AgentRunner
+ - disable tool calling for JSON
 stub: false
-compiled_at: 2026-04-16T14:14:57.829Z
+compiled_at: 2026-04-24T18:02:57.142Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/agents/structuredOutput.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/structuredOutput.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## What It Is
-Structured Output is a core abstraction in YAAF that ensures Large Language Models (LLMs) produce machine-readable JSON data conforming to a predefined schema. This addresses the inherent unpredictability of LLM text generation, where models might otherwise return conversational prose, markdown, or malformed data structures. By enforcing a schema, YAAF allows developers to treat agent responses as type-safe objects within a production application.
+
+Structured Output is a YAAF capability that compels a large language model ([LLM](./llm.md)) to return a response formatted as JSON that conforms to a specified schema, rather than generating free-form text [Source 1]. This ensures that the agent's output is predictable, machine-readable, and can be safely parsed and validated by the application, solving the problem of unreliable or unstructured text responses from LLMs.
 
 ## How It Works in YAAF
-YAAF implements structured output through three primary mechanisms:
 
-1.  **Native Provider Integration**: YAAF leverages native features of underlying LLM providers when available:
-    *   **OpenAI**: Uses `response_format: { type: "json_schema", json_schema: { schema } }`.
-    *   **Gemini**: Uses `responseMimeType: "application/json"` and `responseSchema`.
-    *   **Anthropic**: Implements a workaround using a "fake tool" via the tool-use API to capture structured data.
-    *   **Ollama**: Uses the `format: "json"` parameter combined with schema instructions in the prompt.
+YAAF implements structured output by leveraging the native capabilities of different model providers where available, and providing fallbacks for others [Source 1].
 
-2.  **The `structuredAgent` Factory**: This function creates a specialized agent runner dedicated to returning JSON. When using `structuredAgent`, tool calling is disabled to ensure the model focuses entirely on the schema. This is functionally similar to the `output_schema` pattern found in other frameworks like ADK, but YAAF allows for more selective application.
+The framework abstracts the provider-specific implementations:
+*   **OpenAI**: Uses the `response_format` parameter with `type: "json_schema"` [Source 1].
+*   **Gemini**: Uses the `responseMimeType: "application/json"` and `responseSchema` parameters [Source 1].
+*   **Anthropic**: Employs a workaround using `tool_use`, where a "fake" tool is defined with a schema matching the desired output structure [Source 1].
+*   **Ollama**: Uses the `format: "json"` parameter and includes the schema directly in the [System Prompt](./system-prompt.md) [Source 1].
 
-3.  **Post-hoc Validation**: For agents that require both tool-calling capabilities and structured final responses, YAAF provides `parseStructuredOutput()`. This utility validates raw text against a schema and handles common LLM formatting quirks, such as:
-    *   Stripping markdown code fences (e.g., ` ```json `).
-    *   Removing leading/trailing whitespace.
-    *   Extracting the first valid JSON block `{ ... }` found within a prose response.
+For providers that lack native support, YAAF can use the `buildSchemaPromptSection()` function to generate a system prompt section that instructs the model to output JSON matching the schema [Source 1].
 
-4.  **Prompt-based Fallbacks**: For providers lacking native schema enforcement, `buildSchemaPromptSection()` generates system prompt instructions that guide the model to adhere to the required JSON structure.
+YAAF offers two primary methods for working with structured output:
+
+1.  **`structuredAgent()`**: This factory function creates a specialized agent that is configured exclusively for returning structured JSON output. To guarantee a clean JSON response, tool calling is disabled for these agents. This approach is analogous to the `output_schema` feature in some other frameworks [Source 1].
+
+2.  **`parseStructuredOutput()`**: This is a utility function for post-hoc parsing and validation. It can be applied to the raw text response from any agent, including those that use [Tools](../subsystems/tools.md). The function is designed to handle common LLM output quirks, such as stripping markdown code fences (e.g., ` ```json ... ``` `), removing whitespace, and extracting the first valid JSON object from a response that contains surrounding prose [Source 1].
+
+The key distinction is that `structuredAgent` is for dedicated, schema-only agents, while `parseStructuredOutput` provides flexibility to validate responses from more complex agents that may also use tools [Source 1].
 
 ## Configuration
-Developers can implement structured output either by defining a schema-only agent or by parsing a standard agent's response.
 
-### Schema-Only Agent
-A schema-only agent is configured with a JSON schema and a system prompt. This configuration disables tool calling to ensure clean JSON output.
+Developers can implement structured output using either a dedicated agent or post-hoc validation.
 
-```ts
+### Schema-Only Agent (No Tools)
+
+The `structuredAgent` function is used to create an agent that always returns a JSON object matching the provided schema.
+
+```typescript
 const evaluator = structuredAgent(model, {
   name: 'evaluator',
   systemPrompt: 'Evaluate the code quality. Return a structured grade.',
@@ -54,16 +76,29 @@ const evaluator = structuredAgent(model, {
 });
 
 const result = await evaluator.run('function add(a, b) { return a + b; }');
-console.log(result); // { grade: 'pass', score: 95, issues: [] }
+// result is guaranteed to be a type-safe object:
+// { grade: 'pass', score: 95, issues: [] }
 ```
+[Source 1]
 
 ### Post-hoc Validation
-For agents that use tools, developers can apply validation to the final response manually.
 
-```ts
+The `parseStructuredOutput` function can be used to validate the text output from any standard agent against a schema.
+
+```typescript
+// 'agent' is a regular agent that may or may not use tools
 const response = await agent.run('Classify this email');
+
+// classificationSchema is a standard JSON Schema object
 const parsed = parseStructuredOutput(response, classificationSchema);
+
 if (parsed.ok) {
-  console.log(parsed.data.category); // Type-safe access
+  // parsed.data is type-safe based on the schema
+  console.log(parsed.data.category);
 }
 ```
+[Source 1]
+
+## Sources
+
+[Source 1]: src/agents/structuredOutput.ts

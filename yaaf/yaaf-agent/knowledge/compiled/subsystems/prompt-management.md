@@ -1,78 +1,104 @@
 ---
-summary: A subsystem responsible for modular construction, section-based assembly, and optimization of LLM prompts.
 primary_files:
-  - src/prompt/systemPrompt.ts
+ - src/prompt/systemPrompt.ts
+ - src/constants/prompts.ts
+ - src/constants/systemPromptSections.ts
 title: Prompt Management
 entity_type: subsystem
+summary: Provides a composable, section-based system for assembling and managing LLM system prompts with support for static and dynamic content.
 exports:
-  - SystemPromptBuilder
-  - envSection
-  - rulesSection
-  - identitySection
-  - dateSection
-  - defaultPromptBuilder
-  - fromSections
+ - SystemPromptBuilder
+ - defaultPromptBuilder
+ - fromSections
+ - identitySection
+ - rulesSection
+ - envSection
+ - dateSection
+search_terms:
+ - system prompt builder
+ - how to create system prompts
+ - dynamic prompt sections
+ - static prompt sections
+ - composable prompts
+ - prompt engineering framework
+ - managing agent persona
+ - injecting context into prompts
+ - prompt caching
+ - fluent prompt API
+ - YAAF prompt assembly
+ - SystemPromptBuilder class
 stub: false
-compiled_at: 2026-04-16T14:32:08.649Z
+compiled_at: 2026-04-25T00:30:11.428Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/prompt/systemPrompt.ts
-confidence: 0.9
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/prompt/systemPrompt.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Purpose
-The Prompt Management subsystem provides a structured approach to building and maintaining complex system prompts. It replaces monolithic string concatenation with a composable, section-based architecture. This system is designed to optimize Large Language Model (LLM) performance and cost by explicitly managing prompt caching through the separation of static and dynamic content.
+
+The Prompt Management subsystem provides a structured, composable, and efficient way to assemble the [System Prompt](../concepts/system-prompt.md) for an agent. It addresses the challenge of constructing complex prompts that mix static, reusable instructions (like agent identity and rules) with dynamic, turn-specific information (like the current date or working directory). By separating these concerns, it enables better caching strategies and improves maintainability of the agent's core instructions [Source 1].
 
 ## Architecture
-The core of the subsystem is the `SystemPromptBuilder`, which acts as a fluent, section-registry-based composer. It organizes prompts into distinct logical blocks, each with specific caching behaviors and ordering.
 
-### Section Types
-The framework categorizes prompt content into two primary types to maximize the efficiency of provider-side prompt caching:
+The core of this subsystem is the [SystemPromptBuilder](../apis/system-prompt-builder.md), a fluent API for registering and assembling prompt "sections." The architecture is designed around the concept of prompt caching and is divided into two main types of content [Source 1].
 
-1.  **Static Sections**: These are computed once and cached for the lifetime of the session. They are intended for content that does not change between turns, such as the agent's identity, core rules, and tool definitions.
-2.  **Dynamic Sections**: These are recomputed on every turn. Because they change frequently (e.g., current time, memory retrieval, or changing environment variables), they prevent prompt-cache hits. The framework requires developers to provide a reason when adding dynamic sections to ensure they are used judiciously.
+1.  **Static Sections**: These are parts of the prompt that are computed once and can be cached for the lifetime of an agent session. They are inexpensive to render and include content like the agent's identity, core rules, and tool definitions.
+2.  **Dynamic Sections**: These sections are re-computed on every turn, as they contain information that may change frequently. Examples include the current working directory, the current date/time, or content from the [Memory System](./memory-system.md). Using dynamic sections prevents prompt-caching hits, so their use should be justified.
+3.  **Boundary Marker**: A special marker separates the static and dynamic sections in the final rendered prompt. This allows caching mechanisms to easily identify the stable, cross-session portion of the prompt. This mirrors the `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` constant [Source 1].
+4.  **Priority Ordering**: Sections are rendered in the order they are added by default. However, each section can be assigned an optional `order` weight to allow for precise placement, with lower numbers appearing earlier in the final prompt [Source 1].
 
-### Boundary Marker
-The subsystem utilizes a boundary marker to separate static content from dynamic content. This mirrors the `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` constant, ensuring that LLM providers can cache the prefix of the prompt (the static portion) while only processing the dynamic suffix on each turn.
+## Integration Points
 
-### Priority and Ordering
-By default, sections are rendered in the order they are inserted. However, each section can carry an optional `order` weight for precise placement, where lower values result in earlier placement in the final string.
+The primary integration point for the Prompt Management subsystem is with the [Agent Core](./agent-core.md). The final string generated by the [SystemPromptBuilder](../apis/system-prompt-builder.md) is consumed by the `Agent` class during its initialization. This can be done in two ways [Source 1]:
+
+-   **Directly**: By calling `builder.build()` and passing the resulting string to the `systemPrompt` property in the `Agent` constructor.
+-   **Lazily**: By passing a provider function (e.g., `() => builder.build()`) to the `systemPromptProvider` property. This defers the prompt construction until the agent is run, allowing for re-evaluation on each execution.
 
 ## Key APIs
-The subsystem exposes several functions and classes for prompt assembly:
 
-### SystemPromptBuilder
-The primary class for constructing prompts. It provides methods like `.addStatic()` and `.addDynamic()` to register prompt fragments.
-
-```typescript
-const builder = new SystemPromptBuilder()
-  .addStatic('identity', () => 'You are a helpful coding assistant.')
-  .addStatic('rules', () => '## Rules\n- Never make up code')
-  .addDynamic('memory', () => memoryStore.buildPrompt(), 'memory is updated per turn');
-
-const systemPrompt = await builder.build();
-```
-
-### Helper Functions
-*   **`defaultPromptBuilder(basePrompt)`**: Creates a `SystemPromptBuilder` pre-loaded with sensible defaults, including an identity section and a standard environment section.
-*   **`envSection()`**: Generates a section containing environment metadata such as the current working directory (CWD), platform, shell, OS version, and date.
-*   **`rulesSection(rules)`**: Formats an array of strings into a standardized rules/safety section.
-*   **`identitySection(prompt)`**: Wraps a persona or identity string into a dedicated section.
-*   **`dateSection()`**: A dynamic section that provides the current date and time.
-*   **`fromSections(entries)`**: A utility for quick assembly from an array of name/function pairs.
+-   **[SystemPromptBuilder](../apis/system-prompt-builder.md)**: The central class for fluently assembling a system prompt. It exposes methods like `addStatic` and `addDynamic` to register different parts of the prompt [Source 1].
+-   **[defaultPromptBuilder](../apis/default-prompt-builder.md)**: A factory function that creates a `SystemPromptBuilder` instance pre-configured with sensible defaults, including an identity section and an environment section [Source 1].
+-   **[fromSections](../apis/from-sections.md)**: A utility function to quickly create a `SystemPromptBuilder` from an array of static section names and their content [Source 1].
+-   **[identitySection](../apis/identity-section.md)**: A helper to create a static section defining the agent's persona or identity [Source 1].
+-   **[rulesSection](../apis/rules-section.md)**: A helper to create a static section containing a list of rules or safety instructions for the agent [Source 1].
+-   **[envSection](../apis/env-section.md)**: A helper to create a dynamic section that injects environment information like the current working directory, OS platform, and shell [Source 1].
+-   **[dateSection](../apis/date-section.md)**: A helper to create a dynamic section that provides the current date and time [Source 1].
 
 ## Configuration
-Prompt builders can be integrated into an agent's lifecycle through the `AgentConfig` in two ways:
 
-1.  **Static Injection**: Building the prompt once and passing the resulting string to the `systemPrompt` field.
-2.  **Lazy Provider**: Passing a function to `systemPromptProvider`, which allows the prompt to be re-evaluated at the start of each run.
+Developers configure an agent's system prompt by creating an instance of [SystemPromptBuilder](../apis/system-prompt-builder.md), adding the desired sections, and then providing the final output to the `Agent` configuration.
+
+**Example: Direct Configuration**
+This method builds the prompt once and passes the static string to the agent.
 
 ```typescript
-// As a lazy provider (re-evaluated each run):
+const builder = defaultPromptBuilder('You are a helpful coding assistant.')
+  .addStatic('rules', () => '## Rules\n- Always verify before deleting');
+
+const agent = new Agent({ systemPrompt: await builder.build() });
+```
+[Source 1]
+
+**Example: Lazy Provider Configuration**
+This method provides a function that is called each time the agent runs, allowing the prompt to be re-evaluated.
+
+```typescript
+const promptBuilder = new SystemPromptBuilder()
+  .addStatic('identity', () => 'You are a helpful assistant.')
+  .addDynamic('date', () => `Current date: ${new Date().toISOString()}`, 'Date changes per run');
+
 const agent = new Agent({
   systemPromptProvider: () => promptBuilder.build(),
-  // ...
+  // ... other config
 });
 ```
+[Source 1]
 
 ## Extension Points
-Developers can extend the prompt management system by creating custom section functions. These functions typically return a string or a section configuration that the `SystemPromptBuilder` can consume. This allows for the creation of domain-specific prompt libraries (e.g., specialized coding rules, security headers, or persona templates) that can be shared across different agents.
+
+The primary way to extend the system prompt is by adding custom sections using the [SystemPromptBuilder](../apis/system-prompt-builder.md)'s fluent API. Developers can use the `addStatic` and `addDynamic` methods to inject any custom string-generating logic into the prompt assembly pipeline. This allows for the inclusion of domain-specific instructions, context from other systems, or any other information required by the agent [Source 1].
+
+## Sources
+
+[Source 1] `src/prompt/systemPrompt.ts`

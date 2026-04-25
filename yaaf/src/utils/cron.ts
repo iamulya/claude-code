@@ -1,20 +1,108 @@
 /**
  * Cron expression parser and scheduler utilities.
  *
+ * Sprint 0a: Replaced ~171 LOC hand-rolled parser with the `croner` library.
+ *
  * Supports standard 5-field cron syntax:
  * minute hour dayOfMonth month dayOfWeek
  * 0-59 0-23 1-31 1-12 0-6 (0=Sun)
  *
- * Field values:
- * * — all values
- * N — single value
- * N-M — range
- * N-M/S — range with step
- * *\/S — every S from min
- * N,M,... — list (comma-separated)
+ * Plus `croner` extensions:
+ * - 6-field (with seconds): second minute hour dayOfMonth month dayOfWeek
+ * - Named months/days: JAN-DEC, SUN-SAT
+ * - L (last day of month), W (nearest weekday), # (nth weekday)
+ * - Timezone support via options
+ *
+ * Falls back to a minimal regex validator if `croner` is not installed.
  */
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Try to load croner; fall back to minimal validation if not installed.
+// Dynamic import with eager resolution for zero-latency at call sites.
+let _Cron: typeof import("croner").Cron | null = null;
+let _cronLoaded = false;
+
+async function loadCroner(): Promise<typeof import("croner").Cron | null> {
+  if (_cronLoaded) return _Cron;
+  _cronLoaded = true;
+  try {
+    const mod = await import("croner" as string);
+    _Cron = (mod.Cron ?? mod.default?.Cron) as typeof import("croner").Cron;
+    return _Cron;
+  } catch {
+    return null;
+  }
+}
+
+// Eagerly start loading (non-blocking)
+void loadCroner();
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Validate a 5-field cron expression.
+ * @returns true if valid, false otherwise.
+ *
+ * @example
+ * ```ts
+ * validateCron('0 9 * * 1-5') // true — 9am weekdays
+ * validateCron('61 * * * *') // false — minute out of range
+ * ```
+ */
+export function validateCron(expr: string): boolean {
+  if (_Cron) {
+    try {
+      // Cron constructor throws on invalid expressions
+      new _Cron(expr, { legacyMode: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  // Fallback: minimal 5-field regex validation
+  return /^(\S+\s+){4}\S+$/.test(expr.trim());
+}
+
+/**
+ * Compute the next fire time (epoch ms) after `fromMs` for a given cron expression.
+ * Returns `null` if no matching time is found within the next year.
+ *
+ * @example
+ * ```ts
+ * const next = nextCronRunMs('0 9 * * *', Date.now())
+ * // → epoch ms of next 9am
+ * ```
+ */
+export function nextCronRunMs(cron: string, fromMs: number): number | null {
+  if (_Cron) {
+    try {
+      const job = new _Cron(cron, { legacyMode: true });
+      const from = new Date(fromMs);
+      const next = job.nextRun(from);
+      return next ? next.getTime() : null;
+    } catch {
+      return null;
+    }
+  }
+  // Fallback: brute-force minute scan (same as previous impl)
+  return fallbackNextCronRunMs(cron, fromMs);
+}
+
+/**
+ * Human-readable description of the next fire time, or `null` if invalid.
+ *
+ * @example
+ * ```ts
+ * describeCron('0 9 * * 1-5', Date.now())
+ * // → 'Next: Mon Apr 14 2026 09:00:00'
+ * ```
+ */
+export function describeCron(cron: string, fromMs = Date.now()): string | null {
+  const nextMs = nextCronRunMs(cron, fromMs);
+  if (nextMs === null) return null;
+  return `Next: ${new Date(nextMs).toString().split(" (")[0]!}`;
+}
+
+// ── Fallback implementation (used when croner is not installed) ────────────────
 
 type CronFields = {
   minute: number[];
@@ -33,8 +121,6 @@ const FIELD_RANGES: FieldRange[] = [
   { min: 1, max: 12 }, // month
   { min: 0, max: 6 }, // dayOfWeek
 ];
-
-// ── Internal parsing ──────────────────────────────────────────────────────────
 
 function expandCronField(field: string, range: FieldRange): number[] | null {
   const { min, max } = range;
@@ -94,10 +180,12 @@ function parseCronExpression(expr: string): CronFields | null {
   };
 }
 
-function computeNextCronRun(fields: CronFields, after: Date): Date | null {
-  const d = new Date(after.getTime());
+function fallbackNextCronRunMs(cron: string, fromMs: number): number | null {
+  const fields = parseCronExpression(cron);
+  if (!fields) return null;
+  const d = new Date(fromMs);
   d.setSeconds(0, 0);
-  d.setMinutes(d.getMinutes() + 1); // strictly after
+  d.setMinutes(d.getMinutes() + 1);
 
   for (let i = 0; i < 366 * 24 * 60; i++) {
     const mo = d.getMonth() + 1;
@@ -113,58 +201,10 @@ function computeNextCronRun(fields: CronFields, after: Date): Date | null {
       fields.hour.includes(hr) &&
       fields.minute.includes(min)
     ) {
-      return d;
+      return d.getTime();
     }
 
     d.setMinutes(d.getMinutes() + 1);
   }
   return null;
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Validate a 5-field cron expression.
- * @returns true if valid, false otherwise.
- *
- * @example
- * ```ts
- * validateCron('0 9 * * 1-5') // true — 9am weekdays
- * validateCron('61 * * * *') // false — minute out of range
- * ```
- */
-export function validateCron(expr: string): boolean {
-  return parseCronExpression(expr) !== null;
-}
-
-/**
- * Compute the next fire time (epoch ms) after `fromMs` for a given cron expression.
- * Returns `null` if no matching time is found within the next year.
- *
- * @example
- * ```ts
- * const next = nextCronRunMs('0 9 * * *', Date.now())
- * // → epoch ms of next 9am
- * ```
- */
-export function nextCronRunMs(cron: string, fromMs: number): number | null {
-  const fields = parseCronExpression(cron);
-  if (!fields) return null;
-  const next = computeNextCronRun(fields, new Date(fromMs));
-  return next ? next.getTime() : null;
-}
-
-/**
- * Human-readable description of the next fire time, or `null` if invalid.
- *
- * @example
- * ```ts
- * describeCron('0 9 * * 1-5', Date.now())
- * // → 'Next: Mon Apr 14 2026 09:00:00'
- * ```
- */
-export function describeCron(cron: string, fromMs = Date.now()): string | null {
-  const nextMs = nextCronRunMs(cron, fromMs);
-  if (nextMs === null) return null;
-  return `Next: ${new Date(nextMs).toString().split(" (")[0]!}`;
 }

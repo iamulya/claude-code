@@ -59,42 +59,22 @@ Each `.enc` file contains:
 
 ## Sandbox
 
-Restrict file system access and command execution:
+Multi-layered tool execution isolation — from application-level argument scanning to kernel-enforced process restrictions.
 
 ```typescript
-import { Sandbox, projectSandbox, strictSandbox } from 'yaaf';
+import { projectSandbox, strictSandbox } from 'yaaf';
 
-const sandbox = new Sandbox({
-  timeoutMs: 15_000,
-  allowedPaths: [process.cwd(), '/tmp'],
-  blockedPaths: ['/etc', '/usr', process.env.HOME!],
-  blockNetwork: false,
+// Kernel-enforced filesystem isolation (auto-enabled)
+const sb = projectSandbox('/my/project');
+
+// Full lockdown — filesystem + network + domain allowlist
+const sb = strictSandbox('/my/project', {
+  allowedNetworkDomains: ['api.openai.com'],
+  failIfUnavailable: true,  // Refuse to run without kernel sandbox
 });
 ```
 
-### Path Checking
-
-```typescript
-sandbox.checkPath('/home/user/project/src/main.ts'); // ✓ allowed
-sandbox.checkPath('/etc/passwd');                      // ✗ blocked
-sandbox.checkPath('/usr/bin/rm');                      // ✗ blocked
-```
-
-### Convenience Factories
-
-| Factory | Allowed Paths | Network | Timeout |
-|---------|--------------|---------|---------|
-| `projectSandbox()` | CWD + `/tmp` | ✅ | 30s |
-| `strictSandbox()` | CWD only | ❌ | 10s |
-
-### Sandbox Violations
-
-```typescript
-agent.on('tool:sandbox-violation', ({ name, violationType, detail }) => {
-  // violationType: 'path', 'network', 'timeout'
-  security.alert(`${name}: ${violationType} — ${detail}`);
-});
-```
+📖 **Full documentation:** [sandbox.md](sandbox.md) — architecture, configuration reference, domain allowlisting, security model, platform support, and examples.
 
 ---
 
@@ -178,7 +158,9 @@ YAAF applies secure defaults throughout:
 | Permissions | Deny all | `.allow()` to permit |
 | Tool `isReadOnly` | `false` | Explicitly mark as read-only |
 | Tool `isDestructive` | `false` | Mark destructive tools |
-| Sandbox paths | CWD only | Add allowed paths |
-| Network | Allowed | `blockNetwork: true` |
+| Sandbox paths | Project dir only | Add allowed paths |
+| Sandbox OS isolation | Auto-enabled (graceful fallback) | `failIfUnavailable: true` for fail-closed |
+| Network | Allowed | `blockNetwork: true` or `strictSandbox()` |
+| Domain filtering | All domains allowed | `allowedNetworkDomains: [...]` |
 | Storage encryption | Machine-derived key | Set `YAAF_STORAGE_KEY` |
 | Session | Not persisted | Opt-in with `Session` |

@@ -1,64 +1,94 @@
 ---
+title: serializeFrontmatter
+entity_type: api
+summary: Serializes a frontmatter object into a YAML string block.
 export_name: serializeFrontmatter
 source_file: src/knowledge/compiler/synthesizer/frontmatter.ts
 category: function
-summary: Serializes a frontmatter object to a YAML block between delimiters.
-title: serializeFrontmatter
-entity_type: api
+search_terms:
+ - convert object to YAML
+ - YAML serialization
+ - frontmatter generation
+ - create YAML block
+ - write frontmatter to string
+ - knowledge base compiler
+ - article synthesizer
+ - format frontmatter
+ - YAML stringify
+ - "--- delimiters"
+ - markdown frontmatter
+ - object to yaml string
 stub: false
-compiled_at: 2026-04-16T14:26:20.547Z
+compiled_at: 2026-04-24T17:37:03.425Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/synthesizer/frontmatter.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/synthesizer/frontmatter.ts
+compiled_from_quality: unknown
+confidence: 0.98
 ---
 
 ## Overview
-`serializeFrontmatter` is a utility function used by the YAAF knowledge compiler to convert a JavaScript object into a YAML-formatted frontmatter block. It is primarily used during the synthesis phase to prepare compiled articles for writing to the file system.
 
-The function wraps the resulting YAML string in standard `---` delimiters. It is designed to handle common frontmatter data types including strings, numbers, booleans, arrays, null values, and shallow objects. It does not support advanced YAML features such as deeply nested objects or anchors, as these are not required for the framework's ontology schema.
+The `serialize[[[[[[[[Frontmatter]]]]]]]]` function converts a JavaScript object into a YAML string block, suitable for use as Frontmatter in a markdown file [Source 1]. It is a utility function within the YAAF [Knowledge Compiler](../subsystems/knowledge-compiler.md)'s Synthesizer subsystem, used to generate the final frontmatter for compiled knowledge base articles [Source 1].
 
-## Signature / Constructor
+This function is designed to handle simple data structures commonly found in frontmatter, including strings, numbers, booleans, arrays, null values, and simple objects. It explicitly does not support more complex YAML features like deeply nested objects or anchors, as they are not required for its intended purpose [Source 1]. The output string is automatically enclosed between `---` delimiters, making it a complete and ready-to-use frontmatter block [Source 1].
+
+## Signature
+
 ```typescript
-export function serializeFrontmatter(fields: Record<string, unknown>): string
+export function serializeFrontmatter(fields: Record<string, unknown>): string;
 ```
 
 ### Parameters
-*   `fields`: A `Record<string, unknown>` containing the key-value pairs to be serialized.
+
+-   **`fields`**: `Record<string, unknown>`
+    -   An object representing the key-value pairs of the frontmatter to be serialized.
 
 ### Returns
-A string containing the serialized YAML block enclosed in `---` delimiters.
+
+-   **`string`**
+    -   A string containing the YAML representation of the `fields` object, enclosed in `---` delimiters.
 
 ## Examples
-### Basic Usage
-This example demonstrates serializing a standard set of frontmatter fields for a knowledge base article.
+
+### Basic Serialization
+
+This example demonstrates serializing a typical frontmatter object into a YAML string.
 
 ```typescript
-import { serializeFrontmatter } from 'yaaf/knowledge/compiler/synthesizer/frontmatter';
+import { serializeFrontmatter } from 'yaaf';
 
-const metadata = {
-  title: "Agent Architecture",
+const frontmatterData = {
+  title: "My Article",
   entity_type: "concept",
-  tags: ["core", "runtime"],
-  confidence: 0.95,
-  is_stub: false
+  relevance: 95,
+  is_public: true,
+  tags: ["tag1", "tag2"],
+  author: null,
 };
 
-const frontmatterBlock = serializeFrontmatter(metadata);
+const yamlBlock = serializeFrontmatter(frontmatterData);
 
+console.log(yamlBlock);
 /*
-Output:
+Outputs:
 ---
-title: Agent Architecture
-entity_type: concept
+title: "My Article"
+entity_type: "concept"
+relevance: 95
+is_public: true
 tags:
-  - core
-  - runtime
-confidence: 0.95
-is_stub: false
+  - "tag1"
+  - "tag2"
+author: null
 ---
 */
 ```
 
 ## See Also
-*   `validateFrontmatter`
-*   `buildCompleteFrontmatter`
+
+-   `validateFrontmatter`: A related function for validating frontmatter against an [Ontology](../concepts/ontology.md) schema.
+-   `buildCompleteFrontmatter`: A function that merges [LLM](../concepts/llm.md)-generated, suggested, and compiler-injected data to create the final frontmatter object before serialization.
+
+## Sources
+
+[Source 1] src/knowledge/compiler/synthesizer/frontmatter.ts

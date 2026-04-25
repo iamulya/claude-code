@@ -34,6 +34,7 @@ import { withRetry } from "../retry.js";
 import type { KBOntology, ConceptRegistry } from "../../ontology/index.js";
 import { buildAliasIndex, scanForEntityMentions } from "../../ontology/index.js";
 import type { IngestedContent } from "../ingester/index.js";
+import type { SourceTrustLevel } from "../ingester/types.js";
 import { estimateTokens } from "../../../utils/tokens.js";
 import type {
   CompilationPlan,
@@ -43,6 +44,100 @@ import type {
   ArticleAction,
 } from "./types.js";
 import { buildExtractionSystemPrompt, buildExtractionUserPrompt } from "./prompt.js";
+
+// ── Source trust inference ───────────────────────────────────────────────────
+
+/**
+ * C4/A1: Ordered trust levels from highest to lowest.
+ * Used so that when merging multiple sources, the lowest trust wins.
+ */
+const TRUST_ORDER: SourceTrustLevel[] = ["academic", "documentation", "unknown", "web"];
+
+/**
+ * Infer the trust level of a source from its MIME type, file path, and URL.
+ *
+ * ADR-012/Fix-3: source_trust frontmatter is IGNORED. An attacker who writes
+ * their own source file controls the frontmatter — trusting their self-reported
+ * trust level is a classic confused-deputy. Trust is now inferred from
+ * system-controlled properties only:
+ *
+ * Priority (highest → lowest):
+ * 1. sourceUrl present (internet-fetched content) → web
+ * 2. File is in a known web-clip directory → web
+ *    (catches PDFs in web-clips/, articles/, blogs/, news/)
+ * 3. File is in a known academic directory → academic
+ *    (papers/, arxiv/, research/, preprints/, publications/)
+ * 4. MIME type = application/pdf but NOT in a web dir → academic
+ *    (general heuristic: most standalone PDFs are academic/formal)
+ * 5. File is in a documentation directory → documentation
+ * 6. MIME type = text/html with no URL → web
+ * 7. Everything else → unknown
+ *
+ * N3 fix: directory check fires BEFORE mimeType check so that a PDF
+ * in web-clips/ is classified 'web', not 'academic'.
+ */
+function inferSourceTrust(content: IngestedContent): SourceTrustLevel {
+
+  // 2. URL-clipped web content is always 'web'
+  if (content.sourceUrl?.startsWith("http")) {
+    return "web";
+  }
+
+  const pathLower = content.sourceFile.replace(/\\/g, "/").toLowerCase();
+  const parts = pathLower.split("/");
+
+  // 3. N3 fix: web-clip directories override mimeType.
+  // A PDF saved in web-clips/ came from the internet — not a formal publication.
+  const isWebDir = parts.some((p) =>
+    ["web-clips", "web_clips", "clips", "articles", "blogs", "blog", "news", "feeds"].includes(p),
+  );
+  if (isWebDir) {
+    return "web";
+  }
+
+  // 4. Academic directory → 'academic' (even for non-PDF files)
+  const isAcademicDir = parts.some((p) =>
+    ["papers", "paper", "research", "arxiv", "preprints", "publications"].includes(p),
+  );
+  if (isAcademicDir) {
+    return "academic";
+  }
+
+  // 5. PDF not in a web directory → assume academic/formal publication
+  if (content.mimeType === "application/pdf") {
+    return "academic";
+  }
+
+  // 6. Documentation directories → 'documentation'
+  const isDocsDir = parts.some((p) =>
+    ["docs", "doc", "documentation", "spec", "specs", "rfc", "standards"].includes(p),
+  );
+  if (isDocsDir) {
+    return "documentation";
+  }
+
+  // 7. HTML with no URL (saved offline) → treat as web-origin
+  if (content.mimeType === "text/html") {
+    return "web";
+  }
+
+  return "unknown";
+}
+
+
+/**
+ * When multiple sources contribute to one article, pick the lowest-trust
+ * level (conservative / worst-case) so provenance isn't falsely elevated.
+ *
+ * Trust order (highest → lowest): academic → documentation → unknown → web
+ */
+function mergeTrust(a: SourceTrustLevel, b: SourceTrustLevel): SourceTrustLevel {
+  const ai = TRUST_ORDER.indexOf(a);
+  const bi = TRUST_ORDER.indexOf(b);
+  // Higher index = lower trust. Return the one with the higher index.
+  return ai > bi ? a : b;
+}
+
 
 // ── Directory → entity type conventions ──────────────────────────────────────
 
@@ -130,6 +225,7 @@ function extractJsonFromLlmResponse(raw: string): string {
   // e.g., {"code": "function foo() { return {} }"} would break
   let depth = 0;
   let inString = false;
+  let inSingleString = false; // 5.4: track single-quoted strings (non-spec but common in LLM output)
   let escape = false;
   let end = -1;
 
@@ -142,19 +238,25 @@ function extractJsonFromLlmResponse(raw: string): string {
       continue;
     }
 
-    if (ch === "\\" && inString) {
+    if (ch === "\\" && (inString || inSingleString)) {
       escape = true;
       continue;
     }
 
-    // Toggle string context on unescaped quotes
-    if (ch === '"') {
+    // Toggle double-quote string context
+    if (ch === '"' && !inSingleString) {
       inString = !inString;
       continue;
     }
 
+    // 5.4: Toggle single-quote string context (only when not inside a double-quoted string)
+    if (ch === "'" && !inString) {
+      inSingleString = !inSingleString;
+      continue;
+    }
+
     // Only count braces outside of strings
-    if (inString) continue;
+    if (inString || inSingleString) continue;
 
     if (ch === "{") depth++;
     else if (ch === "}") {
@@ -196,19 +298,29 @@ interface RawArticlePlan {
 
 interface RawExtractionResponse {
   articles?: RawArticlePlan[];
+  /** ADR-009: LLM-classified source trust level (overrides directory heuristic) */
+  sourceTrustClassification?: string;
 }
 
 /**
  * Parse and validate the raw LLM JSON response into typed ArticlePlans.
  * Extremely defensive — the LLM can produce invalid JSON, missing fields,
  * wrong entity types. We validate and fill defaults rather than throw.
+ *
+ * 1.2 fix: returns proposed entity types alongside plans so the compiler
+ * can surface them as structured warnings rather than losing them to stderr.
  */
 function parseExtractionResponse(
   raw: string,
   ontology: KBOntology,
   sourcePath: string,
   registry: ConceptRegistry,
-): ArticlePlan[] {
+): {
+  plans: ArticlePlan[];
+  proposed: Array<{ entityType: string; title: string }>;
+  /** ADR-009: LLM-classified trust level, if the model provided one */
+  llmTrustClassification?: SourceTrustLevel;
+} {
   // Robustly extract JSON from the LLM response.
   // LLMs may wrap JSON in markdown fences, add preamble prose, or include trailing text.
   const cleaned = extractJsonFromLlmResponse(raw);
@@ -234,7 +346,10 @@ function parseExtractionResponse(
   const validEntityTypes = new Set(Object.keys(ontology.entityTypes));
   const validRegistryDocIds = new Set(Array.from(registry.keys()));
 
-  return parsed.articles
+  // 1.2: collect unknown entity types for structured surfacing
+  const proposed: Array<{ entityType: string; title: string }> = [];
+
+  const plans = parsed.articles
     .filter((a): a is RawArticlePlan => !!a && typeof a === "object")
     .map((raw): ArticlePlan | null => {
       const title = typeof raw.canonicalTitle === "string" ? raw.canonicalTitle.trim() : "";
@@ -243,7 +358,14 @@ function parseExtractionResponse(
       // Validate and fall back entity type
       let entityType = typeof raw.entityType === "string" ? raw.entityType.trim() : "";
       if (!validEntityTypes.has(entityType)) {
-        entityType = Object.keys(ontology.entityTypes)[0]!; // Fall back to first entity type
+        const fallback = Object.keys(ontology.entityTypes)[0]!;
+        // 1.2 fix: collect for structured surfacing instead of only console.warn
+        proposed.push({ entityType: entityType || "(empty)", title });
+        console.warn(
+          `[extractor] Unknown entity type "${entityType}" for "${title}" — ` +
+          `falling back to "${fallback}". Add it to ontology.yaml to fix.`,
+        );
+        entityType = fallback;
       }
 
       const action: ArticleAction =
@@ -251,11 +373,13 @@ function parseExtractionResponse(
           ? raw.action
           : "create";
 
-      // DocId: use LLM suggestion if it looks valid, else generate deterministically
-      const suggestedDocId =
-        typeof raw.docIdSuggestion === "string" && /^[a-z][a-z0-9-/]+$/.test(raw.docIdSuggestion)
-          ? raw.docIdSuggestion
-          : generateDocId(title, entityType);
+      // DocId: ALWAYS generate deterministically from the canonical title.
+      // NEVER trust the LLM's docIdSuggestion — it produces inconsistent slugs
+      // (e.g., "apis/agentrunner" without hyphen insertion) while generateDocId()
+      // correctly produces "apis/agent-runner". Using both paths created 373+
+      // duplicate article pairs in the KB. generateDocId() is the single source
+      // of truth for slug generation.
+      const suggestedDocId = generateDocId(title, entityType);
 
       // Validate existing docId for updates
       const existingDocId =
@@ -277,7 +401,16 @@ function parseExtractionResponse(
           name: (c.name ?? "").trim(),
           entityType: validEntityTypes.has(c.entityType ?? "")
             ? c.entityType!
-            : Object.keys(ontology.entityTypes)[0]!,
+            : (() => {
+                const fb = Object.keys(ontology.entityTypes)[0]!;
+                const cname = (c.name ?? "").trim();
+                // 1.2: also collect candidate-concept unknown types
+                proposed.push({ entityType: c.entityType || "(empty)", title: `(candidate) ${cname}` });
+                console.warn(
+                  `[extractor] Candidate "${cname}" has unknown entity type "${c.entityType}" — falling back to "${fb}".`,
+                );
+                return fb;
+              })(),
           description: typeof c.description === "string" ? c.description.trim() : "",
           mentionCount: typeof c.mentionCount === "number" ? c.mentionCount : 1,
         }));
@@ -303,9 +436,20 @@ function parseExtractionResponse(
         skipReason:
           action === "skip" && typeof raw.skipReason === "string" ? raw.skipReason : undefined,
         confidence,
+        // sourceTrust is set by buildPlan() after we know the IngestedContent
+        sourceTrust: "unknown",
       };
     })
     .filter((p): p is ArticlePlan => p !== null);
+
+  // ADR-009: Extract and validate LLM trust classification
+  const VALID_TRUST: SourceTrustLevel[] = ["academic", "documentation", "web", "unknown"];
+  const llmTrustRaw = (parsed as RawExtractionResponse).sourceTrustClassification;
+  const llmTrustClassification = VALID_TRUST.includes(llmTrustRaw as SourceTrustLevel)
+    ? (llmTrustRaw as SourceTrustLevel)
+    : undefined;
+
+  return { plans, proposed, llmTrustClassification };
 }
 
 // ── ConceptExtractor class ────────────────────────────────────────────────────
@@ -351,6 +495,8 @@ export class ConceptExtractor {
   async buildPlan(contents: IngestedContent[]): Promise<CompilationPlan> {
     const allArticlePlans: ArticlePlan[] = [];
     const skipped: CompilationPlan["skipped"] = [];
+    // 1.2: accumulate proposed types across all source batches
+    const proposedAccumulator = new Map<string, { count: number; examples: string[] }>();
 
     // R4: Correct bounded concurrency via coroutine-worker pattern.
     // The previous Promise.race pool always removed inFlight[0] regardless of
@@ -358,7 +504,7 @@ export class ConceptExtractor {
     // source files at other indices (up to CONCURRENCY-1 files per run).
     const EXTRACT_CONCURRENCY = 3;
     let nextIdx = 0;
-    const allResults: Array<{ idx: number; result: PromiseSettledResult<ArticlePlan[]> }> =
+    const allResults: Array<{ idx: number; result: PromiseSettledResult<{ plans: ArticlePlan[]; proposed: Array<{ entityType: string; title: string }> }> }> =
       new Array(contents.length);
 
     const runWorker = async (): Promise<void> => {
@@ -366,8 +512,8 @@ export class ConceptExtractor {
         const idx = nextIdx++;
         const content = contents[idx]!;
         try {
-          const plans = await this.extractFromContent(content);
-          allResults[idx] = { idx, result: { status: "fulfilled", value: plans } };
+          const result = await this.extractFromContent(content);
+          allResults[idx] = { idx, result: { status: "fulfilled", value: result } };
         } catch (e) {
           allResults[idx] = { idx, result: { status: "rejected", reason: e } };
         }
@@ -394,7 +540,18 @@ export class ConceptExtractor {
         continue;
       }
 
-      const plans = entry.result.value;
+      const { plans, proposed } = entry.result.value;
+
+      // Accumulate proposed entity types
+      for (const { entityType, title } of proposed) {
+        const existing = proposedAccumulator.get(entityType);
+        if (existing) {
+          existing.count++;
+          if (existing.examples.length < 3) existing.examples.push(title);
+        } else {
+          proposedAccumulator.set(entityType, { count: 1, examples: [title] });
+        }
+      }
 
       // Separate skipped plans from actionable ones
       for (const plan of plans) {
@@ -412,11 +569,17 @@ export class ConceptExtractor {
     // Group plans targeting the same docId (multi-source synthesis)
     const merged = this.mergeByDocId(allArticlePlans);
 
+    // Convert accumulator to typed array
+    const proposedEntityTypes: CompilationPlan["proposedEntityTypes"] = Array.from(
+      proposedAccumulator.entries(),
+    ).map(([entityType, { count, examples }]) => ({ entityType, count, examples }));
+
     return {
       sourceCount: contents.length,
       articles: merged,
       skipped,
       blockedByMissingDeps: [],
+      proposedEntityTypes,
       createdAt: Date.now(),
     };
   }
@@ -426,7 +589,9 @@ export class ConceptExtractor {
   /**
    * Run the two-pass extraction for a single source file.
    */
-  private async extractFromContent(content: IngestedContent): Promise<ArticlePlan[]> {
+  private async extractFromContent(
+    content: IngestedContent,
+  ): Promise<{ plans: ArticlePlan[]; proposed: Array<{ entityType: string; title: string }> }> {
     // Pass 1: Static analysis (instant, no LLM)
     const staticResult = this.staticAnalyze(content);
 
@@ -444,14 +609,34 @@ export class ConceptExtractor {
     });
 
     // Pass 3: Parse + validate + post-process
-    const plans = parseExtractionResponse(
+    const { plans, proposed, llmTrustClassification } = parseExtractionResponse(
       rawResponse,
       this.ontology,
       content.sourceFile,
       this.registry,
     );
 
-    return plans;
+    // C4/A1: Infer trust from system-controlled source properties.
+    // ADR-012/Fix-3: LLM classification is DOWNGRADE-ONLY. It can reduce trust
+    // (e.g., from "academic" to "web") but never elevate it. This prevents a
+    // compromised or confused LLM from upgrading a web source to academic trust.
+    const heuristicTrust = inferSourceTrust(content);
+    const trust = llmTrustClassification
+      ? mergeTrust(heuristicTrust, llmTrustClassification) // mergeTrust picks lowest trust
+      : heuristicTrust;
+
+    if (llmTrustClassification && llmTrustClassification !== heuristicTrust) {
+      console.warn(
+        `[extractor] LLM trust adjustment: "${content.sourceFile}" — ` +
+        `heuristic=${heuristicTrust}, LLM=${llmTrustClassification}, final=${trust} (downgrade-only)`,
+      );
+    }
+
+    for (const plan of plans) {
+      plan.sourceTrust = trust;
+    }
+
+    return { plans, proposed };
   }
 
   /**
@@ -530,6 +715,9 @@ export class ConceptExtractor {
 
       // Merge sources
       existing.sourcePaths.push(...plan.sourcePaths);
+
+      // C4/A1: Merge trust conservatively (lowest trust from any source wins)
+      existing.sourceTrust = mergeTrust(existing.sourceTrust, plan.sourceTrust);
 
       // Take the higher-confidence classification
       if (plan.confidence > existing.confidence) {

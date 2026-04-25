@@ -1,73 +1,44 @@
 ---
+title: CLI
+summary: Provides command-line interface tools for interacting with YAAF projects and agents.
 primary_files:
-  - src/cli/add.ts
-  - src/cli/context.ts
-  - src/cli/dev.ts
-title: CLI Subsystem
+ - src/cli/context.ts
 entity_type: subsystem
-summary: Provides a suite of command-line tools for scaffolding, inspecting, and interacting with YAAF agents during development.
 exports:
-  - addComponent
-  - contextList
-  - runDev
+ - contextList
+search_terms:
+ - command line interface
+ - yaaf cli
+ - how to inspect system prompt
+ - view agent context
+ - debug system prompt
+ - list context sources
+ - yaaf context list command
+ - developer tooling
+ - project inspection
+ - cli tools
 stub: false
-compiled_at: 2026-04-16T14:16:10.459Z
+compiled_at: 2026-04-24T18:10:17.384Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/add.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/context.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/dev.ts
-confidence: 0.95
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/cli/context.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Purpose
-The CLI Subsystem serves as the primary developer interface for the YAAF framework. It facilitates the lifecycle of agent development by providing tools for project scaffolding, runtime inspection of context, and an interactive environment for testing agent behavior. It is designed to streamline the transition from agent definition to production-ready deployment by offering local debugging and generation utilities.
+
+The Command-Line Interface (CLI) subsystem provides developers with [Tools](./tools.md) to interact with and inspect YAAF projects from the command line [Source 1]. Its primary purpose is to offer [Utilities](./utilities.md) that aid in development and debugging. One of its key functions is to allow developers to see the fully assembled [System Prompt](../concepts/system-prompt.md) that would be used by an agent at runtime, by scanning the project for all configured [Context Sources](../concepts/context-sources.md) [Source 1].
 
 ## Architecture
-The subsystem is structured as a collection of modular command handlers, each responsible for a specific developer workflow:
 
-- **Scaffolding Module (`add.ts`)**: Manages the creation of new framework entities. It uses templates to generate boilerplate code for tools and skills, ensuring they follow the framework's expected directory structure and type signatures.
-- **Context Inspection Module (`context.ts`)**: Provides a diagnostic view of the agent's state. It scans the project directory for context sources and simulates the assembly process to show the final system prompt that would be delivered to a Language Model (LLM).
-- **Development Runtime (`dev.ts`)**: Implements an interactive Read-Eval-Print Loop (REPL). This module integrates with the agent's runtime to allow developers to chat with their agents in a terminal environment.
+The CLI is structured into modules, with specific commands implemented in their own files. For example, the logic for the `context list` command is contained within `src/cli/context.ts` [Source 1]. This module utilizes Node.js built-in modules such as `path` for resolving file paths and `fs` for reading the file system (e.g., `existsSync`, `readFileSync`, `readdirSync`) [Source 1]. This indicates that the CLI operates by directly interacting with the project's file structure to gather information.
 
 ## Key APIs
-The CLI Subsystem exposes several primary functions that correspond to terminal commands:
 
-### `addComponent(args: string[])`
-Scaffolds new components into the project. It supports two primary sub-commands:
-- `yaaf add tool <name>`: Generates a new TypeScript file containing a `buildTool` definition.
-- `yaaf add skill <name>`: Generates a new `SKILL.md` file for agent behavior definition.
+The primary functions in this subsystem correspond to the commands available to the user.
 
-### `contextList()`
-Scans the project for all active context sources and displays the assembled system prompt. This is used to verify that dynamic context injection is functioning as expected before running the agent.
+- **`contextList()`**: Implements the `yaaf context list` command. This function scans the project, identifies all context sources, and displays the aggregated content that would be injected into the agent's system prompt [Source 1].
 
-### `runDev(args: string[])`
-Starts an interactive session. While in the REPL, developers can use specialized slash-commands to inspect the agent's state:
-- `/quit`: Terminate the session.
-- `/clear`: Reset the current conversation history.
-- `/context`: Display the current system prompt.
-- `/tools`: List all tools currently registered with the agent.
-- `/cost`: Show the accumulated token usage for the session.
+## Sources
 
-## Extension Points
-The CLI Subsystem interacts with the framework's core utilities to generate code. For example, when adding a tool, it utilizes the framework's internal scaffolding logic to produce a standard template:
-
-```typescript
-export const ${camelName}Tool = buildTool({
-  name: '${name}',
-  description: '[Describe when the LLM should use this tool]',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: '[Describe the input]',
-      },
-    },
-    required: ['query'],
-  },
-  execute: async (input) => {
-    // Implement your tool logic here
-    return `${name} result for: ${input.query}`;
-  },
-});
-```
+[Source 1]: src/cli/context.ts

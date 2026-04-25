@@ -1,100 +1,105 @@
 ---
-summary: Factory function to initialize a new AgentThread with a user message.
+summary: Initializes a new `AgentThread` with a starting user message and optional metadata.
 export_name: createThread
-source_file: src/thread.ts
+source_file: src/agents/thread.ts
 category: function
 title: createThread
 entity_type: api
+search_terms:
+ - start new agent conversation
+ - initialize agent thread
+ - new user message
+ - agent conversation state
+ - create AgentThread
+ - begin agent execution
+ - how to start an agent
+ - thread factory
+ - conversation starter
+ - add metadata to thread
 stub: false
-compiled_at: 2026-04-16T14:08:11.319Z
+compiled_at: 2026-04-25T00:06:02.201Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/human-in-the-loop.md
-confidence: 0.98
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/agents/thread.ts
+compiled_from_quality: unknown
+confidence: 1
 ---
 
 ## Overview
-`createThread` is a factory function used to initialize a new `AgentThread` object. In the YAAF architecture, a thread serves as the single source of truth for an agent's state, capturing the complete conversation history and execution status. 
 
-This function is typically the entry point for starting a new interaction with an agent. The resulting thread object is a plain JSON structure that can be passed to agent execution methods like `agent.step()` or `agent.runThread()`.
+The `createThread` function is the standard entry point for initiating a new agent conversation. It constructs a new `AgentThread` object, which represents the complete, serializable state of an agent's execution flow [Source 1].
 
-## Signature / Constructor
+This function takes an initial user message as its primary argument, which becomes the first message in the thread's history. It also allows for attaching arbitrary, user-defined metadata to the thread for tracking application-specific information, such as user IDs or session identifiers [Source 1].
+
+The `AgentThread` object returned by this function is designed to be passed to an [Agent](./agent.md)'s `step` or `run` method to begin processing [Source 1].
+
+## Signature
 
 ```typescript
-function createThread(
-  message: string, 
+export function createThread(
+  userMessage: string, 
   metadata?: Record<string, unknown>
 ): AgentThread;
 ```
 
 ### Parameters
-*   **message**: The initial prompt or instruction from the user that starts the conversation.
-*   **metadata**: (Optional) An object containing arbitrary key-value pairs to be stored with the thread.
 
-### Return Type
-The function returns an `AgentThread` object with the following structure:
+| Name          | Type                        | Description                                                                                             |
+|---------------|-----------------------------|---------------------------------------------------------------------------------------------------------|
+| `userMessage` | `string`                    | The initial message from the user that starts the conversation. This is added as the first `user` role message in the thread's history. |
+| `metadata`    | `Record<string, unknown>` (optional) | A key-value object for storing arbitrary application-specific data associated with the thread. |
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `string` | A unique identifier for the thread. |
-| `createdAt` | `string` | ISO timestamp of creation. |
-| `updatedAt` | `string` | ISO timestamp of the last update. |
-| `step` | `number` | The current execution turn (starts at 0). |
-| `messages` | `ChatMessage[]` | The conversation history, initialized with the user message. |
-| `done` | `boolean` | Indicates if the agent has reached a final response. |
-| `finalResponse` | `string` (optional) | The final text output from the agent. |
-| `suspended` | `SuspendReason` (optional) | Details if the agent is waiting for human input or async results. |
-| `metadata` | `Record<string, unknown>` (optional) | User-defined metadata. |
+### Returns
+
+`AgentThread`: A new `AgentThread` object, ready for use with an [Agent](./agent.md). It includes a unique ID, timestamps, the initial user message, and any provided metadata [Source 1].
 
 ## Examples
 
-### Basic Initialization
-Creating a thread and passing it to an agent for immediate execution.
+### Basic Usage
 
-```typescript
-import { createThread, agent } from 'yaaf';
-
-// Initialize the thread
-const thread = createThread('Summarize the latest financial report');
-
-// Execute the thread to completion
-const { response } = await agent.runThread(thread);
-console.log(response);
-```
-
-### Initialization with Metadata
-Attaching context-specific data to a thread for later retrieval or filtering.
+Creating a new thread with only a user message.
 
 ```typescript
 import { createThread } from 'yaaf';
 
-const thread = createThread('Deploy version 1.2.3', {
-  userId: 'user_882',
-  environment: 'production',
-  priority: 'high'
-});
+const userQuery = "What's the weather like in San Francisco?";
+const thread = createThread(userQuery);
 
-console.log(thread.metadata.environment); // 'production'
+console.log(thread.id);         // e.g., 'a1b2c3d4-...'
+console.log(thread.step);       // 0
+console.log(thread.messages);   // [{ role: 'user', content: "What's the weather..." }]
+console.log(thread.done);       // false
 ```
 
-### Manual Step Loop
-Using `createThread` in a manual execution loop to handle intermediate states.
+### With Metadata
+
+Creating a new thread and attaching application-specific metadata.
 
 ```typescript
-import { createThread, agent } from 'yaaf';
+import { createThread } from 'yaaf';
 
-let thread = createThread('Analyze this dataset');
-let result = await agent.step(thread);
+const userQuery = "Can you summarize my last meeting?";
+const thread = createThread(userQuery, {
+  userId: "user-12345",
+  sessionId: "session-abcde",
+  requestSource: "mobile-app"
+});
 
-while (!result.done && !result.suspended) {
-  result = await agent.step(result.thread);
-}
-
-if (result.done) {
-  console.log('Result:', result.thread.finalResponse);
-}
+console.log(thread.metadata);
+// {
+//   userId: "user-12345",
+//   sessionId: "session-abcde",
+//   requestSource: "mobile-app"
+// }
 ```
 
 ## See Also
-* `forkThread`: Clone an existing thread to create a new execution branch.
-* `serializeThread`: Convert a thread to a JSON string for persistence.
-* `deserializeThread`: Restore a thread object from a JSON string.
+
+- [Agent](./agent.md): The primary class that consumes and processes `AgentThread` objects.
+- `AgentThread`: The type definition for the serializable state of an agent conversation.
+- `forkThread`: A function to create a new thread by branching an existing one.
+- `serializeThread`: A function to convert a thread object into a JSON string for storage.
+- `deserializeThread`: A function to safely parse a JSON string back into a thread object.
+
+## Sources
+
+[Source 1]: src/agents/thread.ts

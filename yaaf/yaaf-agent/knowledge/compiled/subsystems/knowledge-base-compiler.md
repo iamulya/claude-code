@@ -1,96 +1,94 @@
 ---
+summary: The subsystem responsible for processing raw source files, extracting entities, and building the structured knowledge base for YAAF agents.
+primary_files:
+ - src/knowledge/compiler/schemas.ts
+ - src/knowledge/compiler/ingester/ingestCache.ts
+ - src/knowledge/compiler/lock.ts
 title: Knowledge Base Compiler
 entity_type: subsystem
-summary: The subsystem responsible for processing, linting, and analyzing the YAAF knowledge base, including LLM-powered discovery of structural gaps.
-primary_files:
-  - src/knowledge/compiler/discovery.ts
-  - src/knowledge/compiler/linter/checks.ts
-  - src/knowledge/compiler/linter/linter.ts
-  - src/knowledge/compiler/linter/types.ts
 exports:
-  - KBLinter
-  - discoverGaps
-  - buildLinkGraph
+ - CompileLock
+ - ExtractionPlanSchema
+ - GroundingVerdictSchema
+ - ArticleFrontmatterSchema
+ - SynthesisArticleSchema
+search_terms:
+ - KB compilation process
+ - how to build a knowledge base
+ - YAAF knowledge ingestion
+ - LLM data extraction pipeline
+ - Zod schema validation for LLM output
+ - incremental knowledge base builds
+ - compilation cache
+ - preventing concurrent compilation
+ - compile lock file
+ - knowledge base schemas
+ - data validation in agents
+ - parsing LLM responses
+ - atomic file locking
 stub: false
-compiled_at: 2026-04-16T14:22:33.216Z
+compiled_at: 2026-04-24T18:14:22.289Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/discovery.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/checks.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/linter.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/compiler/linter/types.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/ingester/ingestCache.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/lock.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/compiler/schemas.ts
+compiled_from_quality: unknown
 confidence: 0.95
 ---
 
 ## Purpose
-The Knowledge Base Compiler subsystem ensures the structural integrity, factual consistency, and navigational connectivity of the YAAF knowledge base. It provides a "self-healing" pipeline that validates compiled articles against the system ontology, identifies missing or weak connections between concepts, and automatically repairs common formatting or linking errors.
 
-The subsystem serves two primary functions:
-1.  **Static Validation:** Deterministic checks for syntax, required metadata, and link integrity.
-2.  **Discovery:** LLM-powered analysis to identify conceptual gaps and suggest new content based on the existing knowledge graph.
+The Knowledge Base (KB) Compiler is a core subsystem in YAAF responsible for the offline transformation of unstructured or semi-structured source materials into a validated, structured knowledge base that agents can use at runtime. Its primary function is to manage the entire data processing pipeline, from initial ingestion of raw files to the final generation of structured articles. This includes ensuring data integrity through rigorous [Schema Validation](../concepts/schema-validation.md), optimizing performance for large knowledge bases via incremental caching, and guaranteeing safe execution in multi-process environments through a robust locking mechanism.
 
 ## Architecture
-The subsystem is organized into an orchestration layer, a suite of deterministic linting rules, and an asynchronous discovery engine.
 
-### KBLinter (Orchestrator)
-The `KBLinter` class acts as the central coordinator. It scans the compiled knowledge base directory, executes all registered linting checks in parallel, and aggregates the results into a structured `LintReport`. It also manages the application of auto-fixes for resolvable issues.
+The KB Compiler is composed of several key components that work together to create a reliable and efficient pipeline.
 
-### Static Check Engine
-The compiler executes a variety of deterministic checks categorized by severity:
-*   **Structural (Errors):** Validates that articles contain required frontmatter fields (e.g., `entity_type`) and that these values conform to the defined ontology.
-*   **Linking (Warnings):** Detects broken wikilinks, non-canonical aliases, unlinked mentions of known entities, orphaned articles, and missing reciprocal links.
-*   **Quality (Info):** Identifies low-quality stubs, broken source references, duplicate article candidates, and contradictory factual claims.
+### Schema-Driven Validation
 
-### Discovery Engine
-The Discovery Engine (`discovery.ts`) uses LLM-powered graph analysis to perform high-level structural audits. Unlike static checks, discovery is an opt-in process that identifies:
-*   **Missing Articles:** Frequently mentioned concepts that lack dedicated articles.
-*   **Weak Connections:** Articles that are conceptually related but lack cross-references.
-*   **Depth Imbalances:** Entity types with uneven coverage or significantly lower detail than the rest of the KB.
+At the heart of the compiler is a validation layer built using Zod schemas [Source 3]. These schemas define the strict contracts for all data structures that pass through the compilation pipeline, especially those generated by [LLM](../concepts/llm.md)s or parsed from user-provided files. This ensures that all data is well-formed and consistent before being processed or stored. Key schemas include:
+
+-   **`ExtractionPlanSchema`**: Validates the initial plan generated by an LLM, which outlines the articles to be created, updated, or merged from a given source.
+-   **`GroundingVerdictSchema`**: Validates the output of the LLM-based verifier, which checks factual claims against source material.
+-   **`Article[[[[[[[[Frontmatter]]]]]]]]Schema`**: Enforces the structure of metadata (Frontmatter) for each knowledge base article.
+-   **`SynthesisArticleSchema`**: Validates the final structure of a synthesized article, including its metadata and markdown content, before it is written to disk.
+
+This schema-first approach provides a strong defense against malformed or untrusted data entering the knowledge base [Source 3].
+
+### Incremental Ingestion Cache
+
+To improve performance on large knowledge bases, the compiler implements a disk-based cache for the ingestion step [Source 1]. This cache avoids the overhead of re-processing source files that have not changed between compilations, which is particularly beneficial for I/O-intensive operations like PDF extraction or HTML-to-markdown conversion.
+
+The cache is stored in a `.kb-ingest-cache/` directory within the knowledge base. Each cache entry is a JSON file keyed by the `sha256` hash of a raw source file's content. A cache hit retrieves the previously processed `IngestedContent` object, skipping the parsing step. A cache miss results in the file being processed and a new entry being written to the cache.
+
+The cache is designed to be append-only during a compile run. Stale entries corresponding to deleted source files are removed by a pruning process at the end of each compilation [Source 1]. Notably, while file paths to extracted images are stored in the cached `IngestedContent`, the raw image data (e.g., base64 strings) is not, in order to prevent the cache size from becoming excessively large [Source 1].
+
+### Concurrency Management
+
+The compiler includes a locking mechanism, `CompileLock`, to prevent multiple concurrent compilation processes from accessing and potentially corrupting the knowledge base files [Source 2]. This is critical for ensuring data integrity in environments where the compiler might be triggered by multiple users or automated systems simultaneously.
+
+The default locking strategy is `'file'`, which uses an atomic `open('wx')` system call. This provides a reliable cross-process mutex on POSIX-compliant filesystems by failing if the lock file already exists, thus preventing time-of-check to time-of-use (TOCTOU) race conditions [Source 2]. For environments where this atomic operation is unreliable, such as certain network filesystems (NFS, CIFS), an alternative `'port'` strategy is available which uses TCP port binding to acquire a lock [Source 2].
+
+The lock includes a [Heartbeat Mechanism](../concepts/heartbeat-mechanism.md) that periodically updates the lock file's timestamp. This ensures that a lock held by a healthy, running process never expires, while a lock from a crashed process will eventually time out (e.g., after 6 minutes), allowing other processes to proceed [Source 2].
 
 ## Key APIs
-The subsystem exposes several high-level functions and classes for managing KB quality:
 
-### KBLinter
-The primary class for executing validation passes.
-*   `lint()`: Scans the compiled KB and returns a `LintReport`.
-*   `fix(report)`: Applies automated repairs to the KB based on a `LintReport` and returns an `AutoFixResult`.
+The primary APIs exposed by this subsystem are the schemas that define the data contracts for the pipeline and the concurrency control utility.
 
-### discoverGaps
-An asynchronous function that performs LLM-powered analysis.
-```typescript
-async function discoverGaps(
-  llm: LLMCallFn,
-  compiledDir: string,
-  registry: ConceptRegistry,
-  ontology: KBOntology,
-  options?: DiscoveryOptions
-): Promise<DiscoveryResult>
-```
-
-### buildLinkGraph
-A utility function that constructs a bidirectional link graph from compiled articles, used for detecting orphaned content and reciprocal relationship violations.
+-   **`CompileLock`**: A class used to acquire and release an exclusive lock, preventing concurrent `KBCompiler.compile()` executions [Source 2].
+-   **`ExtractionPlanSchema`**: A Zod schema for validating the output of the LLM extractor, which proposes new articles [Source 3].
+-   **`GroundingVerdictSchema`**: A Zod schema for validating the output of the LLM verifier during the fact-checking (grounding) stage [Source 3].
+-   **`ArticleFrontmatterSchema`**: A Zod schema for validating the YAML frontmatter of a compiled knowledge base article [Source 3].
+-   **`SynthesisArticleSchema`**: A Zod schema for validating the final LLM-synthesized article before it is saved [Source 3].
 
 ## Configuration
-The behavior of the compiler and linter can be adjusted via `DiscoveryOptions` and `LintOptions`.
 
-### Discovery Configuration
-Discovery requires an explicit `--discover` flag and can be configured with:
-*   `maxCalls`: Limits the number of LLM invocations (default: 5).
-*   `onProgress`: A callback for monitoring the progress of the discovery scan.
+The concurrency management feature of the compiler is configurable via the `lockStrategy` option.
 
-### Lint Severity
-Issues are classified into three severity levels:
-*   `error`: Blocks compilation (e.g., `MISSING_ENTITY_TYPE`).
-*   `warning`: Degrades KB quality but allows usage (e.g., `ORPHANED_ARTICLE`).
-*   `info`: Suggests improvement opportunities (e.g., `STUB_WITH_SOURCES`).
+-   **`lockStrategy`**: Can be set to either `'file'` (the default) or `'port'`. The `'file'` strategy is suitable for local filesystems, while `'port'` is recommended for network filesystems like NFS or CIFS where atomic file creation may be unreliable [Source 2].
 
-## Extension Points
-The Knowledge Base Compiler supports extension through the YAAF plugin system:
+## Sources
 
-### Plugin Rules
-Developers can define custom linting rules using the `LinterRuleAdapter`. These rules are integrated into the `KBLinter` execution pipeline. Plugin-defined rules are identified by the `PLUGIN_` prefix in their `LintCode`.
-
-### Auto-Fixers
-The subsystem supports automated resolution for specific issue types:
-*   **NON_CANONICAL_WIKILINK:** Rewrites aliases to their canonical form.
-*   **UNLINKED_MENTION:** Automatically wraps the first occurrence of a known entity in wikilink syntax.
-*   **MISSING_REQUIRED_FIELD:** Applies default values where defined in the ontology.
+[Source 1]: src/knowledge/compiler/[Ingester](../apis/ingester.md)/ingestCache.ts
+[Source 2]: src/knowledge/compiler/lock.ts
+[Source 3]: src/knowledge/compiler/schemas.ts

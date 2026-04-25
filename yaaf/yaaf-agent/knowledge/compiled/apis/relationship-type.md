@@ -1,68 +1,107 @@
 ---
+summary: A TypeScript type defining the structure for relationship types within the YAAF knowledge base ontology.
+export_name: RelationshipType
+source_file: src/knowledge/ontology/types.js
+category: type
 title: RelationshipType
 entity_type: api
-summary: The TypeScript interface defining directed, named relationships between entity types in the knowledge base.
-export_name: RelationshipType
-source_file: src/knowledge/ontology/types.ts
-category: type
+search_terms:
+ - knowledge base relationships
+ - ontology relationship definition
+ - how to define entity links
+ - graph schema type
+ - semantic triple structure
+ - entity connection properties
+ - YAAF ontology types
+ - defining edges in knowledge graph
+ - relationship schema
+ - from/to entity types
+ - link label
+ - bidirectional relationships
 stub: false
-compiled_at: 2026-04-16T14:28:07.626Z
+compiled_at: 2026-04-24T17:32:07.824Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/ontology/index.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/ontology/types.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/ontology/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/store/wikilinkGraph.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`RelationshipType` defines a named, directed connection between two specific entity types within the knowledge base ontology. It is used by the Knowledge Synthesizer to generate precise, typed wikilinks and by the linter to validate the semantic integrity of cross-links between articles.
 
-When a relationship is defined with a `reciprocal` property, the framework's linker automatically maintains bidirectional edges between entities.
+The `RelationshipType` is a TypeScript type that defines the schema for a directed relationship between two [Entity Type](../concepts/entity-type.md)s within a YAAF Knowledge Base [Ontology](../concepts/ontology.md). It specifies the source Entity Type, the target entity type, a descriptive label for the connection, and whether the relationship is bidirectional.
 
-## Signature / Constructor
+This type is a core component of the ontology, allowing the system to understand and validate the connections between different kinds of knowledge base articles. For example, the `WikilinkGraphPlugin` uses the `relationship_types` defined in the ontology to automatically infer relationship labels for `wikilinks` by matching the source and target article entity types [Source 2].
+
+## Signature
+
+`RelationshipType` is an object type with the following properties:
 
 ```typescript
 export type RelationshipType = {
-  name: string
-  from: string
-  to: string
-  description: string
-  reciprocal?: string
-}
-```
+  /**
+   * The name of the source entity type for this relationship.
+   */
+  from: string;
 
-## Methods & Properties
+  /**
+   * The name of the target entity type for this relationship.
+   */
+  to: string;
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `name` | `string` | The canonical name of the relationship, typically formatted in `SCREAMING_SNAKE_CASE` (e.g., "IS_IMPLEMENTED_BY"). |
-| `from` | `string` | The identifier of the source entity type. |
-| `to` | `string` | The identifier of the target entity type. |
-| `description` | `string` | A human-readable description of the relationship's meaning, used to guide the LLM during synthesis and linting. |
-| `reciprocal` | `string` | (Optional) The name of the inverse relationship. If provided, creating an edge from A to B via `name` will automatically create an edge from B to A via `reciprocal`. |
+  /**
+   * The semantic label for the relationship (e.g., "documents", "depends_on", "extends").
+   */
+  label: string;
 
-## Examples
-
-### Defining a Relationship in Ontology
-This example demonstrates how a relationship is structured within the `relationship_types` array of an ontology configuration.
-
-```typescript
-const implementsRelationship: RelationshipType = {
-  name: 'IMPLEMENTS',
-  from: 'tool',
-  to: 'concept',
-  description: 'A tool that provides an implementation of a concept',
-  reciprocal: 'IMPLEMENTED_BY'
+  /**
+   * If true, the relationship is considered to exist in both directions.
+   * For example, a "related_to" link might be bidirectional.
+   * @default false
+   */
+  bidirectional?: boolean;
 };
 ```
 
-### Usage in YAML Configuration
-While defined as a TypeScript type, `RelationshipType` objects are typically authored in the `ontology.yaml` file:
+## Examples
 
-```yaml
-relationship_types:
-  - name: BELONGS_TO
-    from: tool
-    to: agent
-    description: "Indicates which agent a specific tool is registered to"
-    reciprocal: HAS_TOOL
+Below is an example of how `RelationshipType` objects are defined within the `relationship_types` array of a `KBOntology`.
+
+```typescript
+import type { KBOntology, RelationshipType } from 'yaaf';
+
+// Define the relationships that can exist between entity types.
+const myRelationshipTypes: RelationshipType[] = [
+  {
+    from: 'guide',
+    to: 'api',
+    label: 'documents',
+    bidirectional: false, // A guide documents an API, but not vice-versa.
+  },
+  {
+    from: 'plugin',
+    to: 'subsystem',
+    label: 'extends',
+  },
+  {
+    from: 'api',
+    to: 'api',
+    label: 'related to',
+    bidirectional: true, // If API A is related to API B, B is also related to A.
+  }
+];
+
+// Use the defined relationships in the main ontology configuration.
+const myOntology: KBOntology = {
+  entity_types: {
+    /* ... entity type schemas ... */
+  },
+  relationship_types: myRelationshipTypes,
+  // ... other ontology properties
+};
 ```
+
+## Sources
+
+[Source 1]: src/knowledge/ontology/index.ts
+[Source 2]: src/knowledge/store/wikilinkGraph.ts

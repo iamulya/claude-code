@@ -1,99 +1,237 @@
 ---
+summary: Detects unusual input patterns in LLM inputs using statistical anomaly detection to prevent prompt injection attempts.
 export_name: InputAnomalyDetector
 source_file: src/security/inputAnomalyDetector.ts
 category: class
-summary: A statistical analysis tool for detecting unusual patterns in LLM inputs such as entropy spikes, repetition, and language mixing.
 title: InputAnomalyDetector
 entity_type: api
+search_terms:
+ - prompt injection defense
+ - statistical input analysis
+ - LLM input security
+ - Shannon entropy check
+ - input length validation
+ - repetition attack detection
+ - invisible character detection
+ - defense in depth for prompts
+ - how to detect encoded payloads
+ - prevent padding attacks
+ - language mixing detection
+ - unusual input patterns
+ - non-printable character filter
 stub: false
-compiled_at: 2026-04-16T14:34:35.206Z
+compiled_at: 2026-04-24T17:14:26.990Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/security/inputAnomalyDetector.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/security/inputAnomalyDetector.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`InputAnomalyDetector` is a security utility designed to perform statistical analysis on LLM inputs. It identifies unusual patterns that often correlate with prompt injection attempts or malicious payloads which cannot be easily identified by signature-based or regex-based filters. 
 
-The detector serves as a secondary defense-in-depth layer, typically used alongside other security measures like `PromptGuard`. It monitors for:
-*   **Token entropy spikes**: High Shannon entropy often indicates encoded or encrypted payloads, while very low entropy suggests repetitive padding attacks.
-*   **Length anomalies**: Inputs that exceed normal distribution thresholds.
-*   **Language mixing**: Sudden switches between different scripts or languages within a single message.
-*   **Repetition patterns**: High density of repeated character sequences (n-grams).
-*   **Invisible character density**: Excessive use of non-printable or invisible characters.
+The `InputAnomalyDetector` is a security class designed to identify unusual patterns in [LLM](../concepts/llm.md) inputs that may indicate a [Prompt Injection](../concepts/prompt-injection.md) attack [Source 1]. It operates by performing statistical analysis on input text, serving as a secondary defense layer to complement pattern-matching [Tools](../subsystems/tools.md) like `PromptGuard` for a [Defense-in-depth](../concepts/defense-in-depth.md) strategy [Source 1].
+
+This detector is particularly effective against attacks that are difficult to catch with regular expressions alone. It flags anomalies such as [Source 1]:
+
+*   **Length Anomalies**: Inputs that are significantly longer than a typical distribution.
+*   **Entropy Spikes**: Unusually high or low Shannon entropy, which can suggest encoded payloads or repetitive padding attacks.
+*   **Language Mixing**: Abrupt changes in language or character scripts within a single message.
+*   **Repetition Patterns**: High frequency of repeated character sequences.
+*   **Invisible Characters**: A high density of non-printable or invisible characters.
 
 ## Signature / Constructor
 
+The `InputAnomalyDetector` class is instantiated with an optional configuration object of type `InputAnomalyConfig` [Source 1].
+
+### `InputAnomalyConfig`
+
+The configuration object allows customization of the detection thresholds.
+
 ```typescript
-export class InputAnomalyDetector {
-  constructor(config?: InputAnomalyConfig)
-}
+export type InputAnomalyConfig = {
+  /**
+   * Maximum input length in characters before flagging.
+   * Default: 50_000.
+   */
+  maxInputLength?: number;
+
+  /**
+   * Maximum input length in characters before hard-blocking.
+   * Default: 200_000.
+   */
+  hardMaxInputLength?: number;
+
+  /**
+   * Minimum Shannon entropy (bits per character) to flag as suspiciously low.
+   * Very low entropy = repetitive padding attacks.
+   * Default: 1.5.
+   */
+  minEntropy?: number;
+
+  /**
+   * Maximum Shannon entropy (bits per character) to flag as suspiciously high.
+   * Very high entropy = encoded/encrypted payloads.
+   * Default: 5.5.
+   */
+  maxEntropy?: number;
+
+  /**
+   * Maximum ratio of invisible/non-printable characters.
+   * Default: 0.05 (5%).
+   */
+  maxInvisibleRatio?: number;
+
+  /**
+   * Maximum ratio of repeated 3-grams (subsequences).
+   * Default: 0.4 (40%).
+   */
+  maxRepetitionRatio?: number;
+
+  /**
+   * Called on anomaly detection.
+   */
+  onAnomaly?: (event: InputAnomalyEvent) => void;
+};
 ```
 
-### InputAnomalyConfig
-The configuration object allows for fine-tuning the sensitivity of the statistical checks:
+### Related Types
 
-| Property | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `maxInputLength` | `number` | Input length in characters before triggering a warning flag. | `50_000` |
-| `hardMaxInputLength` | `number` | Input length in characters before a hard block is triggered. | `200_000` |
-| `minEntropy` | `number` | Minimum Shannon entropy (bits per character) to flag as suspiciously low. | `1.5` |
-| `maxEntropy` | `number` | Maximum Shannon entropy (bits per character) to flag as suspiciously high. | `5.5` |
-| `maxInvisibleRatio` | `number` | Maximum allowed ratio of non-printable characters. | `0.05` |
-| `maxRepetitionRatio` | `number` | Maximum allowed ratio of repeated 3-gram subsequences. | `0.4` |
-| `onAnomaly` | `function` | Callback function triggered when an anomaly is detected. | `undefined` |
+The detector uses the following types to report its findings [Source 1].
 
-## Methods & Properties
-The `InputAnomalyDetector` processes arrays of `ChatMessage` objects to produce an `InputAnomalyResult`.
+#### `InputAnomalyResult`
 
-### InputAnomalyResult
-The result of an analysis contains the following fields:
-*   **detected** (`boolean`): Indicates if any statistical anomalies were found.
-*   **blocked** (`boolean`): Indicates if any detected anomalies were severe enough to warrant blocking the input (e.g., exceeding `hardMaxInputLength`).
-*   **events** (`InputAnomalyEvent[]`): A list of specific anomaly events found during analysis.
-*   **blockReason** (`string`, optional): A description of why the input was blocked, if applicable.
+This is the return type for an analysis operation, summarizing all findings.
 
-### InputAnomalyEvent
-Each event detected contains:
-*   **type** (`AnomalyType`): The category of anomaly (e.g., `low_entropy`, `invisible_chars`).
-*   **messageIndex** (`number`): The index of the message in the input array where the anomaly was found.
-*   **messageRole** (`string`): The role associated with the message (e.g., "user").
-*   **detail** (`string`): A human-readable description of the specific anomaly.
-*   **severity** (`'warning' | 'block'`): The impact level of the detection.
-*   **timestamp** (`Date`): When the detection occurred.
-
-## Examples
-
-### Basic Configuration and Usage
 ```typescript
-import { InputAnomalyDetector } from 'yaaf/security';
-
-const detector = new InputAnomalyDetector({
-  maxEntropy: 5.0,
-  maxInvisibleRatio: 0.02,
-  onAnomaly: (event) => {
-    console.warn(`Security Warning: ${event.type} detected in ${event.messageRole} message.`);
-  }
-});
-
-// Usage within an agent pipeline would typically involve 
-// passing ChatMessage arrays to the detector's analysis method.
+export type InputAnomalyResult = {
+  /** Whether any anomalies were detected */
+  detected: boolean;
+  /** Whether any anomalies are severe enough to block */
+  blocked: boolean;
+  /** Anomaly events */
+  events: InputAnomalyEvent[];
+  /** Block reason if blocked */
+  blockReason?: string;
+};
 ```
 
-### Handling Anomaly Events
+#### `InputAnomalyEvent`
+
+This object describes a single detected anomaly.
+
 ```typescript
-const config = {
-  minEntropy: 1.2,
+export type InputAnomalyEvent = {
+  type: AnomalyType;
+  messageIndex: number;
+  messageRole: string;
+  detail: string;
+  /** Severity: warning or block */
+  severity: "warning" | "block";
+  timestamp: Date;
+};
+```
+
+#### `AnomalyType`
+
+A string literal type representing the specific category of anomaly detected.
+
+```typescript
+export type AnomalyType =
+  | "length_warning"
+  | "length_blocked"
+  | "low_entropy"
+  | "high_entropy"
+  | "invisible_chars"
+  | "repetition"
+  | "mixed_scripts";
+```
+
+## Events
+
+The `InputAnomalyDetector` can be configured with an `onAnomaly` callback function. This function is invoked each time an anomaly is detected, receiving an `InputAnomalyEvent` object as its argument. This allows for real-time logging or monitoring of security events [Source 1].
+
+```typescript
+// Example configuration with an onAnomaly callback
+const config: InputAnomalyConfig = {
   onAnomaly: (event) => {
-    if (event.severity === 'block') {
-      throw new Error(`Input rejected: ${event.detail}`);
-    }
-  }
+    console.warn(`Anomaly Detected: ${event.type}`, event);
+  },
 };
 
 const detector = new InputAnomalyDetector(config);
 ```
 
-## See Also
-* `ChatMessage` (type)
-* `PromptGuard` (concept)
+## Examples
+
+The following example demonstrates how to instantiate and use the `InputAnomalyDetector` to check a series of chat messages.
+
+*Note: The source material does not specify the exact method name for performing the check. The method `.check()` is used here for illustrative purposes.*
+
+```typescript
+import {
+  InputAnomalyDetector,
+  InputAnomalyConfig,
+  InputAnomalyResult,
+} from "yaaf";
+import type { ChatMessage } from "yaaf";
+
+// 1. Configure the detector with custom thresholds
+const config: InputAnomalyConfig = {
+  maxInputLength: 10000,
+  hardMaxInputLength: 25000,
+  maxEntropy: 5.0,
+  onAnomaly: (event) => {
+    console.log(`[SECURITY_EVENT] Anomaly of type "${event.type}" detected.`);
+  },
+};
+
+const detector = new InputAnomalyDetector(config);
+
+// 2. Define some messages to check
+const messages: ChatMessage[] = [
+  { role: "user", content: "Hello, how are you?" },
+  {
+    role: "user",
+    content: "a".repeat(15000), // This will trigger a length_warning
+  },
+  {
+    role: "user",
+    content:
+      "BASE64_ENCODED_PAYLOAD_SIMULATION_q843tq984hfq9384hfqo...", // May trigger high_entropy
+  },
+];
+
+// 3. Perform the check (illustrative method name)
+// const result: InputAnomalyResult = detector.check(messages);
+const result: InputAnomalyResult = {
+  /* Assume this is the result from a detector.check(messages) call */
+  detected: true,
+  blocked: false,
+  events: [
+    {
+      type: "length_warning",
+      messageIndex: 1,
+      messageRole: "user",
+      detail: "Input length 15000 exceeds warning threshold 10000",
+      severity: "warning",
+      timestamp: new Date(),
+    },
+  ],
+};
+
+// 4. Handle the result
+if (result.blocked) {
+  console.error(`Input blocked: ${result.blockReason}`);
+  // Reject the request
+} else if (result.detected) {
+  console.warn("Anomalous input detected, proceeding with caution.");
+  // Add extra logging or monitoring
+} else {
+  console.log("Input is clean.");
+  // Proceed normally
+}
+```
+
+## Sources
+
+[Source 1]: src/security/inputAnomalyDetector.ts

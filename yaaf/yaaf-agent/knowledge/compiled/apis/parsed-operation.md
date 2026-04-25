@@ -1,104 +1,147 @@
 ---
-summary: Represents a normalized API operation extracted from an OpenAPI specification.
+summary: Represents a parsed OpenAPI operation, detailing its method, path, and parameters.
 export_name: ParsedOperation
 source_file: src/tools/openapi/parser.ts
 category: type
 title: ParsedOperation
 entity_type: api
+search_terms:
+ - OpenAPI operation details
+ - parsed API endpoint
+ - HTTP method and path
+ - API request parameters
+ - request body schema
+ - server URL for operation
+ - operation security requirements
+ - normalized OpenAPI operation
+ - what is ParsedOperation
+ - OpenAPI parser output
+ - structure of a single API call
+ - tool input generation source
 stub: false
-compiled_at: 2026-04-16T14:38:35.996Z
+compiled_at: 2026-04-24T17:27:30.287Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/tools/openapi/parser.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/index.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/parser.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/tools/openapi/schema.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`ParsedOperation` is a TypeScript type used to represent a single, normalized API endpoint extracted from an OpenAPI 3.x specification. It serves as the output format for the YAAF OpenAPI parser, providing a flattened structure where `$ref` pointers have been resolved and parameters are consolidated.
 
-This type is primarily used by agent tools to understand the requirements of an API call, including the necessary HTTP method, path, parameters, and request body structure.
+The `ParsedOperation` type is a normalized, structured representation of a single API endpoint (e.g., `GET /pets`, `POST /orders`) extracted from an OpenAPI 3.x specification [Source 2]. It serves as a standardized intermediate format within the YAAF OpenAPI [Tools](../subsystems/tools.md)et.
 
-## Signature / Constructor
+This type is the primary output of the `parseOpenAPISpec` function. Each `ParsedOperation` object contains all the necessary information to generate a YAAF `Tool`, including the HTTP method, path, server URL, parameters, request body schema, and security requirements [Source 2].
+
+Downstream functions consume this object. For instance, `operationToToolInput` uses a `ParsedOperation` to generate a flat JSON Schema for the tool's input, which is what an [LLM](../concepts/llm.md) interacts with [Source 3]. The `createRestApiTool` function also uses it to construct and execute the actual HTTP request [Source 1].
+
+## Signature
+
+`ParsedOperation` is a TypeScript type alias. Its structure and the types it depends on are defined as follows [Source 2]:
 
 ```typescript
+export type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
+
+export type ParsedParam = {
+  name: string;
+  in: "path" | "query" | "header" | "cookie";
+  required: boolean;
+  schema: Record<string, unknown>;
+  description?: string;
+};
+
+export type ParsedBody = {
+  required: boolean;
+  mediaType: string;
+  schema: Record<string, unknown>;
+};
+
 export type ParsedOperation = {
-  operationId?: string
-  method: HttpMethod
-  path: string
-  summary: string
-  description: string
-  serverUrl: string
-  parameters: ParsedParam[]
-  requestBody?: ParsedBody
+  operationId?: string;
+  method: HttpMethod;
+  path: string;
+  summary: string;
+  description: string;
+  serverUrl: string;
+  parameters: ParsedParam[];
+  requestBody?: ParsedBody;
   /** Security scheme names required by this operation */
-  security?: string[]
-}
-```
-
-## Methods & Properties
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `operationId` | `string` (optional) | The unique identifier for the operation as defined in the OpenAPI spec. |
-| `method` | `HttpMethod` | The HTTP verb used for the request (`get`, `post`, `put`, `patch`, or `delete`). |
-| `path` | `string` | The endpoint path, relative to the `serverUrl`. |
-| `summary` | `string` | A brief summary of the operation's purpose. |
-| `description` | `string` | A verbose explanation of the operation's behavior. |
-| `serverUrl` | `string` | The resolved base URL for the API server. |
-| `parameters` | `ParsedParam[]` | A list of normalized parameters (path, query, header, or cookie). |
-| `requestBody` | `ParsedBody` (optional) | The normalized definition of the expected request payload and media type. |
-| `security` | `string[]` (optional) | A list of security scheme names (e.g., "ApiKeyAuth") required to execute this operation. |
-
-## Examples
-
-### Basic Operation Definition
-This example demonstrates a standard GET operation as represented by the `ParsedOperation` type.
-
-```typescript
-import { ParsedOperation } from './src/tools/openapi/parser';
-
-const getPetOperation: ParsedOperation = {
-  operationId: 'getPetById',
-  method: 'get',
-  path: '/pet/{petId}',
-  summary: 'Find pet by ID',
-  description: 'Returns a single pet based on the ID provided in the path.',
-  serverUrl: 'https://petstore.swagger.io/v2',
-  parameters: [
-    {
-      name: 'petId',
-      in: 'path',
-      required: true,
-      schema: { type: 'integer', format: 'int64' },
-      description: 'ID of pet to return'
-    }
-  ],
-  security: ['api_key']
+  security?: string[];
 };
 ```
 
-### Operation with Request Body
-This example shows a POST operation that includes a structured request body.
+### Properties
+
+*   `operationId?: string`: An optional, unique string used to identify an operation.
+*   `method: HttpMethod`: The HTTP method for the operation (e.g., `"get"`, `"post"`).
+*   `path: string`: The URL path template for the operation (e.g., `/users/{id}`).
+*   `summary: string`: A short summary of what the operation does.
+*   `description: string`: A more detailed explanation of the operation.
+*   `serverUrl: string`: The base URL to which the request should be sent.
+*   `parameters: ParsedParam[]`: An array of objects describing the operation's parameters (path, query, header, or cookie).
+*   `requestBody?: ParsedBody`: An optional object describing the request body.
+*   `security?: string[]`: An optional array of security scheme names required to execute this operation.
+
+## Examples
+
+A `ParsedOperation` object is not typically created manually. Instead, it is generated by the [OpenAPI Parser](../subsystems/open-api-parser.md). The following example illustrates what a `ParsedOperation` might look like for a `POST /users` endpoint and how it would be used to generate a tool's input schema.
 
 ```typescript
-const addPetOperation: ParsedOperation = {
-  operationId: 'addPet',
+import { ParsedOperation } from 'yaaf';
+import { operationToToolInput } from 'yaaf/openapi'; // Note: conceptual import path
+
+// This object would be one of many produced by parseOpenAPISpec
+const parsedPostUserOp: ParsedOperation = {
+  operationId: 'createUser',
   method: 'post',
-  path: '/pet',
-  summary: 'Add a new pet to the store',
-  description: 'Adds a new pet to the inventory using a JSON payload.',
-  serverUrl: 'https://petstore.swagger.io/v2',
-  parameters: [],
+  path: '/users',
+  summary: 'Create a new user',
+  description: 'Adds a new user to the system.',
+  serverUrl: 'https://api.example.com/v1',
+  parameters: [], // No path, query, or header params in this example
   requestBody: {
     required: true,
     mediaType: 'application/json',
     schema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        status: { type: 'string' }
+        name: { type: 'string', description: "The user's full name." },
+        email: { type: 'string', format: 'email', description: "The user's email address." }
       },
-      required: ['name']
+      required: ['name', 'email']
     }
-  }
+  },
+  security: ['api_key_auth']
 };
+
+// This object is then used by other functions to build a YAAF Tool.
+// For example, to create the input schema for the LLM:
+const toolInputSchema = operationToToolInput(parsedPostUserOp);
+
+/*
+ The resulting toolInputSchema would be a flat JSON schema like this:
+ {
+   type: 'object',
+   properties: {
+     name: { type: 'string', description: "The user's full name." },
+     email: { type: 'string', format: 'email', description: "The user's email address." }
+   },
+   required: ['name', 'email']
+ }
+*/
 ```
+
+## See Also
+
+*   `parseOpenAPISpec`: The function that produces `ParsedOperation` objects from an OpenAPI specification.
+*   `operationToToolInput`: A function that consumes a `ParsedOperation` to create a `ToolInput` JSON schema.
+*   `OpenAPIToolset`: The main class for generating a set of Tools from an OpenAPI specification.
+*   `ParsedParam`: The type representing a single parameter for an operation.
+*   `ParsedBody`: The type representing the request body for an operation.
+
+## Sources
+
+*   [Source 1]: `src/tools/openapi/index.ts`
+*   [Source 2]: `src/tools/openapi/parser.ts`
+*   [Source 3]: `src/tools/openapi/schema.ts`

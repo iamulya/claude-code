@@ -1,41 +1,69 @@
 ---
 title: buildCompactionPrompt
 entity_type: api
-summary: Generates a structured prompt for the LLM to perform context compaction with an analysis scratchpad and anti-tool preamble.
+summary: Builds a structured compaction prompt with an analysis scratchpad and anti-tool preamble for high-quality conversation summarization.
 export_name: buildCompactionPrompt
 source_file: src/context/compactionPrompts.ts
 category: function
+search_terms:
+ - conversation summarization prompt
+ - context compaction
+ - how to summarize chat history
+ - prompt engineering for summaries
+ - analysis scratchpad
+ - anti-tool preamble
+ - structured summarization
+ - partial conversation summary
+ - full conversation summary
+ - reduce context window size
+ - LLM memory management
+ - prompt for summarizing messages
 stub: false
-compiled_at: 2026-04-16T14:16:51.465Z
+compiled_at: 2026-04-24T16:52:46.158Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/compactionPrompts.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/compactionPrompts.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`buildCompactionPrompt` is a utility function designed to generate production-quality summarization prompts for context management. It is used to instruct an LLM to condense conversation history into a structured summary, allowing the agent to maintain long-term context while staying within token limits.
 
-The generated prompt incorporates several advanced prompting techniques:
-*   **Analysis Scratchpad**: Instructs the model to reason about the conversation within `<analysis>` tags before producing the final summary.
-*   **Anti-tool Preamble**: Prevents the model from attempting to invoke tools or functions during the compaction process.
-*   **Structured Output**: Requires the model to produce a summary across nine specific sections to ensure no critical information is lost.
+The `buildCompactionPrompt` function constructs a carefully engineered, production-quality prompt designed to instruct a Large Language Model ([LLM](../concepts/llm.md)) to summarize a conversation. This is a key utility for [Context Compaction](../concepts/context-compaction.md), where older parts of a conversation are summarized to save space in the [Context Window](../concepts/context-window.md) [Source 1].
 
-## Signature / Constructor
+The generated prompt is structured to elicit high-quality summaries by including several features [Source 1]:
+- An **analysis scratchpad** section, where the model is instructed to first think about the conversation before writing the final summary.
+- An **anti-tool preamble**, which helps prevent the model from attempting to use [Tools](../subsystems/tools.md) during the summarization task.
+- A requirement for **9 specific sections** in the summary, ensuring a comprehensive and [Structured Output](../concepts/structured-output.md).
+
+This function is typically used [when](./when.md) implementing a [Context Management](../subsystems/context-management.md) strategy that requires summarizing parts of the message history to keep the token count manageable.
+
+## Signature
+
+The function takes an optional configuration object to customize the generated prompt [Source 1].
 
 ```typescript
-export function buildCompactionPrompt(config?: CompactionPromptConfig): string;
+export function buildCompactionPrompt(config: CompactionPromptConfig = {}): string;
+```
 
+### `CompactionPromptConfig`
+
+The configuration object `CompactionPromptConfig` allows for customization of the prompt's behavior and content [Source 1].
+
+```typescript
 export type CompactionPromptConfig = {
   /**
    * If true, generates a "partial" prompt that only summarizes recent messages
    * (used when old messages are preserved and only the middle is compacted).
    * If false, generates a "full" prompt that summarizes the entire conversation.
+   * @default false
    */
   partial?: boolean;
+
   /**
    * Custom sections to include in the summary. If omitted, uses all 9 defaults.
    */
   sections?: string[];
+
   /**
    * Extra instructions appended to the prompt.
    */
@@ -43,50 +71,40 @@ export type CompactionPromptConfig = {
 };
 ```
 
-## Methods & Properties
-
-### CompactionPromptConfig
-The configuration object accepts the following properties:
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `partial` | `boolean` | Determines if the prompt should target the entire history or just a recent subset. |
-| `sections` | `string[]` | An optional list of specific headers or categories the LLM should address in the summary. |
-| `additionalInstructions` | `string` | Context-specific rules or constraints to append to the system prompt. |
-
 ## Examples
 
-### Basic Usage
-This example demonstrates generating a standard compaction prompt and cleaning the model's output.
+The following example demonstrates how to generate a compaction prompt, use it with a model, and then process the model's output to extract the clean summary [Source 1].
 
 ```typescript
-import { buildCompactionPrompt, stripAnalysisBlock } from './compactionPrompts.js';
+import { buildCompactionPrompt, stripAnalysisBlock } from 'yaaf';
+import { model } from './my-llm-provider.js';
+import { Message } from 'yaaf';
 
-// 1. Generate the prompt
+// Assume `msgs` is an array of Message objects from a conversation
+const msgs: Message[] = [
+  // ... conversation history ...
+];
+
+// 1. Build the prompt for a full conversation summary.
 const prompt = buildCompactionPrompt({ partial: false });
 
-// 2. Send to the model (pseudo-code)
-const response = await model.complete({ 
-  messages: [
-    ...history, 
-    { role: 'user', content: prompt }
-  ] 
+// 2. Send the history and the compaction prompt to the model.
+const summaryCompletion = await model.complete({
+  messages: [...msgs, { role: 'user', content: prompt }]
 });
 
-// 3. Strip the <analysis> scratchpad to get the final summary
-const cleanSummary = stripAnalysisBlock(response.content);
-```
+// 3. The model output contains both an <analysis> block and a <summary> block.
+//    Use stripAnalysisBlock to extract only the clean summary text.
+const cleanSummary = stripAnalysisBlock(summaryCompletion.content);
 
-### Partial Compaction with Custom Instructions
-Used when only a portion of the conversation needs to be summarized.
-
-```typescript
-const prompt = buildCompactionPrompt({
-  partial: true,
-  additionalInstructions: "Focus specifically on technical requirements mentioned in the last 5 turns."
-});
+console.log(cleanSummary);
 ```
 
 ## See Also
-* `stripAnalysisBlock`: A utility to remove the reasoning scratchpad from the model's response.
-* `extractAnalysisBlock`: A utility to isolate the reasoning scratchpad for debugging purposes.
+
+- `stripAnalysisBlock`: A utility function to extract the `<summary>` block from the model's output, removing the analysis scratchpad.
+- `extractAnalysisBlock`: A utility function to extract the `<analysis>` block, which can be useful for debugging summarization quality.
+
+## Sources
+
+[Source 1]: src/context/compactionPrompts.ts

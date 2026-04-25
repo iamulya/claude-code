@@ -1,79 +1,118 @@
 ---
-title: parseRetryAfterHeader
-entity_type: api
-summary: Utility for parsing standard HTTP Retry-After headers into millisecond delays.
 export_name: parseRetryAfterHeader
 source_file: src/errors.ts
 category: function
+summary: Parses the `Retry-After` HTTP header into milliseconds for retry logic.
+title: parseRetryAfterHeader
+entity_type: api
+search_terms:
+ - handle Retry-After header
+ - HTTP 429 backoff
+ - rate limit delay
+ - calculate retry delay
+ - HTTP-date parsing
+ - delay-seconds parsing
+ - how to implement retry logic
+ - YAAF error handling
+ - get milliseconds from header
+ - "429 Too Many Requests"
+ - "503 Service Unavailable"
+ - backoff strategy
 stub: false
-compiled_at: 2026-04-16T14:18:04.839Z
+compiled_at: 2026-04-24T17:26:34.471Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/errors.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/errors.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`parseRetryAfterHeader` is a utility function designed to extract and normalize retry timing information from standard HTTP response headers. It is primarily utilized by model adapters and error handling logic to determine the appropriate wait duration before retrying a failed request, specifically when encountering rate limits or server overloads.
 
-The function handles the two standard formats defined for the `Retry-After` header:
-1.  **Delay-seconds**: A non-negative decimal integer indicating the seconds to wait.
-2.  **HTTP-date**: A specific date and time after which to retry.
+The `parseRetryAfterHeader` function is a utility for parsing the standard `Retry-After` HTTP response header. This header is typically sent with `429 Too Many Requests` or `503 Service Unavailable` status codes to indicate how long a client should wait before making another request.
 
-## Signature / Constructor
+This function supports both formats specified by the standard [Source 1]:
+1.  **Delay-seconds**: An integer number of seconds to wait.
+2.  **HTTP-date**: A specific timestamp after which the client may retry.
+
+It converts the value from either format into a single, consistent unit—milliseconds—making it easy to use with `setTimeout` or other delay mechanisms in [Retry Logic](../concepts/retry-logic.md). If the header is not present or cannot be parsed, the function returns `undefined`.
+
+## Signature
 
 ```typescript
-export function parseRetryAfterHeader(headers?: Headers): number | undefined
+export function parseRetryAfterHeader(headers?: Headers): number | undefined;
 ```
 
-### Parameters
-*   `headers`: An optional `Headers` object (standard Web API) from an HTTP response.
+**Parameters:**
 
-### Return Value
-*   Returns a `number` representing the delay in **milliseconds**.
-*   Returns `undefined` if the `Retry-After` header is missing, null, or contains an invalid format.
+*   `headers?: Headers`: An optional `Headers` object, typically from a `fetch` response. If not provided, the function returns `undefined`.
+
+**Returns:**
+
+*   `number | undefined`: The calculated delay in milliseconds, or `undefined` if the `Retry-After` header is missing or invalid.
 
 ## Examples
 
-### Parsing Delay Seconds
-When a provider returns a simple integer representing seconds, the function converts it to milliseconds.
+### Parsing a delay-seconds value
+
+This example demonstrates parsing a `Retry-After` header that specifies a delay in seconds.
 
 ```typescript
 import { parseRetryAfterHeader } from 'yaaf';
 
-const responseHeaders = new Headers({
-  'Retry-After': '30'
-});
+// Simulate response headers with a 120-second delay
+const headers = new Headers();
+headers.set('Retry-After', '120');
 
-const delay = parseRetryAfterHeader(responseHeaders);
-console.log(delay); // 30000
+const delayInMs = parseRetryAfterHeader(headers);
+
+console.log(delayInMs);
+// Expected output: 120000
 ```
 
-### Parsing HTTP Dates
-When a provider returns a full UTC timestamp, the function calculates the difference between that timestamp and the current system time.
+### Parsing an HTTP-date value
+
+This example shows how the function handles a `Retry-After` header containing a specific date and time. The function calculates the difference between the specified time and the current time.
 
 ```typescript
 import { parseRetryAfterHeader } from 'yaaf';
 
-// Set a date 1 minute in the future
-const retryDate = new Date(Date.now() + 60000).toUTCString();
-const responseHeaders = new Headers({
-  'Retry-After': retryDate
-});
+// Create a date 60 seconds in the future
+const retryDate = new Date(Date.now() + 60 * 1000);
 
-const delay = parseRetryAfterHeader(responseHeaders);
-// delay will be approximately 60000 (depending on processing time)
+// Simulate response headers with an HTTP-date
+const headers = new Headers();
+headers.set('Retry-After', retryDate.toUTCString());
+
+const delayInMs = parseRetryAfterHeader(headers);
+
+// The result will be slightly less than 60000 due to the time elapsed
+// during execution.
+console.log(delayInMs);
+// Expected output: A number close to 60000
 ```
 
-### Usage in Error Handling
-This utility is often used in conjunction with error classification to populate error metadata.
+### Handling a missing header
+
+If the `Retry-After` header is not present in the `Headers` object, the function returns `undefined`.
 
 ```typescript
-import { parseRetryAfterHeader, RateLimitError } from 'yaaf';
+import { parseRetryAfterHeader } from 'yaaf';
 
-function handleResponse(response: Response) {
-  if (response.status === 429) {
-    const retryAfterMs = parseRetryAfterHeader(response.headers);
-    throw new RateLimitError('Rate limit exceeded', { retryAfterMs });
-  }
-}
+// Simulate response headers without the Retry-After header
+const headers = new Headers();
+headers.set('Content-Type', 'application/json');
+
+const delayInMs = parseRetryAfterHeader(headers);
+
+console.log(delayInMs);
+// Expected output: undefined
 ```
+
+## See Also
+
+*   `classifyAPIError`: A function that uses `parseRetryAfterHeader` to help construct typed YAAF errors from raw HTTP responses.
+*   `YAAFError`: The base error class in YAAF, which is often subclassed into specific errors like `RateLimitError` that might carry the `retryAfterMs` value.
+
+## Sources
+
+[Source 1] src/errors.ts

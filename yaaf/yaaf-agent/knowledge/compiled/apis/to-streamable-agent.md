@@ -1,74 +1,96 @@
 ---
 title: toStreamableAgent
 entity_type: api
-summary: Utility function to wrap an Agent instance for streaming-compatible runtimes.
+summary: Wraps a YAAF Agent into a StreamableAgent compatible with runtime harnesses.
 export_name: toStreamableAgent
-source_file: src/agent.ts
+source_file: src/runtime/adapter.ts
 category: function
+search_terms:
+ - adapt agent for CLI
+ - use agent with createServer
+ - connect agent to worker runtime
+ - StreamableAgent interface
+ - runtime harness adapter
+ - convert agent stream
+ - RunnerStreamEvent to RuntimeStreamEvent
+ - how to stream agent responses
+ - YAAF runtime compatibility
+ - createCLI agent parameter
+ - createServer agent parameter
+ - createWorker agent parameter
+ - bridge agent to runtime
 stub: false
-compiled_at: 2026-04-16T14:05:42.467Z
+compiled_at: 2026-04-24T17:44:25.703Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/cli-runtime.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/server-runtime.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/worker-runtime.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/runtime/adapter.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/cli-runtime.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/server-runtime.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/worker-runtime.md
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/runtime/adapter.ts
+compiled_from_quality: unknown
+confidence: 0.99
 ---
 
 ## Overview
-`toStreamableAgent` is a utility function that adapts a standard YAAF `Agent` instance into a `StreamableAgent` compatible with production runtimes. 
 
-The core `Agent` class yields detailed internal events (such as `iteration` counts and `llm_request` metadata) via its `runStream` method. However, production-grade runtimes—including the CLI, Server, and Worker runtimes—expect a simplified, consumer-facing event stream. `toStreamableAgent` bridges this gap by filtering out internal-only events and mapping the remaining data to the `RuntimeStreamEvent` format.
+The `toStreamableAgent` function is an adapter that makes a standard YAAF `Agent` compatible with the various runtime harnesses provided by the framework, such as `create[[CLI]]`, `createServer`, and `createWorker` [Source 4].
 
-## Signature / Constructor
+Internally, a YAAF `Agent`'s `runStream` method yields a detailed stream of `RunnerStreamEvent` types, which include internal state information like `llm_request` and `iteration`. The runtime harnesses, however, are designed to consume a simplified, public-facing stream of `RuntimeStreamEvent` types, which only include events like `text_delta`, `tool_call_start`, and `tool_call_end` [Source 1, Source 4].
+
+`toStreamableAgent` bridges this gap by wrapping the agent. The returned object, which conforms to the `StreamableAgent` interface, exposes a `runStream` method that automatically filters and maps the internal events to the simplified runtime event format. This is a required step [when](./when.md) passing a YAAF `Agent` to any of the built-in runtime environments [Source 1, Source 2, Source 3].
+
+## Signature
+
+The function takes a YAAF `Agent` instance and returns an object that conforms to the `StreamableAgent` interface [Source 4].
 
 ```typescript
-function toStreamableAgent(agent: Agent): StreamableAgent
+import type { Agent } from 'yaaf';
+import type { StreamableAgent } from 'yaaf';
+
+export function toStreamableAgent(agent: Agent): StreamableAgent;
 ```
 
-### StreamableAgent Interface
-The function returns an object implementing the `StreamableAgent` interface:
+The returned `StreamableAgent` object has the following type definition [Source 4]:
 
-| Method | Parameters | Return Type | Description |
-|--------|------------|-------------|-------------|
-| `run` | `input: string`, `signal?: AbortSignal` | `Promise<string>` | Executes the agent and returns the final text response. |
-| `runStream` | `input: string`, `signal?: AbortSignal` | `AsyncIterable<RuntimeStreamEvent>` | Executes the agent and yields simplified runtime events. |
+```typescript
+export type StreamableAgent = {
+  run(input: string, signal?: AbortSignal): Promise<string>;
+  runStream(input: string, signal?: AbortSignal): AsyncIterable<RuntimeStreamEvent>;
+};
+```
 
-## Events
-The `runStream` method of the adapted agent yields `RuntimeStreamEvent` objects. These events provide a clean interface for UI and API consumers:
-
-| Event Type | Payload Fields | Description |
-|:---|:---|:---|
-| `text_delta` | `text: string` | A token chunk or text fragment from the LLM. |
-| `tool_call_start` | `toolName: string`, `args?: any` | Indicates a tool execution has begun. |
-| `tool_call_end` | `toolName: string`, `durationMs?: number`, `error?: any` | Indicates a tool execution has completed. |
-| `tool_blocked` | `toolName: string`, `reason: string` | Indicates a tool execution was denied (e.g., by security policy). |
-| `usage` | `promptTokens: number`, `completionTokens: number`, `totalCalls: number` | Provides token usage and call statistics. |
-| `done` | `text: string` | Indicates the stream is complete and provides the full final response. |
+- **`run(input, signal?)`**: A pass-through to the original agent's `run` method, which executes the agent and returns the final string response [Source 1].
+- **`runStream(input, signal?)`**: Returns an async iterable that yields simplified `RuntimeStreamEvent` objects, suitable for consumption by a runtime harness [Source 1, Source 4].
 
 ## Examples
 
-### Using with the CLI Runtime
-The CLI runtime requires a `StreamableAgent` to handle live re-rendering and tool spinners.
+`toStreamableAgent` is used to prepare an `Agent` for any of the standard YAAF runtimes.
+
+### With the [CLI Runtime](../subsystems/cli-runtime.md)
+
+This example shows how to adapt an agent to be used with `createCLI` to build a command-line interface [Source 1].
 
 ```typescript
 import { Agent, toStreamableAgent } from 'yaaf';
-import { createCLI } from 'yaaf/cli-runtime';
+import { createCLI } from 'yaaf/[[CLI]]-runtime';
 
 const agent = new Agent({
   systemPrompt: 'You are a helpful assistant.',
-  tools: [searchTool],
+  // ... tools, provider, etc.
 });
 
-// Wrap the agent before passing it to the runtime harness
-createCLI(toStreamableAgent(agent), {
+// Adapt the agent for the CLI runtime
+const streamableAgent = toStreamableAgent(agent);
+
+createCLI(streamableAgent, {
   name: 'my-assistant',
+  greeting: '👋 Hello! How can I help?',
   streaming: true,
 });
 ```
 
-### Using with the Server Runtime
-The server runtime uses the adapted agent to power both standard JSON and SSE (Server-Sent Events) endpoints.
+### With the [Server Runtime](../subsystems/server-runtime.md)
+
+This example adapts an agent to be served via HTTP using `createServer` [Source 2].
 
 ```typescript
 import { Agent, toStreamableAgent } from 'yaaf';
@@ -76,31 +98,43 @@ import { createServer } from 'yaaf/server';
 
 const agent = new Agent({
   systemPrompt: 'You are an API assistant.',
+  // ... tools, provider, etc.
 });
 
-const server = createServer(toStreamableAgent(agent), {
+// Adapt the agent for the server runtime
+const streamableAgent = toStreamableAgent(agent);
+
+const server = createServer(streamableAgent, {
   port: 3000,
 });
 ```
 
-### Manual Stream Adaptation
-You can also use the underlying `adaptStream` logic to transform a single stream manually.
+### With the [Worker Runtime](../subsystems/worker-runtime.md)
+
+This example adapts an agent for deployment to an edge environment like Cloudflare Workers using `createWorker` [Source 3].
 
 ```typescript
-import { Agent, adaptStream } from 'yaaf';
+import { Agent, toStreamableAgent } from 'yaaf';
+import { createWorker } from 'yaaf/worker';
 
-const agent = new Agent({ ... });
+const agent = new Agent({
+  systemPrompt: 'You are a helpful API assistant.',
+  // ... tools, provider, etc.
+});
 
-// Manually adapt a single execution stream
-for await (const event of adaptStream(agent.runStream('Hello'))) {
-  if (event.type === 'text_delta') {
-    process.stdout.write(event.text);
-  }
-}
+// Adapt the agent for the worker runtime
+const streamableAgent = toStreamableAgent(agent);
+
+const handler = createWorker(streamableAgent, {
+  name: 'my-edge-agent',
+});
+
+export default { fetch: handler };
 ```
 
-## See Also
-- [[Agent]]
-- [[createCLI]]
-- [[createServer]]
-- [[createWorker]]
+## Sources
+
+[Source 1]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/[CLI](../subsystems/cli.md)-runtime.md
+[Source 2]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/server-runtime.md
+[Source 3]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/docs/worker-runtime.md
+[Source 4]: /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/runtime/adapter.ts

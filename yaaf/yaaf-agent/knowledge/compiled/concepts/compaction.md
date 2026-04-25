@@ -1,88 +1,96 @@
 ---
+summary: The process of reducing the size of the agent's context by dropping or summarizing old messages to fit within token limits.
 title: Compaction
 entity_type: concept
-summary: The process of reducing the token footprint of a conversation history to fit within model limits.
+search_terms:
+ - context window management
+ - how to handle long conversations
+ - token limit exceeded error
+ - conversation summarization
+ - message history reduction
+ - YAAF context strategies
+ - micro-compaction
+ - sliding window context
+ - truncate conversation history
+ - preventing context overflow
+ - agent memory management
+ - long-term agent memory
 stub: false
-compiled_at: 2026-04-16T14:16:44.874Z
+compiled_at: 2026-04-24T17:53:17.703Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/circuitBreaker.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/contentReplacement.ts
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/context/contextManager.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/circuitBreaker.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/compactionPrompts.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/contentReplacement.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/context/strategies.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
-
----
-title: "Compaction"
-entity_type: "concept"
-summary: "The process of reducing the token footprint of a conversation history to fit within model limits."
-related_subsystems:
-  - "Context Management"
 
 ## What It Is
-Compaction is the mechanism YAAF uses to manage the finite context window of Large Language Models (LLMs). As a conversation progresses, the accumulation of messages, tool results, and system prompts eventually exceeds the model's maximum token capacity. Compaction prevents "out of memory" errors or message truncation by condensing the existing history into a smaller token footprint while attempting to preserve the essential state and facts of the session.
 
-This process is critical for production-grade agents that perform long-running tasks, as it allows the agent to maintain continuity without losing track of previous file edits or high-level goals.
+Compaction is the process of reducing the size of an agent's conversational context to ensure it fits within the token limits of a large language model ([LLM](./llm.md)). As a conversation progresses, the history of messages grows, eventually exceeding the model's [Context Window](./context-window.md). Compaction strategies automatically condense this history by dropping, clearing, or summarizing older messages, allowing the agent to continue operating over long-running sessions [Source 4].
+
+YAAF addresses this challenge with a pluggable architecture for compaction, allowing developers to choose from various built-in strategies or implement their own. This system provides fine-grained control over the trade-offs between context fidelity, performance, and cost [Source 4].
 
 ## How It Works in YAAF
-The compaction lifecycle is managed primarily by the `ContextManager`. It monitors the total token usage against a calculated threshold:
-`Threshold = contextWindowTokens - maxOutputTokens - autoCompactBuffer (default 13,000)`
 
-### The Compaction Process
-When the `ContextManager` determines that compaction is required, it typically follows these steps:
-1.  **Summarization**: The system sends the current message history to an LLM with a prompt to summarize the conversation.
-2.  **Replacement**: The original message history is replaced with a single summary message and a "compact boundary" marker.
-3.  **State Preservation**: Knowledge of file modifications is preserved using the `ContentReplacementTracker`. This ensures that even if the messages describing a file edit are compacted, the system remembers which files were changed (e.g., `create`, `modify`, `delete`, or `rename`).
-4.  **Re-injection**: Recently-read file contents or critical context sections are re-injected as attachments to ensure the LLM retains immediate access to active working files.
-5.  **Fact Extraction**: An optional `onExtractFacts` hook can be triggered to pull specific data points into long-term memory before the source messages are removed.
+The core of YAAF's compaction system is the `CompactionStrategy` interface. A strategy is a stateless class that receives the current `CompactionContext` and returns a `StrategyResult` containing the new, smaller message list and metadata about the operation [Source 4].
 
-### Micro-Compaction
-YAAF supports "micro-compaction" as a lightweight alternative or precursor to full compaction. This strategy targets `tool_result` messages, which often contain large amounts of data (like file contents or terminal output). Micro-compaction clears the content of older tool results while keeping the metadata intact, preserving the history of the tool call without the token cost. By default, YAAF keeps the 5 most recent tool results.
+### Compaction Strategies
 
-### Safety and Reliability
-To prevent infinite loops or wasted API calls in cases where a context is irrecoverably oversized, YAAF employs a `CompactionCircuitBreaker`. 
-- **Failure Threshold**: If auto-compaction fails 3 consecutive times, the circuit opens and stops further attempts.
-- **Auto-Reset**: The circuit breaker defaults to a 5-minute reset period (`300,000` ms).
+YAAF provides several built-in strategies, each with different characteristics [Source 4]:
+
+*   **`SummarizeStrategy`**: The most comprehensive strategy. It sends the conversation history to an LLM with a carefully engineered, structured prompt to generate a high-quality summary. This summary then replaces the older messages. This is the most context-preserving method but also the most expensive as it requires an additional [LLM Call](./llm-call.md) [Source 4].
+*   **`TruncateStrategy`**: The simplest and fastest strategy. It drops a configured percentage of the oldest messages from the context without any LLM call [Source 4].
+*   **`SlidingWindowStrategy`**: Keeps a set of the most recent messages that fit within a specified [Token Budget](./token-budget.md), discarding all older ones [Source 4].
+*   **`MicroCompactStrategy`**: A lightweight strategy that clears the content of old tool result messages, replacing the verbose output with a placeholder. This saves tokens while preserving the agent's knowledge that a tool was called [Source 4].
+*   **`TimeBasedMicroCompactStrategy`**: A variant of micro-compaction that is triggered only [when](../apis/when.md) a significant time gap has occurred since the last assistant message. This is useful for shrinking the context before it is resent to a potentially expired server-side cache [Source 4].
+*   **`Session[[[[[[[[Memory]]]]]]]]Strategy`**: A hybrid approach that extracts key facts and decisions from older messages into a structured Memory document. It then discards the summarized messages but keeps a configurable number of the most recent messages intact, preserving the immediate working context [Source 4].
+*   **`CompositeStrategy`**: Allows multiple strategies to be chained together in a pipeline. It tries each strategy in order until one successfully compacts the context. This is the recommended approach for production, enabling a multi-tier system (e.g., try cheap micro-compaction first, falling back to full summarization only when necessary) [Source 4].
+
+### Supporting Mechanisms
+
+Beyond the core strategies, YAAF includes several mechanisms to make compaction robust and effective:
+
+*   **Structured Summarization Prompts**: The `SummarizeStrategy` uses prompts generated by `buildCompactionPrompt`. These prompts instruct the LLM to produce a summary with nine required sections (e.g., intent, files, errors, next steps) and include an `<analysis>` scratchpad for the model to "think" before generating the final `<summary>` block. Helper functions like `stripAnalysisBlock` are provided to parse this [Structured Output](./structured-output.md) [Source 2].
+*   **State Preservation**: Compaction can cause the agent to lose state, such as which files it has edited. The `ContentReplacementTracker` solves this by recording file modifications. Before compaction, it generates a summary of all edits, which is then re-injected into the context as a system message after old messages have been dropped [Source 3].
+*   **Error Handling**: To prevent wasting API calls on a context that is too large to be summarized, the `CompactionCircuitBreaker` stops repeated, failing compaction attempts. If compaction fails a configured number of times in a row, the circuit opens and prevents further attempts for a set period, avoiding runaway costs [Source 1].
 
 ## Configuration
-Compaction is configured via the `ContextManagerConfig`. Developers can choose from several built-in strategies or define a `CompositeStrategy` to chain multiple approaches.
+
+Developers configure compaction by passing a strategy instance to the `ContextManager`.
+
+A simple configuration might use a single strategy:
 
 ```typescript
-import { 
-  ContextManager, 
-  CompositeStrategy, 
-  MicroCompactStrategy, 
-  SummarizeStrategy 
-} from 'yaaf';
-
+// Simple: use the summarize strategy
 const ctx = new ContextManager({
   contextWindowTokens: 200_000,
   maxOutputTokens: 16_384,
-  autoCompactBuffer: 13_000,
-  // Use a multi-tier pipeline
-  strategy: new CompositeStrategy([
-    // First, clear old tool results to save space
-    new MicroCompactStrategy({ keepRecent: 5 }),
-    // If still over budget, perform full LLM summarization
-    new SummarizeStrategy(),
-  ], { continueAfterPartial: true }),
-  
-  // Optional: Extract facts for long-term memory during compaction
-  onExtractFacts: async (messages) => {
-    // Logic to identify key facts
-    return ["User prefers TypeScript over JavaScript", "Project uses Vitest"];
-  }
+  llmAdapter: myModel,
+  strategy: new SummarizeStrategy(),
 });
 ```
+[Source 4]
 
-### Available Strategies
-- **SummarizeStrategy**: Uses an LLM to generate a structured summary of the history.
-- **TruncateStrategy**: Drops the oldest N% of messages.
-- **SlidingWindowStrategy**: Maintains only the most recent messages within the token budget.
-- **MicroCompactStrategy**: Clears content from old tool results.
-- **TimeBasedMicroCompactStrategy**: Clears tool results after a specific time duration.
-- **SessionMemoryStrategy**: Extracts memory while keeping only the most recent messages.
+A more advanced, production-ready configuration uses a `CompositeStrategy` to create a multi-tier pipeline. This attempts cheaper strategies first before falling back to a full LLM summarization [Source 4].
 
-## See Also
-- [[ContextManager]]
-- [[CompactionCircuitBreaker]]
-- [[ContentReplacementTracker]]
+```typescript
+// Advanced: compose a pipeline
+const ctx = new ContextManager({
+  strategy: new CompositeStrategy([
+    new TimeBasedMicroCompactStrategy({ gapThresholdMinutes: 60 }),
+    new MicroCompactStrategy({ keepRecent: 5 }),
+    new SummarizeStrategy({ customPrompt: myPrompt }),
+  ]),
+});
+```
+[Source 4]
+
+YAAF also provides helper functions like `defaultCompactionPipeline` to create a recommended, production-ready pipeline that mirrors the multi-tier approach [Source 4].
+
+## Sources
+[Source 1]: src/context/circuitBreaker.ts
+[Source 2]: src/context/compactionPrompts.ts
+[Source 3]: src/context/contentReplacement.ts
+[Source 4]: src/context/strategies.ts

@@ -236,7 +236,7 @@ describe("KBCompiler.compile()", () => {
       autoLint: false,
     });
 
-    const result = await compiler.compile();
+    const result = await compiler.compile({ groundingAction: false });
 
     expect(result.sourcesIngested).toBeGreaterThan(0);
     expect(result.synthesis.created).toBeGreaterThan(0);
@@ -253,7 +253,7 @@ describe("KBCompiler.compile()", () => {
       autoLint: false,
     });
 
-    await compiler.compile();
+    await compiler.compile({ groundingAction: false });
 
     // The article should be at compiled/research-papers/attention-is-all-you-need.md
     const expectedPath = join(compiledDir, "research-papers/attention-is-all-you-need.md");
@@ -274,7 +274,7 @@ describe("KBCompiler.compile()", () => {
       autoLint: false,
     });
 
-    await compiler.compile();
+    await compiler.compile({ groundingAction: false });
 
     const registryPath = join(kbDir, ".kb-registry.json");
     const registryJson = await readFile(registryPath, "utf-8");
@@ -294,7 +294,7 @@ describe("KBCompiler.compile()", () => {
       autoLint: false,
     });
 
-    const result = await compiler.compile();
+    const result = await compiler.compile({ groundingAction: false });
 
     // Should have created a stub for "Multi-Head Attention"
     expect(result.synthesis.stubsCreated).toBeGreaterThan(0);
@@ -318,6 +318,7 @@ describe("KBCompiler.compile()", () => {
 
     await compiler.compile({
       onProgress: (event) => events.push(event.stage),
+      groundingAction: false,
     });
 
     expect(events).toContain("scan");
@@ -341,6 +342,7 @@ describe("KBCompiler.compile()", () => {
 
     const result = await compiler.compile({
       onProgress: (event) => events.push(event.stage),
+      groundingAction: false,
     });
 
     expect(events).toContain("lint");
@@ -363,7 +365,7 @@ describe("KBCompiler.compile()", () => {
 
     // .xyz files should simply be excluded (canIngest returns false)
     // so ingestErrors should be empty (they just don't get processed)
-    const result = await compiler.compile();
+    const result = await compiler.compile({ groundingAction: false });
     expect(result.success).toBeDefined(); // Should complete without throwing
   });
 
@@ -378,7 +380,7 @@ describe("KBCompiler.compile()", () => {
       autoLint: false,
     });
 
-    const result = await compiler.compile({ dryRun: true });
+    const result = await compiler.compile({ dryRun: true, groundingAction: false });
     expect(result.synthesis.created).toBeGreaterThan(0);
 
     // No article files should exist

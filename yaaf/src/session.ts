@@ -27,6 +27,10 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 import type { ChatMessage } from "./agents/runner.js";
 import type { SessionAdapter } from "./plugin/types.js";
+import { SessionRecordSchema } from "./schemas.js";
+import { Logger } from "./utils/logger.js";
+
+const logger = new Logger("session");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -592,7 +596,19 @@ export class Session {
       try {
         // S1-A FIX: Decrypt the line before parsing. Plaintext lines pass through.
         const plainLine = this.decryptLine(line);
-        const record = JSON.parse(plainLine) as SessionRecord;
+        const rawRecord = JSON.parse(plainLine);
+
+        // Sprint 0b: Validate session record structure with Zod.
+        // Rejects malformed records from corrupted files or tampered sessions.
+        const validated = SessionRecordSchema.safeParse(rawRecord);
+        if (!validated.success) {
+          logger.warn(
+            `[yaaf/session] Skipping malformed record in session "${this._id}": ` +
+              validated.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; "),
+          );
+          continue;
+        }
+        const record = validated.data as SessionRecord;
         if (record.type === "message") {
           // SS-1 FIX (load side): Verify per-message HMAC when hmacSecret is configured.
           // The write side (append) signs each message with an HMAC; we must verify here

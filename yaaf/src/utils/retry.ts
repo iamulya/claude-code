@@ -57,7 +57,26 @@ function defaultIsRetryable(error: unknown): boolean {
   // YAAF typed errors carry a retryable flag
   if (error instanceof YAAFError) return error.retryable;
 
-  // Network-level errors (ECONNRESET, ENOTFOUND, etc.) — always retry
+  // 8.6: Check structured error properties BEFORE substring matching.
+  // HTTP response errors often carry `status` or `statusCode`.
+  if (error && typeof error === "object") {
+    const status = (error as { status?: number; statusCode?: number }).status
+      ?? (error as { status?: number; statusCode?: number }).statusCode;
+    if (typeof status === "number") {
+      // 429 (rate limited) and 5xx (server errors) are retryable
+      if (status === 429 || status >= 500) return true;
+      // 4xx (client errors except 429) are NOT retryable
+      if (status >= 400) return false;
+    }
+    // Node.js system errors carry `code` (ECONNRESET, ENOTFOUND, etc.)
+    const code = (error as { code?: string }).code;
+    if (typeof code === "string") {
+      const retryableCodes = new Set(["ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "EPIPE", "ECONNREFUSED", "EMFILE", "ENFILE", "EAGAIN"]);
+      return retryableCodes.has(code);
+    }
+  }
+
+  // Network-level errors from fetch() — substring fallback (last resort)
   if (error instanceof TypeError && error.message.includes("fetch")) return true;
 
   // AbortError — never retry

@@ -1,99 +1,109 @@
 ---
-summary: The data structure provided to memory strategies during each turn, containing conversation history and metadata.
+summary: A type representing the context provided to a memory extraction strategy.
 export_name: MemoryContext
-source_file: src/memory/types.ts
-category: interface
+source_file: src/memory/strategies.js
+category: type
 title: MemoryContext
 entity_type: api
+search_terms:
+ - memory extraction context
+ - what is MemoryContext
+ - data for memory strategy
+ - memory strategy parameters
+ - conversation history for memory
+ - auto memory extraction input
+ - durable memory context
+ - information for knowledge extraction
+ - passing data to MemoryExtractionStrategy
+ - context for saving memories
+ - extraction prompt
+ - messages for memory
 stub: false
-compiled_at: 2026-04-16T14:09:05.692Z
+compiled_at: 2026-04-24T17:21:36.385Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/docs/memory.md
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/memory/strategies.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/memory/autoExtract.ts
+compiled_from_quality: unknown
+confidence: 0.9
 ---
 
 ## Overview
-`MemoryContext` is a data structure passed to memory strategies during the agent's execution loop. It provides the necessary state—including conversation history, token counts, and tool usage—for a strategy to decide whether to extract new knowledge and which existing memories to retrieve for the current turn.
 
-By providing this context, YAAF decouples the memory strategy logic from the internal implementation of the agent's context management.
+`[[[[[[[[Memory]]]]]]]]Context` is a TypeScript type that encapsulates the information required by a `MemoryExtractionStrategy` to perform its function. [when](./when.md) a system like the `AutoMemoryExtractor` needs to extract durable memories from a conversation, it packages the relevant conversational history and guiding prompts into a `MemoryContext` object and passes it to the configured strategy [Source 1].
 
-## Signature / Constructor
+This type serves as a standardized contract, ensuring that any Memory extraction strategy receives a consistent set of data to work with, such as the list of recent messages and the specific question or prompt that guides the extraction process.
+
+## Signature
+
+The exact type definition for `MemoryContext` is not available in the provided source material. It is imported from `src/memory/strategies.js` [Source 1]. However, its structure can be inferred from the parameters of methods that use it, such as `AutoMemoryExtractor.onTurnComplete`.
+
+Based on its usage, the `MemoryContext` object likely contains the recent conversation messages and a prompt to guide the [LLM](../concepts/llm.md)-based extraction.
 
 ```typescript
+// File: src/memory/strategies.js
+// The MemoryContext type is exported from this file.
+
+// The following is an inferred structure based on usage in AutoMemoryExtractor [Source 1].
 export type MemoryContext = {
-  /** Current conversation messages (role + content) */
-  messages: ReadonlyArray<{ role: string; content: string; timestamp?: number }>;
-  /** The user's most recent query */
-  currentQuery: string;
-  /** Estimated total tokens in the conversation */
-  totalTokens: number;
-  /** Number of tool calls since last extraction */
-  toolCallsSinceExtraction: number;
-  /** Tool names used recently (for relevance filtering) */
-  recentTools?: readonly string[];
-  /** Abort signal for cancellation */
-  signal?: AbortSignal;
+  /**
+   * The list of recent messages to scan for potential memories.
+   */
+  messages: {
+    role: string;
+    content: string;
+    id?: string;
+  }[];
+
+  /**
+   * The prompt or question that guides the extraction process,
+   * e.g., "What is the user doing?".
+   */
+  extractionPrompt: string;
+
+  // Other contextual properties may also be included.
 };
 ```
 
-## Methods & Properties
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `messages` | `ReadonlyArray` | The current conversation history, including roles (user, assistant, system, tool) and content. |
-| `currentQuery` | `string` | The latest message sent by the user that triggered the current agent run. |
-| `totalTokens` | `number` | An estimate of the total tokens currently consumed by the conversation history. |
-| `toolCallsSinceExtraction` | `number` | A counter tracking how many tool calls have occurred since the last memory extraction was performed. |
-| `recentTools` | `readonly string[]` | (Optional) A list of tool names that were recently invoked, which can be used to filter for relevant memories. |
-| `signal` | `AbortSignal` | (Optional) A standard web API signal used to cancel asynchronous extraction or retrieval operations. |
-
 ## Examples
 
-### Using Context in a Custom Strategy
-This example demonstrates how a custom strategy uses the `MemoryContext` to decide when to trigger an extraction based on the number of messages.
+While you do not typically construct a `MemoryContext` object directly, it is created and used internally by components that manage memory extraction. The following example shows how `AutoMemoryExtractor` implicitly creates a `MemoryContext` and passes it to its configured strategy after a conversation turn is complete [Source 1].
 
 ```typescript
-import type { MemoryStrategy, MemoryContext, ExtractionResult, RetrievalResult } from 'yaaf';
+import { AutoMemoryExtractor, MessageLike } from 'yaaf';
+import type { MemoryExtractionStrategy, ExtractionResult } from 'yaaf';
 
-class MyCustomStrategy implements MemoryStrategy {
-  readonly name = 'message-count-strategy';
-
-  // Use context to decide if we should extract
-  shouldExtract(ctx: MemoryContext): boolean {
-    // Trigger extraction every 10 messages
-    return ctx.messages.length > 0 && ctx.messages.length % 10 === 0;
-  }
-
-  async extract(ctx: MemoryContext): Promise<ExtractionResult> {
-    console.log(`Extracting from ${ctx.messages.length} messages...`);
-    // Extraction logic here...
-    return { extracted: true, factsExtracted: 1 };
-  }
-
-  async retrieve(ctx: MemoryContext): Promise<RetrievalResult> {
-    // Use currentQuery to find relevant info
-    const section = `Relevant info for: ${ctx.currentQuery}`;
-    return {
-      systemPromptSection: section,
-      selectedMemories: [],
-      tokenEstimate: section.length / 4,
+// A custom memory extraction strategy that receives the MemoryContext.
+const myStrategy: MemoryExtractionStrategy = {
+  async extract(context) {
+    console.log('Extraction strategy received context:');
+    console.log(`- Prompt: ${context.extractionPrompt}`);
+    console.log(`- Messages: ${context.messages.length}`);
+    
+    // In a real implementation, this would call an LLM
+    // with the context to extract memories.
+    const extractedMemories: ExtractionResult = {
+      memories: [{ content: "User is planning a trip to Hawaii." }],
+      usage: { totalTokens: 100 },
     };
+    return extractedMemories;
   }
-}
+};
+
+const extractor = new AutoMemoryExtractor({
+  extractionStrategy: myStrategy,
+});
+
+// After an agent turn, this method is called.
+// Internally, it will bundle `messages` and the prompt
+// into a MemoryContext object for the strategy.
+const messages: MessageLike[] = [
+  { role: 'user', content: 'I want to book a flight.' },
+  { role: 'assistant', content: 'Sure, where to?' },
+  { role: 'user', content: 'To Hawaii, please.' },
+];
+
+extractor.onTurnComplete(messages, 'What is the user planning?');
 ```
 
-### Accessing Tool Metadata
-Strategies can use `toolCallsSinceExtraction` to ensure that knowledge gained from tool outputs is periodically persisted.
+## Sources
 
-```typescript
-function shouldUpdate(ctx: MemoryContext): boolean {
-  const TOOL_THRESHOLD = 3;
-  const TOKEN_THRESHOLD = 5000;
-
-  return (
-    ctx.toolCallsSinceExtraction >= TOOL_THRESHOLD || 
-    ctx.totalTokens >= TOKEN_THRESHOLD
-  );
-}
-```
+[Source 1]: src/memory/autoExtract.ts

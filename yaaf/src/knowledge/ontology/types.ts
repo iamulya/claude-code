@@ -44,6 +44,20 @@ export type FrontmatterFieldSchema = {
   /** Whether the compiler must produce a value for this field */
   required: boolean;
   /**
+   * Lint severity when a required field is missing.
+   *
+   * - `'error'` (default for required fields) — The KB is broken without this
+   *   field. Only use for fields that are structurally necessary (title,
+   *   entity_type).
+   *
+   * - `'warning'` — The KB degrades without this field but still functions.
+   *   Use for quality fields that the LLM may not always produce (summary,
+   *   export_name, source_file, category).
+   *
+   * Ignored when `required` is false.
+   */
+  missing_severity?: "error" | "warning";
+  /**
    * Allowed values when type is 'enum' or 'enum[]'.
    * The compiler will reject values not in this list.
    */
@@ -148,6 +162,28 @@ export type EntityTypeSchema = {
    * Default: true. Set false for internal/stub-only types.
    */
   indexable?: boolean;
+
+  /**
+   * 1.1: Optional freshness TTL in days for articles of this entity type.
+   *
+   * When set, the compiler writes `expires_at` into every compiled article's
+   * frontmatter (`compiled_at + freshness_ttl_days`). The KB tools
+   * (`fetch_kb_document`, `search_kb`) then annotate results that have
+   * passed their expiry with a `[STALE: compiled N days ago]` prefix so
+   * the agent knows the content may be out of date.
+   *
+   * Omit (or set to 0) to disable staleness tracking for this entity type.
+   *
+   * @example
+   * ```yaml
+   * entity_types:
+   *   best_practice:
+   *     freshness_ttl_days: 90   # warn after 3 months
+   *   research_paper:
+   *     freshness_ttl_days: 0    # papers don't expire
+   * ```
+   */
+  freshness_ttl_days?: number;
 };
 
 // ── Relationship types ───────────────────────────────────────────────────────

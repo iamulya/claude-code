@@ -1,76 +1,116 @@
 ---
-title: buildConceptRegistry
-entity_type: api
-summary: Scans a compiled directory recursively to build the concept registry from Markdown frontmatter.
+summary: Scans a compiled directory to build the in-memory concept registry.
 export_name: buildConceptRegistry
 source_file: src/knowledge/ontology/registry.ts
 category: function
+title: buildConceptRegistry
+entity_type: api
+search_terms:
+ - create concept index
+ - scan compiled articles
+ - load knowledge base
+ - initialize KB registry
+ - parse frontmatter from files
+ - build in-memory KB index
+ - how to populate the concept registry
+ - knowledge base startup process
+ - read all markdown files
+ - validate entity types from ontology
+ - registry construction
+ - knowledge base indexing
 stub: false
-compiled_at: 2026-04-16T14:28:37.403Z
+compiled_at: 2026-04-24T16:53:02.185Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/knowledge/ontology/registry.ts
-confidence: 1
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/knowledge/ontology/registry.ts
+compiled_from_quality: unknown
+confidence: 0.95
 ---
 
 ## Overview
-`buildConceptRegistry` is a core utility in the YAAF knowledge subsystem used to generate a live, in-memory index of all entities that have compiled articles. It serves as the "known universe" for the framework's compiler operations.
 
-The registry created by this function is essential for several framework processes:
-- **Concept Extraction**: Identifying which entities already possess existing articles.
-- **Knowledge Synthesis**: Preventing the creation of duplicate articles.
-- **Backlink Resolution**: Mapping `[[wikilinks]]` to specific document IDs.
-- **Linting**: Detecting orphaned or missing articles within the knowledge base.
+The `buildConceptRegistry` function recursively scans a directory of compiled knowledge base articles to build the `ConceptRegistry`, an in-[Memory](../concepts/memory.md) index of every known entity [Source 1]. This function is typically called at application startup to create a live representation of the knowledge base's "known universe" [Source 1].
 
-The function operates by recursively scanning a target directory for `.md` files and parsing their YAML frontmatter.
+The registry created by this function is critical for several other YAAF subsystems [Source 1]:
+- The [Concept Extractor](../subsystems/concept-extractor.md) uses it to identify entities that already have articles.
+- The [Knowledge Synthesizer](../subsystems/knowledge-synthesizer.md) checks it to avoid creating duplicate articles.
+- The [Backlink Resolver](../subsystems/backlink-resolver.md) uses it to resolve `wikilinks` to their corresponding document IDs.
+- The [Linter](../concepts/linter.md) relies on it to detect orphaned or missing articles.
+
+`buildConceptRegistry` expects each `.md` file within the target directory to contain a YAML [Frontmatter](../concepts/frontmatter.md) block. For a file to be included in the registry, its frontmatter must have at least a `title` (the canonical article title) and an `entity_type`. The `entity_type` must correspond to a valid type defined in the provided `KB[[Ontology]]`. Files that are missing these required fields are skipped, and a warning is issued [Source 1].
 
 ## Signature
+
 ```typescript
 export async function buildConceptRegistry(
   compiledDir: string,
-  ontology: KBOntology,
+  Ontology: KBOntology,
 ): Promise<{
   registry: ConceptRegistry;
-  issues: any[];
+  issues: ScanIssue[]; // Type inferred from context
 }>
 ```
 
 ### Parameters
-- `compiledDir`: The absolute path to the directory containing compiled Markdown articles.
-- `ontology`: A loaded `KBOntology` object used to validate that the `entity_type` defined in an article's frontmatter is valid.
 
-### Requirements
-For a file to be successfully indexed, it must:
-1. Have a `.md` extension.
-2. Contain YAML frontmatter with a `title` field (the canonical article title).
-3. Contain YAML frontmatter with an `entity_type` field that matches a type defined in the provided ontology.
+- **`compiledDir`** `string`: The absolute path to the `compiled/` directory containing the markdown knowledge base articles to be scanned [Source 1].
+- **`[[Ontology]]`** `KBOntology`: The loaded [Knowledge Base Ontology](../subsystems/knowledge-base-ontology.md), which is used to validate the `entity_type` found in each article's frontmatter [Source 1].
 
-Files missing these fields are skipped, and a warning is generated in the returned issues list.
+### Returns
+
+`Promise<{ registry: ConceptRegistry; issues: ScanIssue[] }>`
+
+A promise that resolves to an object containing:
+- `registry`: The populated `ConceptRegistry` object.
+- `issues`: An array of any issues or warnings encountered during the scan, such as files with missing frontmatter.
 
 ## Examples
 
-### Basic Usage
-This example demonstrates how to initialize the registry by scanning a compiled knowledge base directory.
+The following example demonstrates how to use `buildConceptRegistry` to scan a directory and initialize the [Concept Registry](../subsystems/concept-registry.md).
 
 ```typescript
-import { buildConceptRegistry } from 'yaaf/knowledge';
-import { loadOntology } from 'yaaf/ontology';
+import { buildConceptRegistry } from 'yaaf';
+import { loadOntology } from './[[Ontology]]-loader'; // A hypothetical [[Ontology]] loader
+import path from 'path';
 
-const ontology = await loadOntology('./schema/ontology.yaml');
-const compiledPath = '/path/to/project/knowledge/compiled';
+// Assume an ontology has been loaded
+const ontology = await loadOntology('./kb/ontology.json');
 
-const { registry, issues } = await buildConceptRegistry(
-  compiledPath,
-  ontology
-);
+// Define the path to the compiled knowledge base articles
+const compiledKbPath = path.resolve('./kb/compiled');
 
-if (issues.length > 0) {
-  console.warn('Registry built with issues:', issues);
+async function initializeRegistry() {
+  try {
+    const { registry, issues } = await buildConceptRegistry(compiledKbPath, ontology);
+
+    console.log(`Registry built with ${Object.keys(registry).length} entries.`);
+
+    if (issues.length > 0) {
+      console.warn('Issues found during scan:');
+      issues.forEach(issue => console.warn(`- ${issue.message}`));
+    }
+
+    // The registry can now be used by other parts of the application
+    // for lookups, validation, etc.
+
+  } catch (error) {
+    console.error('Failed to build concept registry:', error);
+  }
 }
 
-console.log(`Indexed ${Object.keys(registry).length} concepts.`);
+initializeRegistry();
 ```
 
 ## See Also
-- `findByWikilink`: A utility to query the registry produced by this function.
-- `upsertRegistryEntry`: Used to update the registry in-memory after a compilation run.
-- `serializeRegistry`: Used to cache the registry to disk to avoid full rescans on startup.
+
+The `buildConceptRegistry` function is the primary way to create the `ConceptRegistry`. The following related functions from the same module are used to interact with the registry after it has been created [Source 1]:
+
+- `findByWikilink`: Finds a registry entry by its title or alias.
+- `findByEntityType`: Finds all entries of a specific type.
+- `upsertRegistryEntry`: Adds or updates a single entry.
+- `removeRegistryEntry`: Removes an entry.
+- `serializeRegistry`: Converts the registry to a JSON string for caching.
+- `deserializeRegistry`: Rehydrates a registry from a JSON string.
+
+## Sources
+
+[Source 1]: src/knowledge/ontology/registry.ts

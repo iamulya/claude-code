@@ -1,41 +1,73 @@
 ---
 title: contextList
-entity_type: api
-summary: CLI command function that scans the project for context sources and displays the assembled system prompt.
+summary: Scans the project for all context sources and shows what would be injected into the system prompt at runtime.
 export_name: contextList
 source_file: src/cli/context.ts
 category: function
+entity_type: api
+search_terms:
+ - inspect system prompt
+ - view context sources
+ - what is in my prompt
+ - debug system prompt
+ - list all context files
+ - yaaf cli context
+ - how to see final prompt
+ - prompt injection debugging
+ - context management
+ - show assembled prompt
+ - cli command for context
+ - verify prompt content
 stub: false
-compiled_at: 2026-04-16T14:16:15.664Z
+compiled_at: 2026-04-24T16:58:04.985Z
 compiled_from:
-  - /Users/hybridpro/Downloads/claude-code-main/yaaf/knowledge/raw/source/cli/context.ts
+ - /Users/hybridpro/Downloads/claude-code-main/yaaf/yaaf-agent/knowledge/raw/source/cli/context.ts
+compiled_from_quality: unknown
 confidence: 1
 ---
 
 ## Overview
-`contextList` is a utility function designed for the YAAF Command Line Interface (CLI). It performs a scan of the current project to identify all active context sources. Once identified, it aggregates these sources to display the final system prompt that would be provided to an LLM at runtime. 
 
-This function is primarily used by developers to inspect and verify the composition of the system prompt, ensuring that all intended context files and data sources are correctly resolved and injected before deploying or running an agent.
+The `contextList` function is a command-line interface ([CLI](../subsystems/cli.md)) utility that provides insight into an agent's runtime context [Source 1]. It scans the project directory for all recognized [Context Sources](../concepts/context-sources.md) and displays the aggregated content that will be injected into the [LLM](../concepts/llm.md)'s [System Prompt](../concepts/system-prompt.md) [Source 1].
 
-## Signature / Constructor
+This function is primarily used for debugging and verification. It allows developers to confirm exactly what information the agent will have available as its foundational context before any user interaction occurs. It is the underlying implementation for the `yaaf context list` CLI command [Source 1].
+
+## Signature
+
+The function is asynchronous and does not take any arguments. It prints its output directly to the console and resolves with no return value.
+
 ```typescript
-export async function contextList(): Promise<void>
+export async function contextList(): Promise<void>;
 ```
 
 ## Examples
-The `contextList` function is typically invoked as part of a CLI command execution. When called, it reads from the local filesystem to assemble the prompt.
 
-```typescript
-import { contextList } from 'yaaf/cli/context';
+The `contextList` function is intended to be run via the [YAAF CLI](../concepts/yaaf-cli.md).
 
-/**
- * Executes the 'yaaf context list' command logic.
- * This will output the assembled system prompt to the console.
- */
-async function runCommand() {
-  await contextList();
-}
+### Invoking from the command line
+
+To inspect the assembled system prompt context for the current project, run the following command in your terminal:
+
+```bash
+yaaf context list
+```
+
+The command will scan for context files and print a summary of what it finds, similar to the hypothetical output below:
+
+```
+Assembled System Prompt Context:
+---------------------------------
+
+[Source: /path/to/project/context/instructions.md]
+You are a helpful assistant.
+
+[Source: /path/to/project/context/user_profile.txt]
+The user's name is Alex. They are an expert in TypeScript.
+
+---------------------------------
+Total context length: 105 characters.
 ```
 
 ## Sources
-- `src/cli/context.ts`
+
+[Source 1] src/cli/context.ts

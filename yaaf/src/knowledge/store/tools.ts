@@ -56,9 +56,13 @@ export function createKBTools(
   };
 
   /**
-   * Fix C-1: validate docId at the tool boundary to prevent path traversal.
+   * Fix C-1 + B-01: validate docId at the tool boundary to prevent path traversal.
    * DocIds are used to construct file paths inside compiledDir; a malicious
    * agent could pass "../../etc/passwd" to escape the KB directory.
+   *
+   * Defense-in-depth: BOTH pattern checks AND canonical path resolution.
+   * The pattern check catches obvious attempts early with clear errors.
+   * The canonical check catches all encoding tricks (URL-encoded, Unicode, etc.).
    */
   const assertSafeDocId = (docId: string): void => {
     if (typeof docId !== "string" || docId.length === 0) {
@@ -67,7 +71,8 @@ export function createKBTools(
     if (docId.length > 512) {
       throw new Error(`docId exceeds maximum allowed length (512 chars).`);
     }
-    if (docId.includes("...") || docId.includes("..\\") || docId.includes("../")) {
+    // B-01 fix: check ".." (2 dots = traversal), not "..." (3 dots = ellipsis, harmless)
+    if (docId.includes("..")) {
       throw new Error(`Invalid docId "${docId.slice(0, 60)}": path traversal sequences are not allowed.`);
     }
     if (docId.startsWith("/") || docId.startsWith("\\")) {
@@ -76,6 +81,78 @@ export function createKBTools(
     if (docId.includes("\0")) {
       throw new Error(`Invalid docId: null bytes are not allowed.`);
     }
+  };
+
+  /**
+   * 1.1: Compute a staleness annotation for a document if its expires_at
+   * frontmatter field is set and in the past.
+   *
+   * Returns a string like `[STALE: compiled 47 days ago — content may be outdated]`
+   * to prepend to content, or `null` if the article is still fresh / has no TTL.
+   */
+  const stalenessNote = (frontmatter: Record<string, unknown>): string | null => {
+    const expiresAt = frontmatter["expires_at"];
+    const compiledAt = frontmatter["compiled_at"];
+    if (typeof expiresAt !== "string") return null;
+    const expiry = new Date(expiresAt);
+    if (isNaN(expiry.getTime())) return null;
+    const now = new Date();
+    if (now <= expiry) return null; // still fresh
+
+    // Calculate days since compilation (not since expiry) for user clarity
+    const compiledDate = typeof compiledAt === "string" ? new Date(compiledAt) : null;
+    if (compiledDate && !isNaN(compiledDate.getTime())) {
+      const daysSince = Math.floor((now.getTime() - compiledDate.getTime()) / 86_400_000);
+      return `[STALE: compiled ${daysSince} day${daysSince === 1 ? "" : "s"} ago — content may be outdated]`;
+    }
+    return `[STALE: article has passed its freshness TTL — content may be outdated]`;
+  };
+
+  /**
+   * Confidence decay: apply time-weighted penalty to grounding scores.
+   *
+   * LLM-grounded claims degrade in reliability over time — a claim well-grounded
+   * in 2024 might be contradicted by 2025 research. Rather than waiting for
+   * recompilation to update scores, we apply a lightweight query-time decay
+   * based on article age relative to its freshness TTL:
+   *
+   * - First 50% of TTL → full confidence (no annotation)
+   * - 50-100% of TTL → linear decay to 50% of original (annotated)
+   * - After TTL → floors at 50% of original (+ STALE annotation from above)
+   *
+   * Cost: ~0.01ms per result (arithmetic only, no LLM/embedding calls).
+   */
+  const confidenceDecayNote = (frontmatter: Record<string, unknown>): string | null => {
+    const expiresAt = frontmatter["expires_at"];
+    const compiledAt = frontmatter["compiled_at"];
+    const confidence = frontmatter["confidence"];
+
+    // Need all three fields to compute decay
+    if (typeof expiresAt !== "string" || typeof compiledAt !== "string") return null;
+    if (typeof confidence !== "number" || confidence <= 0) return null;
+
+    const compiledDate = new Date(compiledAt);
+    const expiryDate = new Date(expiresAt);
+    if (isNaN(compiledDate.getTime()) || isNaN(expiryDate.getTime())) return null;
+
+    const ttlMs = expiryDate.getTime() - compiledDate.getTime();
+    if (ttlMs <= 0) return null; // invalid TTL
+
+    const ageMs = Date.now() - compiledDate.getTime();
+    const ageFraction = ageMs / ttlMs; // 0.0 = just compiled, 1.0 = at expiry
+
+    if (ageFraction <= 0.5) return null; // still in first half of TTL — full confidence
+
+    // Linear decay from 100% to 50% over the second half of TTL
+    const decayFraction = Math.min(1.0, (ageFraction - 0.5) / 0.5);
+    const decayedConfidence = confidence * (1.0 - 0.5 * decayFraction);
+    const rounded = Math.round(decayedConfidence * 100) / 100;
+
+    const ageDays = Math.floor(ageMs / 86_400_000);
+    const ttlDays = Math.round(ttlMs / 86_400_000);
+
+    return `[CONFIDENCE DECAYED: ${confidence.toFixed(2)} → ${rounded.toFixed(2)}, ` +
+      `article is ${ageDays} days old (TTL: ${ttlDays} days)]`;
   };
 
   // ── list_kb_index ─────────────────────────────────────────────────────────
@@ -166,11 +243,15 @@ export function createKBTools(
         };
       }
 
-      const content =
+      const rawContent =
         doc.body.length > maxDocumentChars
           ? doc.body.slice(0, maxDocumentChars) +
             `\n\n[... ${doc.body.length - maxDocumentChars} chars truncated ...]`
           : doc.body;
+
+      // 1.1: prepend staleness note when the article has passed its TTL
+      const staleNote = stalenessNote(doc.frontmatter);
+      const content = staleNote ? `${staleNote}\n\n${rawContent}` : rawContent;
 
       return {
         data: {
@@ -180,6 +261,10 @@ export function createKBTools(
           entityType: doc.entityType,
           isStub: doc.isStub,
           wordCount: doc.wordCount,
+          // 1.1: expose expiry date in result so callers can make freshness decisions
+          ...(doc.frontmatter["expires_at"]
+            ? { expires_at: doc.frontmatter["expires_at"] }
+            : {}),
           content,
         },
       };
@@ -215,10 +300,14 @@ export function createKBTools(
       query: string;
       entityType?: string;
     }): Promise<{ data: unknown }> {
-      const results = await store.searchAsync(query, {
-        maxResults: maxSearchResults,
-        entityType,
-      });
+      const results = await store.searchAsync(
+        // N-03: Cap query length to prevent tokenizer memory exhaustion from adversarially
+        // large query strings. 1000 chars is generous for any legitimate search intent.
+        query.slice(0, 1000),
+        {
+          maxResults: maxSearchResults,
+          entityType,
+        });
 
       if (results.length === 0) {
         return {
@@ -233,18 +322,115 @@ export function createKBTools(
       return {
         data: {
           found: results.length,
-          articles: results.map((r) => ({
+          articles: results.map((r) => {
+            // 1.1: surface stale flag in search results so agent can decide
+            // whether to fetch full content of a potentially outdated article
+            const note = stalenessNote(r.frontmatter ?? {});
+            // Confidence decay: time-weighted grounding reliability annotation
+            const decayNote = confidenceDecayNote(r.frontmatter ?? {});
+            return {
+              docId: qualify(r.docId),
+              title: r.title,
+              entityType: r.entityType,
+              isStub: r.isStub,
+              relevance: Math.round(r.score * 100) + "%",
+              excerpt: r.excerpt.slice(0, maxExcerptChars),
+              ...(note ? { staleness: note } : {}),
+              ...(decayNote ? { confidenceDecay: decayNote } : {}),
+            };
+          }),
+        },
+      };
+    },
+  });
+
+  // ── query_kb_graph ──────────────────────────────────────────────────────
+
+  const queryKBGraph = buildTool({
+    name: "query_kb_graph",
+    describe: ({ docId }: { docId?: string }) =>
+      `Query KB relationships for "${docId ?? "..."}"`,
+    maxResultChars: 8000,
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        docId: {
+          type: "string",
+          description:
+            'Document ID to query relationships for (e.g. "concepts/attention-mechanism")',
+        },
+        direction: {
+          type: "string",
+          description:
+            'Relationship direction: "outgoing" (what this doc links to), "incoming" (what links to this doc), or "both" (default)',
+          enum: ["outgoing", "incoming", "both"],
+        },
+        relationship: {
+          type: "string",
+          description:
+            'Optional: filter by relationship type (e.g. "IMPLEMENTS", "DEPENDS_ON")',
+        },
+      },
+      required: ["docId"],
+    },
+    isReadOnly: () => true,
+    isConcurrencySafe: () => true,
+    async call({
+      docId,
+      direction,
+      relationship,
+    }: {
+      docId: string;
+      direction?: "outgoing" | "incoming" | "both";
+      relationship?: string;
+    }): Promise<{ data: unknown }> {
+      assertSafeDocId(stripNs(docId));
+
+      const graphAdapter = store.getGraphAdapter();
+      if (!graphAdapter) {
+        return {
+          data: {
+            available: false,
+            message:
+              "Relationship graph is not available. The KB may not have an ontology.yaml.",
+          },
+        };
+      }
+
+      const results = await graphAdapter.query(stripNs(docId), {
+        direction: direction ?? "both",
+        relationship,
+        maxResults: 20,
+      });
+
+      if (results.length === 0) {
+        return {
+          data: {
+            found: 0,
+            docId,
+            message: `No relationships found for "${docId}".`,
+            hint: "Use search_kb to find related articles by keyword instead.",
+          },
+        };
+      }
+
+      return {
+        data: {
+          found: results.length,
+          docId,
+          direction: direction ?? "both",
+          ...(relationship ? { filteredBy: relationship } : {}),
+          relationships: results.map((r) => ({
             docId: qualify(r.docId),
             title: r.title,
             entityType: r.entityType,
-            isStub: r.isStub,
-            relevance: Math.round(r.score * 100) + "%",
-            excerpt: r.excerpt.slice(0, maxExcerptChars),
+            ...(r.relationship ? { relationship: r.relationship } : {}),
+            direction: r.direction,
           })),
         },
       };
     },
   });
 
-  return [listKBIndex, fetchKBDocument, searchKB];
+  return [listKBIndex, fetchKBDocument, searchKB, queryKBGraph];
 }

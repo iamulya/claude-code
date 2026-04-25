@@ -34,6 +34,7 @@ describe("validateCron", () => {
     ["0,15,30,45 * * * *", "every quarter hour"],
     ["0 9-17 * * *", "9am-5pm hourly"],
     ["0 9-17/2 * * *", "9am-5pm every 2 hours"],
+    ["* * * * * *", "6-field with seconds (croner extension)"],
   ])('accepts valid: "%s" (%s)', (expr) => {
     expect(validateCron(expr)).toBe(true);
   });
@@ -41,7 +42,6 @@ describe("validateCron", () => {
   it.each([
     ["", "empty string"],
     ["* * *", "too few fields"],
-    ["* * * * * *", "too many fields (6 fields)"],
     ["60 * * * *", "minute 60 out of range"],
     ["-1 * * * *", "negative minute"],
     ["* 24 * * *", "hour 24 out of range"],
